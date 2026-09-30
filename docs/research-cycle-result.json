@@ -1,0 +1,1786 @@
+{
+  "started_at": "2026-09-29T08:06:42.098782+00:00",
+  "config_id": "581828078ed52d1f10f8b00894fd9b829e08f1228a217e927f9009eb3234aae4",
+  "real_clock": true,
+  "duration_requested": 2100.0,
+  "warmup_seconds": 605.0,
+  "status": "PASSED",
+  "checkpoints": [
+    {
+      "elapsed_seconds": 0.15,
+      "frame_time": 1790669202,
+      "checked_models": 8,
+      "source_ledger_points": [
+        "strain_01",
+        "strain_02",
+        "temp_outer_01",
+        "temp_inner_01"
+      ],
+      "queues": {
+        "ingress": 0,
+        "ordinary": 0,
+        "event": 0,
+        "capture_jobs": 0,
+        "capture_bytes": 0
+      },
+      "storage_budget": {
+        "bytes_written": 360178,
+        "development_growth": 19808256,
+        "budget_bytes": 134217728,
+        "minimum_free_bytes": 1330565857280
+      },
+      "event_phase": null
+    },
+    {
+      "elapsed_seconds": 60.61,
+      "frame_time": 1790669262,
+      "checked_models": 8,
+      "source_ledger_points": [
+        "strain_01",
+        "strain_02",
+        "temp_outer_01",
+        "temp_inner_01"
+      ],
+      "queues": {
+        "ingress": 0,
+        "ordinary": 0,
+        "event": 0,
+        "capture_jobs": 0,
+        "capture_bytes": 0
+      },
+      "storage_budget": {
+        "bytes_written": 1442656,
+        "development_growth": 22929408,
+        "budget_bytes": 134217728,
+        "minimum_free_bytes": 1330551218176
+      },
+      "event_phase": null
+    },
+    {
+      "elapsed_seconds": 121.16,
+      "frame_time": 1790669323,
+      "checked_models": 8,
+      "source_ledger_points": [
+        "strain_01",
+        "strain_02",
+        "temp_outer_01",
+        "temp_inner_01"
+      ],
+      "queues": {
+        "ingress": 0,
+        "ordinary": 0,
+        "event": 0,
+        "capture_jobs": 0,
+        "capture_bytes": 0
+      },
+      "storage_budget": {
+        "bytes_written": 2542495,
+        "development_growth": 25665536,
+        "budget_bytes": 134217728,
+        "minimum_free_bytes": 1330550390784
+      },
+      "event_phase": null
+    },
+    {
+      "elapsed_seconds": 181.7,
+      "frame_time": 1790669383,
+      "checked_models": 8,
+      "source_ledger_points": [
+        "strain_01",
+        "strain_02",
+        "temp_outer_01",
+        "temp_inner_01"
+      ],
+      "queues": {
+        "ingress": 0,
+        "ordinary": 0,
+        "event": 0,
+        "capture_jobs": 0,
+        "capture_bytes": 0
+      },
+      "storage_budget": {
+        "bytes_written": 3624580,
+        "development_growth": 27574272,
+        "budget_bytes": 134217728,
+        "minimum_free_bytes": 1330557878272
+      },
+      "event_phase": null
+    },
+    {
+      "elapsed_seconds": 242.19,
+      "frame_time": 1790669444,
+      "checked_models": 8,
+      "source_ledger_points": [
+        "strain_01",
+        "strain_02",
+        "temp_outer_01",
+        "temp_inner_01"
+      ],
+      "queues": {
+        "ingress": 0,
+        "ordinary": 0,
+        "event": 0,
+        "capture_jobs": 0,
+        "capture_bytes": 0
+      },
+      "storage_budget": {
+        "bytes_written": 4724548,
+        "development_growth": 30818304,
+        "budget_bytes": 134217728,
+        "minimum_free_bytes": 1330554683392
+      },
+      "event_phase": null
+    },
+    {
+      "elapsed_seconds": 302.71,
+      "frame_time": 1790669504,
+      "checked_models": 8,
+      "source_ledger_points": [
+        "strain_01",
+        "strain_02",
+        "temp_outer_01",
+        "temp_inner_01"
+      ],
+      "queues": {
+        "ingress": 0,
+        "ordinary": 0,
+        "event": 0,
+        "capture_jobs": 0,
+        "capture_bytes": 0
+      },
+      "storage_budget": {
+        "bytes_written": 5806398,
+        "development_growth": 33824768,
+        "budget_bytes": 134217728,
+        "minimum_free_bytes": 1330551791616
+      },
+      "event_phase": null
+    },
+    {
+      "elapsed_seconds": 363.21,
+      "frame_time": 1790669565,
+      "checked_models": 8,
+      "source_ledger_points": [
+        "strain_01",
+        "strain_02",
+        "temp_outer_01",
+        "temp_inner_01"
+      ],
+      "queues": {
+        "ingress": 0,
+        "ordinary": 0,
+        "event": 0,
+        "capture_jobs": 0,
+        "capture_bytes": 0
+      },
+      "storage_budget": {
+        "bytes_written": 6906530,
+        "development_growth": 35651584,
+        "budget_bytes": 134217728,
+        "minimum_free_bytes": 1330549932032
+      },
+      "event_phase": null
+    },
+    {
+      "elapsed_seconds": 423.71,
+      "frame_time": 1790669625,
+      "checked_models": 8,
+      "source_ledger_points": [
+        "strain_01",
+        "strain_02",
+        "temp_outer_01",
+        "temp_inner_01"
+      ],
+      "queues": {
+        "ingress": 0,
+        "ordinary": 0,
+        "event": 0,
+        "capture_jobs": 0,
+        "capture_bytes": 0
+      },
+      "storage_budget": {
+        "bytes_written": 7988373,
+        "development_growth": 37797888,
+        "budget_bytes": 134217728,
+        "minimum_free_bytes": 1330512003072
+      },
+      "event_phase": null
+    },
+    {
+      "elapsed_seconds": 484.21,
+      "frame_time": 1790669686,
+      "checked_models": 8,
+      "source_ledger_points": [
+        "strain_01",
+        "strain_02",
+        "temp_outer_01",
+        "temp_inner_01"
+      ],
+      "queues": {
+        "ingress": 0,
+        "ordinary": 0,
+        "event": 0,
+        "capture_jobs": 0,
+        "capture_bytes": 0
+      },
+      "storage_budget": {
+        "bytes_written": 9088300,
+        "development_growth": 41017344,
+        "budget_bytes": 134217728,
+        "minimum_free_bytes": 1330527698944
+      },
+      "event_phase": null
+    },
+    {
+      "elapsed_seconds": 544.74,
+      "frame_time": 1790669746,
+      "checked_models": 8,
+      "source_ledger_points": [
+        "strain_01",
+        "strain_02",
+        "temp_outer_01",
+        "temp_inner_01"
+      ],
+      "queues": {
+        "ingress": 0,
+        "ordinary": 0,
+        "event": 0,
+        "capture_jobs": 0,
+        "capture_bytes": 0
+      },
+      "storage_budget": {
+        "bytes_written": 10170455,
+        "development_growth": 44163072,
+        "budget_bytes": 134217728,
+        "minimum_free_bytes": 1330524463104
+      },
+      "event_phase": null
+    },
+    {
+      "elapsed_seconds": 605.29,
+      "frame_time": 1790669807,
+      "checked_models": 8,
+      "source_ledger_points": [
+        "strain_01",
+        "strain_02",
+        "temp_outer_01",
+        "temp_inner_01"
+      ],
+      "queues": {
+        "ingress": 0,
+        "ordinary": 0,
+        "event": 0,
+        "capture_jobs": 0,
+        "capture_bytes": 0
+      },
+      "storage_budget": {
+        "bytes_written": 11270320,
+        "development_growth": 46006272,
+        "budget_bytes": 134217728,
+        "minimum_free_bytes": 1330522456064
+      },
+      "event_phase": null
+    },
+    {
+      "elapsed_seconds": 666.12,
+      "frame_time": 1790669868,
+      "checked_models": 8,
+      "source_ledger_points": [
+        "strain_01",
+        "strain_02",
+        "temp_outer_01",
+        "temp_inner_01"
+      ],
+      "queues": {
+        "ingress": 0,
+        "ordinary": 0,
+        "event": 0,
+        "capture_jobs": 0,
+        "capture_bytes": 0
+      },
+      "storage_budget": {
+        "bytes_written": 25736977,
+        "development_growth": 52871168,
+        "budget_bytes": 134217728,
+        "minimum_free_bytes": 1330514935808
+      },
+      "event_phase": "RECOVERY_PENDING"
+    },
+    {
+      "elapsed_seconds": 726.85,
+      "frame_time": 1790669928,
+      "checked_models": 8,
+      "source_ledger_points": [
+        "strain_01",
+        "strain_02",
+        "temp_outer_01",
+        "temp_inner_01"
+      ],
+      "queues": {
+        "ingress": 0,
+        "ordinary": 0,
+        "event": 0,
+        "capture_jobs": 0,
+        "capture_bytes": 0
+      },
+      "storage_budget": {
+        "bytes_written": 27077894,
+        "development_growth": 56238080,
+        "budget_bytes": 134217728,
+        "minimum_free_bytes": 1330511642624
+      },
+      "event_phase": "POST_CAPTURE"
+    },
+    {
+      "elapsed_seconds": 787.59,
+      "frame_time": 1790669989,
+      "checked_models": 8,
+      "source_ledger_points": [
+        "strain_01",
+        "strain_02",
+        "temp_outer_01",
+        "temp_inner_01"
+      ],
+      "queues": {
+        "ingress": 0,
+        "ordinary": 0,
+        "event": 0,
+        "capture_jobs": 0,
+        "capture_bytes": 0
+      },
+      "storage_budget": {
+        "bytes_written": 28421320,
+        "development_growth": 59990016,
+        "budget_bytes": 134217728,
+        "minimum_free_bytes": 1330507968512
+      },
+      "event_phase": "POST_CAPTURE"
+    },
+    {
+      "elapsed_seconds": 848.35,
+      "frame_time": 1790670050,
+      "checked_models": 8,
+      "source_ledger_points": [
+        "strain_01",
+        "strain_02",
+        "temp_outer_01",
+        "temp_inner_01"
+      ],
+      "queues": {
+        "ingress": 0,
+        "ordinary": 0,
+        "event": 0,
+        "capture_jobs": 0,
+        "capture_bytes": 0
+      },
+      "storage_budget": {
+        "bytes_written": 29764659,
+        "development_growth": 63422464,
+        "budget_bytes": 134217728,
+        "minimum_free_bytes": 1330488184832
+      },
+      "event_phase": "POST_CAPTURE"
+    },
+    {
+      "elapsed_seconds": 909.08,
+      "frame_time": 1790670111,
+      "checked_models": 8,
+      "source_ledger_points": [
+        "strain_01",
+        "strain_02",
+        "temp_outer_01",
+        "temp_inner_01"
+      ],
+      "queues": {
+        "ingress": 0,
+        "ordinary": 0,
+        "event": 0,
+        "capture_jobs": 0,
+        "capture_bytes": 0
+      },
+      "storage_budget": {
+        "bytes_written": 31087166,
+        "development_growth": 65609728,
+        "budget_bytes": 134217728,
+        "minimum_free_bytes": 1330486054912
+      },
+      "event_phase": "POST_CAPTURE"
+    },
+    {
+      "elapsed_seconds": 969.75,
+      "frame_time": 1790670171,
+      "checked_models": 8,
+      "source_ledger_points": [
+        "strain_01",
+        "strain_02",
+        "temp_outer_01",
+        "temp_inner_01"
+      ],
+      "queues": {
+        "ingress": 0,
+        "ordinary": 0,
+        "event": 0,
+        "capture_jobs": 0,
+        "capture_bytes": 0
+      },
+      "storage_budget": {
+        "bytes_written": 32430650,
+        "development_growth": 67215360,
+        "budget_bytes": 134217728,
+        "minimum_free_bytes": 1330484269056
+      },
+      "event_phase": "POST_CAPTURE"
+    },
+    {
+      "elapsed_seconds": 1030.44,
+      "frame_time": 1790670232,
+      "checked_models": 8,
+      "source_ledger_points": [
+        "strain_01",
+        "strain_02",
+        "temp_outer_01",
+        "temp_inner_01"
+      ],
+      "queues": {
+        "ingress": 0,
+        "ordinary": 0,
+        "event": 0,
+        "capture_jobs": 0,
+        "capture_bytes": 0
+      },
+      "storage_budget": {
+        "bytes_written": 33774029,
+        "development_growth": 70492160,
+        "budget_bytes": 134217728,
+        "minimum_free_bytes": 1330480812032
+      },
+      "event_phase": "POST_CAPTURE"
+    },
+    {
+      "elapsed_seconds": 1091.24,
+      "frame_time": 1790670293,
+      "checked_models": 8,
+      "source_ledger_points": [
+        "strain_01",
+        "strain_02",
+        "temp_outer_01",
+        "temp_inner_01"
+      ],
+      "queues": {
+        "ingress": 0,
+        "ordinary": 0,
+        "event": 0,
+        "capture_jobs": 0,
+        "capture_bytes": 0
+      },
+      "storage_budget": {
+        "bytes_written": 35117701,
+        "development_growth": 73990144,
+        "budget_bytes": 134217728,
+        "minimum_free_bytes": 1330477576192
+      },
+      "event_phase": "POST_CAPTURE"
+    },
+    {
+      "elapsed_seconds": 1152.01,
+      "frame_time": 1790670353,
+      "checked_models": 8,
+      "source_ledger_points": [
+        "strain_01",
+        "strain_02",
+        "temp_outer_01",
+        "temp_inner_01"
+      ],
+      "queues": {
+        "ingress": 0,
+        "ordinary": 0,
+        "event": 0,
+        "capture_jobs": 0,
+        "capture_bytes": 0
+      },
+      "storage_budget": {
+        "bytes_written": 36443035,
+        "development_growth": 77348864,
+        "budget_bytes": 134217728,
+        "minimum_free_bytes": 1330474299392
+      },
+      "event_phase": "POST_CAPTURE"
+    },
+    {
+      "elapsed_seconds": 1212.72,
+      "frame_time": 1790670414,
+      "checked_models": 8,
+      "source_ledger_points": [
+        "strain_01",
+        "strain_02",
+        "temp_outer_01",
+        "temp_inner_01"
+      ],
+      "queues": {
+        "ingress": 0,
+        "ordinary": 0,
+        "event": 0,
+        "capture_jobs": 0,
+        "capture_bytes": 0
+      },
+      "storage_budget": {
+        "bytes_written": 37783548,
+        "development_growth": 80789504,
+        "budget_bytes": 134217728,
+        "minimum_free_bytes": 1330470563840
+      },
+      "event_phase": "POST_CAPTURE"
+    },
+    {
+      "elapsed_seconds": 1273.5,
+      "frame_time": 1790670475,
+      "checked_models": 8,
+      "source_ledger_points": [
+        "strain_01",
+        "strain_02",
+        "temp_outer_01",
+        "temp_inner_01"
+      ],
+      "queues": {
+        "ingress": 0,
+        "ordinary": 0,
+        "event": 0,
+        "capture_jobs": 0,
+        "capture_bytes": 0
+      },
+      "storage_budget": {
+        "bytes_written": 39127492,
+        "development_growth": 82649088,
+        "budget_bytes": 134217728,
+        "minimum_free_bytes": 1330435141632
+      },
+      "event_phase": "POST_CAPTURE"
+    },
+    {
+      "elapsed_seconds": 1334.18,
+      "frame_time": 1790670536,
+      "checked_models": 8,
+      "source_ledger_points": [
+        "strain_01",
+        "strain_02",
+        "temp_outer_01",
+        "temp_inner_01"
+      ],
+      "queues": {
+        "ingress": 0,
+        "ordinary": 0,
+        "event": 0,
+        "capture_jobs": 0,
+        "capture_bytes": 0
+      },
+      "storage_budget": {
+        "bytes_written": 40471051,
+        "development_growth": 83984384,
+        "budget_bytes": 134217728,
+        "minimum_free_bytes": 1330434002944
+      },
+      "event_phase": "POST_CAPTURE"
+    },
+    {
+      "elapsed_seconds": 1394.91,
+      "frame_time": 1790670596,
+      "checked_models": 8,
+      "source_ledger_points": [
+        "strain_01",
+        "strain_02",
+        "temp_outer_01",
+        "temp_inner_01"
+      ],
+      "queues": {
+        "ingress": 0,
+        "ordinary": 0,
+        "event": 0,
+        "capture_jobs": 0,
+        "capture_bytes": 0
+      },
+      "storage_budget": {
+        "bytes_written": 41796357,
+        "development_growth": 87113728,
+        "budget_bytes": 134217728,
+        "minimum_free_bytes": 1330430750720
+      },
+      "event_phase": "POST_CAPTURE"
+    },
+    {
+      "elapsed_seconds": 1455.66,
+      "frame_time": 1790670657,
+      "checked_models": 8,
+      "source_ledger_points": [
+        "strain_01",
+        "strain_02",
+        "temp_outer_01",
+        "temp_inner_01"
+      ],
+      "queues": {
+        "ingress": 0,
+        "ordinary": 0,
+        "event": 0,
+        "capture_jobs": 0,
+        "capture_bytes": 0
+      },
+      "storage_budget": {
+        "bytes_written": 43136949,
+        "development_growth": 90628096,
+        "budget_bytes": 134217728,
+        "minimum_free_bytes": 1330427088896
+      },
+      "event_phase": "POST_CAPTURE"
+    },
+    {
+      "elapsed_seconds": 1516.42,
+      "frame_time": 1790670718,
+      "checked_models": 8,
+      "source_ledger_points": [
+        "strain_01",
+        "strain_02",
+        "temp_outer_01",
+        "temp_inner_01"
+      ],
+      "queues": {
+        "ingress": 0,
+        "ordinary": 0,
+        "event": 0,
+        "capture_jobs": 0,
+        "capture_bytes": 0
+      },
+      "storage_budget": {
+        "bytes_written": 44480261,
+        "development_growth": 94068736,
+        "budget_bytes": 134217728,
+        "minimum_free_bytes": 1330423894016
+      },
+      "event_phase": "POST_CAPTURE"
+    },
+    {
+      "elapsed_seconds": 1577.14,
+      "frame_time": 1790670779,
+      "checked_models": 8,
+      "source_ledger_points": [
+        "strain_01",
+        "strain_02",
+        "temp_outer_01",
+        "temp_inner_01"
+      ],
+      "queues": {
+        "ingress": 0,
+        "ordinary": 0,
+        "event": 0,
+        "capture_jobs": 0,
+        "capture_bytes": 0
+      },
+      "storage_budget": {
+        "bytes_written": 45823726,
+        "development_growth": 97812480,
+        "budget_bytes": 134217728,
+        "minimum_free_bytes": 1330420084736
+      },
+      "event_phase": "POST_CAPTURE"
+    },
+    {
+      "elapsed_seconds": 1637.85,
+      "frame_time": 1790670839,
+      "checked_models": 8,
+      "source_ledger_points": [
+        "strain_01",
+        "strain_02",
+        "temp_outer_01",
+        "temp_inner_01"
+      ],
+      "queues": {
+        "ingress": 0,
+        "ordinary": 0,
+        "event": 0,
+        "capture_jobs": 0,
+        "capture_bytes": 0
+      },
+      "storage_budget": {
+        "bytes_written": 47150286,
+        "development_growth": 101433344,
+        "budget_bytes": 134217728,
+        "minimum_free_bytes": 1330416070656
+      },
+      "event_phase": "POST_CAPTURE"
+    },
+    {
+      "elapsed_seconds": 1698.51,
+      "frame_time": 1790670900,
+      "checked_models": 8,
+      "source_ledger_points": [
+        "strain_01",
+        "strain_02",
+        "temp_outer_01",
+        "temp_inner_01"
+      ],
+      "queues": {
+        "ingress": 0,
+        "ordinary": 0,
+        "event": 0,
+        "capture_jobs": 0,
+        "capture_bytes": 0
+      },
+      "storage_budget": {
+        "bytes_written": 48490548,
+        "development_growth": 103112704,
+        "budget_bytes": 134217728,
+        "minimum_free_bytes": 1330414587904
+      },
+      "event_phase": "POST_CAPTURE"
+    },
+    {
+      "elapsed_seconds": 1759.27,
+      "frame_time": 1790670961,
+      "checked_models": 8,
+      "source_ledger_points": [
+        "strain_01",
+        "strain_02",
+        "temp_outer_01",
+        "temp_inner_01"
+      ],
+      "queues": {
+        "ingress": 0,
+        "ordinary": 0,
+        "event": 0,
+        "capture_jobs": 0,
+        "capture_bytes": 0
+      },
+      "storage_budget": {
+        "bytes_written": 49834043,
+        "development_growth": 104562688,
+        "budget_bytes": 134217728,
+        "minimum_free_bytes": 1330413260800
+      },
+      "event_phase": "POST_CAPTURE"
+    },
+    {
+      "elapsed_seconds": 1819.97,
+      "frame_time": 1790671021,
+      "checked_models": 8,
+      "source_ledger_points": [
+        "strain_01",
+        "strain_02",
+        "temp_outer_01",
+        "temp_inner_01"
+      ],
+      "queues": {
+        "ingress": 0,
+        "ordinary": 0,
+        "event": 0,
+        "capture_jobs": 0,
+        "capture_bytes": 0
+      },
+      "storage_budget": {
+        "bytes_written": 51159653,
+        "development_growth": 107216896,
+        "budget_bytes": 134217728,
+        "minimum_free_bytes": 1330410524672
+      },
+      "event_phase": "POST_CAPTURE"
+    },
+    {
+      "elapsed_seconds": 1880.65,
+      "frame_time": 1790671082,
+      "checked_models": 8,
+      "source_ledger_points": [
+        "strain_01",
+        "strain_02",
+        "temp_outer_01",
+        "temp_inner_01"
+      ],
+      "queues": {
+        "ingress": 0,
+        "ordinary": 0,
+        "event": 0,
+        "capture_jobs": 0,
+        "capture_bytes": 0
+      },
+      "storage_budget": {
+        "bytes_written": 52502991,
+        "development_growth": 110592000,
+        "budget_bytes": 134217728,
+        "minimum_free_bytes": 1330407010304
+      },
+      "event_phase": "POST_CAPTURE"
+    },
+    {
+      "elapsed_seconds": 1944.64,
+      "frame_time": 1790671146,
+      "checked_models": 8,
+      "source_ledger_points": [
+        "strain_01",
+        "strain_02",
+        "temp_outer_01",
+        "temp_inner_01"
+      ],
+      "queues": {
+        "ingress": 0,
+        "ordinary": 0,
+        "event": 0,
+        "capture_jobs": 0,
+        "capture_bytes": 0
+      },
+      "storage_budget": {
+        "bytes_written": 53719207,
+        "development_growth": 114073600,
+        "budget_bytes": 134217728,
+        "minimum_free_bytes": 1330403733504
+      },
+      "event_phase": "CLOSED"
+    },
+    {
+      "elapsed_seconds": 2005.38,
+      "frame_time": 1790671207,
+      "checked_models": 8,
+      "source_ledger_points": [
+        "strain_01",
+        "strain_02",
+        "temp_outer_01",
+        "temp_inner_01"
+      ],
+      "queues": {
+        "ingress": 0,
+        "ordinary": 0,
+        "event": 0,
+        "capture_jobs": 0,
+        "capture_bytes": 0
+      },
+      "storage_budget": {
+        "bytes_written": 54819370,
+        "development_growth": 117325824,
+        "budget_bytes": 134217728,
+        "minimum_free_bytes": 1330400276480
+      },
+      "event_phase": "CLOSED"
+    },
+    {
+      "elapsed_seconds": 2066.11,
+      "frame_time": 1790671268,
+      "checked_models": 8,
+      "source_ledger_points": [
+        "strain_01",
+        "strain_02",
+        "temp_outer_01",
+        "temp_inner_01"
+      ],
+      "queues": {
+        "ingress": 0,
+        "ordinary": 0,
+        "event": 0,
+        "capture_jobs": 0,
+        "capture_bytes": 0
+      },
+      "storage_budget": {
+        "bytes_written": 55919331,
+        "development_growth": 120471552,
+        "budget_bytes": 134217728,
+        "minimum_free_bytes": 1330397270016
+      },
+      "event_phase": "CLOSED"
+    }
+  ],
+  "scope": "simulated protocols; not plant performance acceptance",
+  "scenario_triggered_at": 1790669807.574781,
+  "capture": {
+    "event": {
+      "id": "e1293355-b86d-4f2b-a174-3066ad8cc00e",
+      "end": 1790671098.8054318,
+      "phase": "CLOSED",
+      "start": 1790669208.1853442,
+      "run_id": "c45d17ba-e35a-45aa-8467-1c1ae576cc8f",
+      "coverage": "OBSERVED",
+      "revision": 35,
+      "config_id": "581828078ed52d1f10f8b00894fd9b829e08f1228a217e927f9009eb3234aae4",
+      "post_mono": 15474.9350017,
+      "profile_id": "wall_temperature_recall",
+      "previous_id": null,
+      "close_reason": "RECOVERED",
+      "recovered_at": 1790669898.7999444,
+      "started_mono": 15384.3204012,
+      "triggered_at": 1790669808.1853442,
+      "recovery_mono": 15414.9007498,
+      "archive_status": "SUBMITTED",
+      "unavailable_mono": null
+    },
+    "source_ranges": {
+      "strain_01": {
+        "count": 1869,
+        "first": 1790669209.1576257,
+        "last": 1790671097.822204
+      },
+      "temp_outer_01": {
+        "count": 1860,
+        "first": 1790669209.157936,
+        "last": 1790671097.8296976
+      },
+      "temp_inner_01": {
+        "count": 1860,
+        "first": 1790669209.1582391,
+        "last": 1790671097.8301263
+      },
+      "load_mw": {
+        "count": 1860,
+        "first": 1790669209.161901,
+        "last": 1790671097.8348982
+      }
+    },
+    "sample_count": 7449,
+    "product_count": 1891,
+    "history_rows": 11340,
+    "checked_stress_frames": 1890
+  },
+  "final_health": {
+    "uptime_seconds": 2119.9248264000016,
+    "storage_budget": {
+      "bytes_written": 56514734,
+      "development_growth": 122331136,
+      "budget_bytes": 134217728,
+      "minimum_free_bytes": 1330395303936
+    },
+    "runtime": {
+      "ingress_dropped": 0,
+      "archive_dropped": 0,
+      "write_failures": 0,
+      "last_write": 1790671301.2916195,
+      "accounts": "DATABASE_AUTHORITATIVE",
+      "last_frame_write": 1790671301.2916195,
+      "write_error": null
+    },
+    "engine": {},
+    "storage": {
+      "primary_metrics": {
+        "bytes": 128407231,
+        "tables": [
+          {
+            "relname": "gap",
+            "n_live_tup": 0,
+            "n_dead_tup": 0,
+            "last_autovacuum": null
+          },
+          {
+            "relname": "config_snapshot",
+            "n_live_tup": 2,
+            "n_dead_tup": 0,
+            "last_autovacuum": null
+          },
+          {
+            "relname": "event_frame",
+            "n_live_tup": 1891,
+            "n_dead_tup": 0,
+            "last_autovacuum": "2026-09-29 16:28:07.873172+08"
+          },
+          {
+            "relname": "trigger_fact",
+            "n_live_tup": 30,
+            "n_dead_tup": 0,
+            "last_autovacuum": null
+          },
+          {
+            "relname": "write_probe",
+            "n_live_tup": 0,
+            "n_dead_tup": 0,
+            "last_autovacuum": null
+          },
+          {
+            "relname": "account",
+            "n_live_tup": 8,
+            "n_dead_tup": 8,
+            "last_autovacuum": null
+          },
+          {
+            "relname": "management_log",
+            "n_live_tup": 18,
+            "n_dead_tup": 0,
+            "last_autovacuum": null
+          },
+          {
+            "relname": "source_counter",
+            "n_live_tup": 31,
+            "n_dead_tup": 31,
+            "last_autovacuum": "2026-09-29 16:40:09.143209+08"
+          },
+          {
+            "relname": "frame_value",
+            "n_live_tup": 117597,
+            "n_dead_tup": 12796,
+            "last_autovacuum": "2026-09-29 16:34:14.982955+08"
+          },
+          {
+            "relname": "event",
+            "n_live_tup": 1,
+            "n_dead_tup": 15,
+            "last_autovacuum": "2026-09-29 16:17:07.631591+08"
+          },
+          {
+            "relname": "schema_version",
+            "n_live_tup": 3,
+            "n_dead_tup": 0,
+            "last_autovacuum": null
+          },
+          {
+            "relname": "routing_state",
+            "n_live_tup": 0,
+            "n_dead_tup": 0,
+            "last_autovacuum": null
+          },
+          {
+            "relname": "event_sample",
+            "n_live_tup": 7453,
+            "n_dead_tup": 0,
+            "last_autovacuum": "2026-09-29 16:35:08.149003+08"
+          },
+          {
+            "relname": "frame",
+            "n_live_tup": 2502,
+            "n_dead_tup": 0,
+            "last_autovacuum": "2026-09-29 16:20:07.654558+08"
+          },
+          {
+            "relname": "source_sample",
+            "n_live_tup": 7453,
+            "n_dead_tup": 0,
+            "last_autovacuum": "2026-09-29 16:35:08.11213+08"
+          }
+        ],
+        "last_frame_saved_at": 1790671260.226032,
+        "seed": [
+          {
+            "point_id": "strain_01",
+            "covered_seconds": 2502,
+            "first_window": 1790668725.0,
+            "last_window": 1790671260.0,
+            "good_seconds": 2500
+          },
+          {
+            "point_id": "temp_outer_01",
+            "covered_seconds": 2502,
+            "first_window": 1790668725.0,
+            "last_window": 1790671260.0,
+            "good_seconds": 2497
+          },
+          {
+            "point_id": "temp_inner_01",
+            "covered_seconds": 2502,
+            "first_window": 1790668725.0,
+            "last_window": 1790671260.0,
+            "good_seconds": 2497
+          },
+          {
+            "point_id": "strain_02",
+            "covered_seconds": 2502,
+            "first_window": 1790668725.0,
+            "last_window": 1790671260.0,
+            "good_seconds": 2500
+          },
+          {
+            "point_id": "temp_outer_02",
+            "covered_seconds": 2502,
+            "first_window": 1790668725.0,
+            "last_window": 1790671260.0,
+            "good_seconds": 2497
+          },
+          {
+            "point_id": "temp_inner_02",
+            "covered_seconds": 2502,
+            "first_window": 1790668725.0,
+            "last_window": 1790671260.0,
+            "good_seconds": 2497
+          },
+          {
+            "point_id": "strain_03",
+            "covered_seconds": 2502,
+            "first_window": 1790668725.0,
+            "last_window": 1790671260.0,
+            "good_seconds": 2500
+          },
+          {
+            "point_id": "temp_outer_03",
+            "covered_seconds": 2502,
+            "first_window": 1790668725.0,
+            "last_window": 1790671260.0,
+            "good_seconds": 2497
+          },
+          {
+            "point_id": "temp_inner_03",
+            "covered_seconds": 2502,
+            "first_window": 1790668725.0,
+            "last_window": 1790671260.0,
+            "good_seconds": 2497
+          },
+          {
+            "point_id": "strain_04",
+            "covered_seconds": 2502,
+            "first_window": 1790668725.0,
+            "last_window": 1790671260.0,
+            "good_seconds": 2500
+          },
+          {
+            "point_id": "temp_outer_04",
+            "covered_seconds": 2502,
+            "first_window": 1790668725.0,
+            "last_window": 1790671260.0,
+            "good_seconds": 2497
+          },
+          {
+            "point_id": "temp_inner_04",
+            "covered_seconds": 2502,
+            "first_window": 1790668725.0,
+            "last_window": 1790671260.0,
+            "good_seconds": 2497
+          },
+          {
+            "point_id": "strain_05",
+            "covered_seconds": 2502,
+            "first_window": 1790668725.0,
+            "last_window": 1790671260.0,
+            "good_seconds": 2500
+          },
+          {
+            "point_id": "temp_outer_05",
+            "covered_seconds": 2502,
+            "first_window": 1790668725.0,
+            "last_window": 1790671260.0,
+            "good_seconds": 2497
+          },
+          {
+            "point_id": "temp_inner_05",
+            "covered_seconds": 2502,
+            "first_window": 1790668725.0,
+            "last_window": 1790671260.0,
+            "good_seconds": 2497
+          },
+          {
+            "point_id": "strain_06",
+            "covered_seconds": 2502,
+            "first_window": 1790668725.0,
+            "last_window": 1790671260.0,
+            "good_seconds": 2500
+          },
+          {
+            "point_id": "temp_outer_06",
+            "covered_seconds": 2502,
+            "first_window": 1790668725.0,
+            "last_window": 1790671260.0,
+            "good_seconds": 2497
+          },
+          {
+            "point_id": "temp_inner_06",
+            "covered_seconds": 2502,
+            "first_window": 1790668725.0,
+            "last_window": 1790671260.0,
+            "good_seconds": 2497
+          },
+          {
+            "point_id": "strain_07",
+            "covered_seconds": 2502,
+            "first_window": 1790668725.0,
+            "last_window": 1790671260.0,
+            "good_seconds": 2500
+          },
+          {
+            "point_id": "temp_outer_07",
+            "covered_seconds": 2502,
+            "first_window": 1790668725.0,
+            "last_window": 1790671260.0,
+            "good_seconds": 2497
+          },
+          {
+            "point_id": "temp_inner_07",
+            "covered_seconds": 2502,
+            "first_window": 1790668725.0,
+            "last_window": 1790671260.0,
+            "good_seconds": 2497
+          },
+          {
+            "point_id": "strain_08",
+            "covered_seconds": 2502,
+            "first_window": 1790668725.0,
+            "last_window": 1790671260.0,
+            "good_seconds": 2500
+          },
+          {
+            "point_id": "temp_outer_08",
+            "covered_seconds": 2502,
+            "first_window": 1790668725.0,
+            "last_window": 1790671260.0,
+            "good_seconds": 2497
+          },
+          {
+            "point_id": "temp_inner_08",
+            "covered_seconds": 2502,
+            "first_window": 1790668725.0,
+            "last_window": 1790671260.0,
+            "good_seconds": 2497
+          },
+          {
+            "point_id": "load_mw",
+            "covered_seconds": 2502,
+            "first_window": 1790668725.0,
+            "last_window": 1790671260.0,
+            "good_seconds": 2497
+          },
+          {
+            "point_id": "main_steam_pressure",
+            "covered_seconds": 2502,
+            "first_window": 1790668725.0,
+            "last_window": 1790671260.0,
+            "good_seconds": 2497
+          },
+          {
+            "point_id": "main_steam_temperature",
+            "covered_seconds": 2502,
+            "first_window": 1790668725.0,
+            "last_window": 1790671260.0,
+            "good_seconds": 2497
+          },
+          {
+            "point_id": "reheat_temperature",
+            "covered_seconds": 2502,
+            "first_window": 1790668725.0,
+            "last_window": 1790671260.0,
+            "good_seconds": 2497
+          },
+          {
+            "point_id": "feedwater_temperature",
+            "covered_seconds": 2502,
+            "first_window": 1790668725.0,
+            "last_window": 1790671260.0,
+            "good_seconds": 2497
+          },
+          {
+            "point_id": "feedwater_flow",
+            "covered_seconds": 2502,
+            "first_window": 1790668725.0,
+            "last_window": 1790671260.0,
+            "good_seconds": 2497
+          },
+          {
+            "point_id": "oxygen",
+            "covered_seconds": 2502,
+            "first_window": 1790668725.0,
+            "last_window": 1790671260.0,
+            "good_seconds": 2497
+          }
+        ],
+        "seed_order": "COMMITTED_SEQUENCE; endpoints are not continuous wall-clock coverage",
+        "measured_at": 1790671261.3066788
+      },
+      "primary": "OK",
+      "emergency_metrics": {
+        "bytes": 8951487,
+        "tables": [
+          {
+            "relname": "gap",
+            "n_live_tup": 0,
+            "n_dead_tup": 0,
+            "last_autovacuum": null
+          },
+          {
+            "relname": "config_snapshot",
+            "n_live_tup": 2,
+            "n_dead_tup": 0,
+            "last_autovacuum": null
+          },
+          {
+            "relname": "event_frame",
+            "n_live_tup": 0,
+            "n_dead_tup": 0,
+            "last_autovacuum": null
+          },
+          {
+            "relname": "trigger_fact",
+            "n_live_tup": 0,
+            "n_dead_tup": 0,
+            "last_autovacuum": null
+          },
+          {
+            "relname": "write_probe",
+            "n_live_tup": 0,
+            "n_dead_tup": 0,
+            "last_autovacuum": null
+          },
+          {
+            "relname": "account",
+            "n_live_tup": 0,
+            "n_dead_tup": 0,
+            "last_autovacuum": null
+          },
+          {
+            "relname": "management_log",
+            "n_live_tup": 0,
+            "n_dead_tup": 0,
+            "last_autovacuum": null
+          },
+          {
+            "relname": "source_counter",
+            "n_live_tup": 0,
+            "n_dead_tup": 0,
+            "last_autovacuum": null
+          },
+          {
+            "relname": "frame_value",
+            "n_live_tup": 0,
+            "n_dead_tup": 0,
+            "last_autovacuum": null
+          },
+          {
+            "relname": "event",
+            "n_live_tup": 0,
+            "n_dead_tup": 0,
+            "last_autovacuum": null
+          },
+          {
+            "relname": "schema_version",
+            "n_live_tup": 3,
+            "n_dead_tup": 0,
+            "last_autovacuum": null
+          },
+          {
+            "relname": "routing_state",
+            "n_live_tup": 0,
+            "n_dead_tup": 0,
+            "last_autovacuum": null
+          },
+          {
+            "relname": "event_sample",
+            "n_live_tup": 0,
+            "n_dead_tup": 0,
+            "last_autovacuum": null
+          },
+          {
+            "relname": "frame",
+            "n_live_tup": 0,
+            "n_dead_tup": 0,
+            "last_autovacuum": null
+          },
+          {
+            "relname": "source_sample",
+            "n_live_tup": 0,
+            "n_dead_tup": 0,
+            "last_autovacuum": null
+          }
+        ],
+        "last_frame_saved_at": null,
+        "seed": [
+          {
+            "point_id": "strain_01",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "temp_outer_01",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "temp_inner_01",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "strain_02",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "temp_outer_02",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "temp_inner_02",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "strain_03",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "temp_outer_03",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "temp_inner_03",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "strain_04",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "temp_outer_04",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "temp_inner_04",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "strain_05",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "temp_outer_05",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "temp_inner_05",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "strain_06",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "temp_outer_06",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "temp_inner_06",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "strain_07",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "temp_outer_07",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "temp_inner_07",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "strain_08",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "temp_outer_08",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "temp_inner_08",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "load_mw",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "main_steam_pressure",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "main_steam_temperature",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "reheat_temperature",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "feedwater_temperature",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "feedwater_flow",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "oxygen",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          }
+        ],
+        "seed_order": "COMMITTED_SEQUENCE; endpoints are not continuous wall-clock coverage",
+        "measured_at": 1790671261.36685
+      },
+      "emergency": "OK",
+      "cleaning": false,
+      "primary_cleanup": {
+        "ordinary_removed": 0,
+        "event_results_removed": 0,
+        "source_removed": 0,
+        "seconds": 0.006437399999413174,
+        "batch_saturated": false
+      },
+      "emergency_cleanup": {
+        "ordinary_removed": 0,
+        "event_results_removed": 0,
+        "source_removed": 0,
+        "seconds": 0.0011754000006476417,
+        "batch_saturated": false
+      }
+    },
+    "routing": "PRIMARY",
+    "history_archive": {
+      "last_success_at": 1790671301.2916195,
+      "seconds_since_last_success": 0.8676986694335938,
+      "suspended": false
+    },
+    "queues": {
+      "ingress": 0,
+      "ordinary": 0,
+      "event": 0,
+      "capture_jobs": 0,
+      "capture_bytes": 0
+    },
+    "points": {
+      "strain_01": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 595
+      },
+      "temp_outer_01": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 592
+      },
+      "temp_inner_01": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 592
+      },
+      "strain_02": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 595
+      },
+      "temp_outer_02": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 592
+      },
+      "temp_inner_02": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 592
+      },
+      "strain_03": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 595
+      },
+      "temp_outer_03": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 592
+      },
+      "temp_inner_03": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 592
+      },
+      "strain_04": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 595
+      },
+      "temp_outer_04": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 592
+      },
+      "temp_inner_04": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 592
+      },
+      "strain_05": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 595
+      },
+      "temp_outer_05": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 592
+      },
+      "temp_inner_05": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 592
+      },
+      "strain_06": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 595
+      },
+      "temp_outer_06": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 592
+      },
+      "temp_inner_06": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 592
+      },
+      "strain_07": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 595
+      },
+      "temp_outer_07": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 592
+      },
+      "temp_inner_07": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 592
+      },
+      "strain_08": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 595
+      },
+      "temp_outer_08": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 592
+      },
+      "temp_inner_08": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 592
+      },
+      "load_mw": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 592
+      },
+      "main_steam_pressure": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 592
+      },
+      "main_steam_temperature": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 592
+      },
+      "reheat_temperature": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 592
+      },
+      "feedwater_temperature": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 592
+      },
+      "feedwater_flow": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 592
+      },
+      "oxygen": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 592
+      }
+    },
+    "capabilities": {
+      "real_sources": [
+        "mb_field",
+        "ua_field"
+      ],
+      "unconfigured_derived": []
+    }
+  },
+  "elapsed_seconds": 2100.062,
+  "ended_at": "2026-09-29T08:41:42.160590+00:00"
+}

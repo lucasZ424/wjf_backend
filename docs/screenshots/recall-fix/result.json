@@ -1,0 +1,10 @@
+{
+  "passed": [
+    "Real Modbus/OPC UA thermal trigger appears without manual event refresh",
+    "Newly listed event opens persisted recall history",
+    "UI-only injected stopped-archive warning survives cleared notice and page navigation",
+    "Warning clears after real healthy archive status returns"
+  ],
+  "page_errors": [],
+  "screenshot_note": "Screenshots captured immediately after the successful test in a second browser session; no second scenario triggered. Stopped-archive screenshot uses a browser-only mocked health response."
+}

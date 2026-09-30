@@ -1,0 +1,1050 @@
+{
+  "mode": "development",
+  "time_basis": "received",
+  "project": {
+    "title": "HTSG 660 MW 科研模拟监测",
+    "rated_mw": 660,
+    "notice": "模拟现场 · 参数为科研假设 · 非现场实测",
+    "basis": "过程量参考已有660MW锅炉参数目录；给水流量、壁温、应变、配对及阈值为实验假设，不代表现场或报警标准。"
+  },
+  "sources": [
+    {
+      "id": "mb_field",
+      "kind": "modbus",
+      "enabled": true,
+      "host": "127.0.0.1",
+      "port": 15020,
+      "interval": 1,
+      "timeout": 1
+    },
+    {
+      "id": "ua_field",
+      "kind": "opcua",
+      "enabled": true,
+      "endpoint": "opc.tcp://127.0.0.1:14840/htsg/",
+      "interval": 1,
+      "timeout": 1
+    }
+  ],
+  "points": [
+    {
+      "id": "strain_01",
+      "source": "mb_field",
+      "unit": "με",
+      "aggregation": "Mean",
+      "high": 400,
+      "max_age": 2,
+      "stale_after": 5,
+      "address": 0,
+      "device_id": 1,
+      "data_type": "float32"
+    },
+    {
+      "id": "temp_outer_01",
+      "source": "ua_field",
+      "unit": "degC",
+      "aggregation": "Mean",
+      "high": 510,
+      "max_age": 2,
+      "stale_after": 5,
+      "node_id": "ns=2;s=temp_outer_01"
+    },
+    {
+      "id": "temp_inner_01",
+      "source": "ua_field",
+      "unit": "degC",
+      "aggregation": "Mean",
+      "high": 510,
+      "max_age": 2,
+      "stale_after": 5,
+      "node_id": "ns=2;s=temp_inner_01"
+    },
+    {
+      "id": "strain_02",
+      "source": "mb_field",
+      "unit": "με",
+      "aggregation": "Mean",
+      "high": 400,
+      "max_age": 2,
+      "stale_after": 5,
+      "address": 2,
+      "device_id": 1,
+      "data_type": "float32"
+    },
+    {
+      "id": "temp_outer_02",
+      "source": "ua_field",
+      "unit": "degC",
+      "aggregation": "Mean",
+      "high": 510,
+      "max_age": 2,
+      "stale_after": 5,
+      "node_id": "ns=2;s=temp_outer_02"
+    },
+    {
+      "id": "temp_inner_02",
+      "source": "ua_field",
+      "unit": "degC",
+      "aggregation": "Mean",
+      "high": 510,
+      "max_age": 2,
+      "stale_after": 5,
+      "node_id": "ns=2;s=temp_inner_02"
+    },
+    {
+      "id": "strain_03",
+      "source": "mb_field",
+      "unit": "με",
+      "aggregation": "Mean",
+      "high": 400,
+      "max_age": 2,
+      "stale_after": 5,
+      "address": 4,
+      "device_id": 1,
+      "data_type": "float32"
+    },
+    {
+      "id": "temp_outer_03",
+      "source": "ua_field",
+      "unit": "degC",
+      "aggregation": "Mean",
+      "high": 510,
+      "max_age": 2,
+      "stale_after": 5,
+      "node_id": "ns=2;s=temp_outer_03"
+    },
+    {
+      "id": "temp_inner_03",
+      "source": "ua_field",
+      "unit": "degC",
+      "aggregation": "Mean",
+      "high": 510,
+      "max_age": 2,
+      "stale_after": 5,
+      "node_id": "ns=2;s=temp_inner_03"
+    },
+    {
+      "id": "strain_04",
+      "source": "mb_field",
+      "unit": "με",
+      "aggregation": "Mean",
+      "high": 400,
+      "max_age": 2,
+      "stale_after": 5,
+      "address": 6,
+      "device_id": 1,
+      "data_type": "float32"
+    },
+    {
+      "id": "temp_outer_04",
+      "source": "ua_field",
+      "unit": "degC",
+      "aggregation": "Mean",
+      "high": 510,
+      "max_age": 2,
+      "stale_after": 5,
+      "node_id": "ns=2;s=temp_outer_04"
+    },
+    {
+      "id": "temp_inner_04",
+      "source": "ua_field",
+      "unit": "degC",
+      "aggregation": "Mean",
+      "high": 510,
+      "max_age": 2,
+      "stale_after": 5,
+      "node_id": "ns=2;s=temp_inner_04"
+    },
+    {
+      "id": "strain_05",
+      "source": "mb_field",
+      "unit": "με",
+      "aggregation": "Mean",
+      "high": 400,
+      "max_age": 2,
+      "stale_after": 5,
+      "address": 8,
+      "device_id": 1,
+      "data_type": "float32"
+    },
+    {
+      "id": "temp_outer_05",
+      "source": "ua_field",
+      "unit": "degC",
+      "aggregation": "Mean",
+      "high": 510,
+      "max_age": 2,
+      "stale_after": 5,
+      "node_id": "ns=2;s=temp_outer_05"
+    },
+    {
+      "id": "temp_inner_05",
+      "source": "ua_field",
+      "unit": "degC",
+      "aggregation": "Mean",
+      "high": 510,
+      "max_age": 2,
+      "stale_after": 5,
+      "node_id": "ns=2;s=temp_inner_05"
+    },
+    {
+      "id": "strain_06",
+      "source": "mb_field",
+      "unit": "με",
+      "aggregation": "Mean",
+      "high": 400,
+      "max_age": 2,
+      "stale_after": 5,
+      "address": 10,
+      "device_id": 1,
+      "data_type": "float32"
+    },
+    {
+      "id": "temp_outer_06",
+      "source": "ua_field",
+      "unit": "degC",
+      "aggregation": "Mean",
+      "high": 510,
+      "max_age": 2,
+      "stale_after": 5,
+      "node_id": "ns=2;s=temp_outer_06"
+    },
+    {
+      "id": "temp_inner_06",
+      "source": "ua_field",
+      "unit": "degC",
+      "aggregation": "Mean",
+      "high": 510,
+      "max_age": 2,
+      "stale_after": 5,
+      "node_id": "ns=2;s=temp_inner_06"
+    },
+    {
+      "id": "strain_07",
+      "source": "mb_field",
+      "unit": "με",
+      "aggregation": "Mean",
+      "high": 400,
+      "max_age": 2,
+      "stale_after": 5,
+      "address": 12,
+      "device_id": 1,
+      "data_type": "float32"
+    },
+    {
+      "id": "temp_outer_07",
+      "source": "ua_field",
+      "unit": "degC",
+      "aggregation": "Mean",
+      "high": 510,
+      "max_age": 2,
+      "stale_after": 5,
+      "node_id": "ns=2;s=temp_outer_07"
+    },
+    {
+      "id": "temp_inner_07",
+      "source": "ua_field",
+      "unit": "degC",
+      "aggregation": "Mean",
+      "high": 510,
+      "max_age": 2,
+      "stale_after": 5,
+      "node_id": "ns=2;s=temp_inner_07"
+    },
+    {
+      "id": "strain_08",
+      "source": "mb_field",
+      "unit": "με",
+      "aggregation": "Mean",
+      "high": 400,
+      "max_age": 2,
+      "stale_after": 5,
+      "address": 14,
+      "device_id": 1,
+      "data_type": "float32"
+    },
+    {
+      "id": "temp_outer_08",
+      "source": "ua_field",
+      "unit": "degC",
+      "aggregation": "Mean",
+      "high": 510,
+      "max_age": 2,
+      "stale_after": 5,
+      "node_id": "ns=2;s=temp_outer_08"
+    },
+    {
+      "id": "temp_inner_08",
+      "source": "ua_field",
+      "unit": "degC",
+      "aggregation": "Mean",
+      "high": 510,
+      "max_age": 2,
+      "stale_after": 5,
+      "node_id": "ns=2;s=temp_inner_08"
+    },
+    {
+      "id": "load_mw",
+      "source": "ua_field",
+      "unit": "MW",
+      "aggregation": "Mean",
+      "max_age": 2,
+      "stale_after": 5,
+      "node_id": "ns=2;s=load_mw"
+    },
+    {
+      "id": "main_steam_pressure",
+      "source": "ua_field",
+      "unit": "MPa",
+      "aggregation": "Mean",
+      "max_age": 2,
+      "stale_after": 5,
+      "node_id": "ns=2;s=main_steam_pressure"
+    },
+    {
+      "id": "main_steam_temperature",
+      "source": "ua_field",
+      "unit": "degC",
+      "aggregation": "Mean",
+      "max_age": 2,
+      "stale_after": 5,
+      "node_id": "ns=2;s=main_steam_temperature"
+    },
+    {
+      "id": "reheat_temperature",
+      "source": "ua_field",
+      "unit": "degC",
+      "aggregation": "Mean",
+      "max_age": 2,
+      "stale_after": 5,
+      "node_id": "ns=2;s=reheat_temperature"
+    },
+    {
+      "id": "feedwater_temperature",
+      "source": "ua_field",
+      "unit": "degC",
+      "aggregation": "Mean",
+      "max_age": 2,
+      "stale_after": 5,
+      "node_id": "ns=2;s=feedwater_temperature"
+    },
+    {
+      "id": "feedwater_flow",
+      "source": "ua_field",
+      "unit": "t/h",
+      "aggregation": "Mean",
+      "max_age": 2,
+      "stale_after": 5,
+      "node_id": "ns=2;s=feedwater_flow"
+    },
+    {
+      "id": "oxygen",
+      "source": "ua_field",
+      "unit": "%",
+      "aggregation": "Mean",
+      "max_age": 2,
+      "stale_after": 5,
+      "node_id": "ns=2;s=oxygen"
+    }
+  ],
+  "derived": [
+    {
+      "id": "delta_t_01",
+      "inputs": [
+        "temp_inner_01",
+        "temp_outer_01"
+      ],
+      "operation": "difference",
+      "unit": "degC"
+    },
+    {
+      "id": "stress_01",
+      "inputs": [
+        "temp_inner_01",
+        "temp_outer_01"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_02",
+      "inputs": [
+        "temp_inner_02",
+        "temp_outer_02"
+      ],
+      "operation": "difference",
+      "unit": "degC"
+    },
+    {
+      "id": "stress_02",
+      "inputs": [
+        "temp_inner_02",
+        "temp_outer_02"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_03",
+      "inputs": [
+        "temp_inner_03",
+        "temp_outer_03"
+      ],
+      "operation": "difference",
+      "unit": "degC"
+    },
+    {
+      "id": "stress_03",
+      "inputs": [
+        "temp_inner_03",
+        "temp_outer_03"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_04",
+      "inputs": [
+        "temp_inner_04",
+        "temp_outer_04"
+      ],
+      "operation": "difference",
+      "unit": "degC"
+    },
+    {
+      "id": "stress_04",
+      "inputs": [
+        "temp_inner_04",
+        "temp_outer_04"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_05",
+      "inputs": [
+        "temp_inner_05",
+        "temp_outer_05"
+      ],
+      "operation": "difference",
+      "unit": "degC"
+    },
+    {
+      "id": "stress_05",
+      "inputs": [
+        "temp_inner_05",
+        "temp_outer_05"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_06",
+      "inputs": [
+        "temp_inner_06",
+        "temp_outer_06"
+      ],
+      "operation": "difference",
+      "unit": "degC"
+    },
+    {
+      "id": "stress_06",
+      "inputs": [
+        "temp_inner_06",
+        "temp_outer_06"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_07",
+      "inputs": [
+        "temp_inner_07",
+        "temp_outer_07"
+      ],
+      "operation": "difference",
+      "unit": "degC"
+    },
+    {
+      "id": "stress_07",
+      "inputs": [
+        "temp_inner_07",
+        "temp_outer_07"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_08",
+      "inputs": [
+        "temp_inner_08",
+        "temp_outer_08"
+      ],
+      "operation": "difference",
+      "unit": "degC"
+    },
+    {
+      "id": "stress_08",
+      "inputs": [
+        "temp_inner_08",
+        "temp_outer_08"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "model_id": "thermal_assumed"
+    }
+  ],
+  "models": [
+    {
+      "id": "thermal_assumed",
+      "young_mpa": 170000,
+      "expansion_per_k": 1.35e-05,
+      "restraint": 0.5,
+      "young_relative_uncertainty": 0.1,
+      "expansion_relative_uncertainty": 0.1,
+      "restraint_uncertainty": 0.2,
+      "version": "research-1",
+      "basis": "合成科研假设：E=170 GPa, alpha=13.5e-6/K, 约束系数0.5；区间为敏感性边界，非统计置信区间。",
+      "reference_urls": []
+    }
+  ],
+  "profiles": [
+    {
+      "id": "wall_temperature_recall",
+      "trigger_points": [
+        "temp_inner_01",
+        "temp_outer_01",
+        "strain_01"
+      ],
+      "source_points": [
+        "strain_01",
+        "temp_outer_01",
+        "temp_inner_01",
+        "load_mw"
+      ],
+      "derived_points": [
+        "delta_t_01",
+        "stress_01"
+      ],
+      "pre": 600,
+      "recovery": 60,
+      "post": 1200
+    }
+  ],
+  "limits": {
+    "capture_budget_bytes": 67108864,
+    "write_batch_records": 128,
+    "ring_samples": 10000,
+    "max_capture": 86400
+  },
+  "storage": {
+    "primary_path": "D:/HTSG-dev/primary",
+    "emergency_path": "D:/HTSG-dev/emergency",
+    "development_budget_bytes": 10737418240,
+    "cleanup_enabled": false,
+    "external_enabled": false,
+    "external_path": "",
+    "external_start": 0.95
+  },
+  "simulation": {
+    "enabled": true,
+    "seed": 6602026,
+    "interval": 1,
+    "control_host": "127.0.0.1",
+    "control_port": 14841,
+    "token_env": "HTSG_SIM_TOKEN",
+    "namespace_uri": "urn:htsg:research",
+    "ledger_limit": 120,
+    "validation_duration_seconds": 2100,
+    "signals": [
+      {
+        "point": "strain_01",
+        "base": 118,
+        "amplitude": 10,
+        "period": 120,
+        "noise": 0.2,
+        "phase": 0.1
+      },
+      {
+        "point": "temp_outer_01",
+        "base": 442,
+        "amplitude": 2,
+        "period": 120,
+        "noise": 0.03,
+        "phase": 0.1
+      },
+      {
+        "point": "temp_inner_01",
+        "base": 462,
+        "amplitude": 2,
+        "period": 120,
+        "noise": 0.03,
+        "phase": 0.1
+      },
+      {
+        "point": "strain_02",
+        "base": 126,
+        "amplitude": 10,
+        "period": 120,
+        "noise": 0.2,
+        "phase": 0.2
+      },
+      {
+        "point": "temp_outer_02",
+        "base": 444,
+        "amplitude": 2,
+        "period": 120,
+        "noise": 0.03,
+        "phase": 0.2
+      },
+      {
+        "point": "temp_inner_02",
+        "base": 464,
+        "amplitude": 2,
+        "period": 120,
+        "noise": 0.03,
+        "phase": 0.2
+      },
+      {
+        "point": "strain_03",
+        "base": 134,
+        "amplitude": 10,
+        "period": 120,
+        "noise": 0.2,
+        "phase": 0.30000000000000004
+      },
+      {
+        "point": "temp_outer_03",
+        "base": 446,
+        "amplitude": 2,
+        "period": 120,
+        "noise": 0.03,
+        "phase": 0.30000000000000004
+      },
+      {
+        "point": "temp_inner_03",
+        "base": 466,
+        "amplitude": 2,
+        "period": 120,
+        "noise": 0.03,
+        "phase": 0.30000000000000004
+      },
+      {
+        "point": "strain_04",
+        "base": 142,
+        "amplitude": 10,
+        "period": 120,
+        "noise": 0.2,
+        "phase": 0.4
+      },
+      {
+        "point": "temp_outer_04",
+        "base": 448,
+        "amplitude": 2,
+        "period": 120,
+        "noise": 0.03,
+        "phase": 0.4
+      },
+      {
+        "point": "temp_inner_04",
+        "base": 468,
+        "amplitude": 2,
+        "period": 120,
+        "noise": 0.03,
+        "phase": 0.4
+      },
+      {
+        "point": "strain_05",
+        "base": 150,
+        "amplitude": 10,
+        "period": 120,
+        "noise": 0.2,
+        "phase": 0.5
+      },
+      {
+        "point": "temp_outer_05",
+        "base": 450,
+        "amplitude": 2,
+        "period": 120,
+        "noise": 0.03,
+        "phase": 0.5
+      },
+      {
+        "point": "temp_inner_05",
+        "base": 470,
+        "amplitude": 2,
+        "period": 120,
+        "noise": 0.03,
+        "phase": 0.5
+      },
+      {
+        "point": "strain_06",
+        "base": 158,
+        "amplitude": 10,
+        "period": 120,
+        "noise": 0.2,
+        "phase": 0.6000000000000001
+      },
+      {
+        "point": "temp_outer_06",
+        "base": 452,
+        "amplitude": 2,
+        "period": 120,
+        "noise": 0.03,
+        "phase": 0.6000000000000001
+      },
+      {
+        "point": "temp_inner_06",
+        "base": 472,
+        "amplitude": 2,
+        "period": 120,
+        "noise": 0.03,
+        "phase": 0.6000000000000001
+      },
+      {
+        "point": "strain_07",
+        "base": 166,
+        "amplitude": 10,
+        "period": 120,
+        "noise": 0.2,
+        "phase": 0.7000000000000001
+      },
+      {
+        "point": "temp_outer_07",
+        "base": 454,
+        "amplitude": 2,
+        "period": 120,
+        "noise": 0.03,
+        "phase": 0.7000000000000001
+      },
+      {
+        "point": "temp_inner_07",
+        "base": 474,
+        "amplitude": 2,
+        "period": 120,
+        "noise": 0.03,
+        "phase": 0.7000000000000001
+      },
+      {
+        "point": "strain_08",
+        "base": 174,
+        "amplitude": 10,
+        "period": 120,
+        "noise": 0.2,
+        "phase": 0.8
+      },
+      {
+        "point": "temp_outer_08",
+        "base": 456,
+        "amplitude": 2,
+        "period": 120,
+        "noise": 0.03,
+        "phase": 0.8
+      },
+      {
+        "point": "temp_inner_08",
+        "base": 476,
+        "amplitude": 2,
+        "period": 120,
+        "noise": 0.03,
+        "phase": 0.8
+      },
+      {
+        "point": "load_mw",
+        "base": 600,
+        "amplitude": 20,
+        "period": 180,
+        "noise": 0.2
+      },
+      {
+        "point": "main_steam_pressure",
+        "base": 28.7,
+        "amplitude": 0.2,
+        "period": 180,
+        "noise": 0.002
+      },
+      {
+        "point": "main_steam_temperature",
+        "base": 610,
+        "amplitude": 2,
+        "period": 180,
+        "noise": 0.02
+      },
+      {
+        "point": "reheat_temperature",
+        "base": 621.5,
+        "amplitude": 0.4,
+        "period": 180,
+        "noise": 0.004
+      },
+      {
+        "point": "feedwater_temperature",
+        "base": 302,
+        "amplitude": 2,
+        "period": 180,
+        "noise": 0.02
+      },
+      {
+        "point": "feedwater_flow",
+        "base": 1900,
+        "amplitude": 15,
+        "period": 180,
+        "noise": 0.15
+      },
+      {
+        "point": "oxygen",
+        "base": 4,
+        "amplitude": 0.2,
+        "period": 180,
+        "noise": 0.002
+      }
+    ],
+    "scenarios": [
+      {
+        "name": "baseline",
+        "label": "恢复正常基线",
+        "kind": "baseline",
+        "duration": 30
+      },
+      {
+        "name": "thermal_step",
+        "label": "测点01壁温升高30秒并追忆",
+        "kind": "thermal_step",
+        "duration": 30,
+        "offsets": {
+          "temp_inner_01": 80,
+          "temp_outer_01": 20,
+          "strain_01": 220
+        }
+      },
+      {
+        "name": "load_cycle",
+        "label": "缓慢变负荷120秒",
+        "kind": "load_cycle",
+        "duration": 120,
+        "offsets": {
+          "load_mw": -100,
+          "temp_inner_01": -30,
+          "temp_inner_02": -30,
+          "temp_inner_03": -30,
+          "temp_inner_04": -30,
+          "temp_inner_05": -30,
+          "temp_inner_06": -30,
+          "temp_inner_07": -30,
+          "temp_inner_08": -30,
+          "temp_outer_01": -25,
+          "temp_outer_02": -25,
+          "temp_outer_03": -25,
+          "temp_outer_04": -25,
+          "temp_outer_05": -25,
+          "temp_outer_06": -25,
+          "temp_outer_07": -25,
+          "temp_outer_08": -25,
+          "strain_01": -40,
+          "strain_02": -40,
+          "strain_03": -40,
+          "strain_04": -40,
+          "strain_05": -40,
+          "strain_06": -40,
+          "strain_07": -40,
+          "strain_08": -40
+        }
+      },
+      {
+        "name": "bad_quality",
+        "label": "测点01坏质量20秒",
+        "kind": "bad_quality",
+        "duration": 20,
+        "points": [
+          "strain_01",
+          "temp_inner_01"
+        ]
+      },
+      {
+        "name": "freeze",
+        "label": "测点01源更新冻结20秒",
+        "kind": "freeze",
+        "duration": 20,
+        "points": [
+          "strain_01",
+          "temp_inner_01"
+        ]
+      },
+      {
+        "name": "disconnect_modbus",
+        "label": "断开Modbus 20秒",
+        "kind": "disconnect_modbus",
+        "duration": 20
+      },
+      {
+        "name": "disconnect_opcua",
+        "label": "断开OPC UA 20秒",
+        "kind": "disconnect_opcua",
+        "duration": 20
+      }
+    ]
+  },
+  "ui": {
+    "stations": [
+      {
+        "id": "S01",
+        "label": "研究测点 01",
+        "x": 25,
+        "y": 15,
+        "strain": "strain_01",
+        "temperature": "temp_outer_01",
+        "inner_temperature": "temp_inner_01",
+        "stress": "stress_01",
+        "delta_temperature": "delta_t_01"
+      },
+      {
+        "id": "S02",
+        "label": "研究测点 02",
+        "x": 75,
+        "y": 15,
+        "strain": "strain_02",
+        "temperature": "temp_outer_02",
+        "inner_temperature": "temp_inner_02",
+        "stress": "stress_02",
+        "delta_temperature": "delta_t_02"
+      },
+      {
+        "id": "S03",
+        "label": "研究测点 03",
+        "x": 25,
+        "y": 35,
+        "strain": "strain_03",
+        "temperature": "temp_outer_03",
+        "inner_temperature": "temp_inner_03",
+        "stress": "stress_03",
+        "delta_temperature": "delta_t_03"
+      },
+      {
+        "id": "S04",
+        "label": "研究测点 04",
+        "x": 75,
+        "y": 35,
+        "strain": "strain_04",
+        "temperature": "temp_outer_04",
+        "inner_temperature": "temp_inner_04",
+        "stress": "stress_04",
+        "delta_temperature": "delta_t_04"
+      },
+      {
+        "id": "S05",
+        "label": "研究测点 05",
+        "x": 25,
+        "y": 55,
+        "strain": "strain_05",
+        "temperature": "temp_outer_05",
+        "inner_temperature": "temp_inner_05",
+        "stress": "stress_05",
+        "delta_temperature": "delta_t_05"
+      },
+      {
+        "id": "S06",
+        "label": "研究测点 06",
+        "x": 75,
+        "y": 55,
+        "strain": "strain_06",
+        "temperature": "temp_outer_06",
+        "inner_temperature": "temp_inner_06",
+        "stress": "stress_06",
+        "delta_temperature": "delta_t_06"
+      },
+      {
+        "id": "S07",
+        "label": "研究测点 07",
+        "x": 25,
+        "y": 75,
+        "strain": "strain_07",
+        "temperature": "temp_outer_07",
+        "inner_temperature": "temp_inner_07",
+        "stress": "stress_07",
+        "delta_temperature": "delta_t_07"
+      },
+      {
+        "id": "S08",
+        "label": "研究测点 08",
+        "x": 75,
+        "y": 75,
+        "strain": "strain_08",
+        "temperature": "temp_outer_08",
+        "inner_temperature": "temp_inner_08",
+        "stress": "stress_08",
+        "delta_temperature": "delta_t_08"
+      }
+    ],
+    "process_points": [
+      "load_mw",
+      "main_steam_pressure",
+      "main_steam_temperature",
+      "reheat_temperature",
+      "feedwater_temperature",
+      "feedwater_flow",
+      "oxygen"
+    ],
+    "history_windows": [
+      60,
+      300,
+      900
+    ],
+    "precision": 2,
+    "point_labels": {
+      "strain_01": "应变 S01",
+      "temp_outer_01": "外侧壁温 S01",
+      "temp_inner_01": "内侧温度 S01",
+      "delta_t_01": "内外温差 S01",
+      "stress_01": "热应力估算 S01",
+      "strain_02": "应变 S02",
+      "temp_outer_02": "外侧壁温 S02",
+      "temp_inner_02": "内侧温度 S02",
+      "delta_t_02": "内外温差 S02",
+      "stress_02": "热应力估算 S02",
+      "strain_03": "应变 S03",
+      "temp_outer_03": "外侧壁温 S03",
+      "temp_inner_03": "内侧温度 S03",
+      "delta_t_03": "内外温差 S03",
+      "stress_03": "热应力估算 S03",
+      "strain_04": "应变 S04",
+      "temp_outer_04": "外侧壁温 S04",
+      "temp_inner_04": "内侧温度 S04",
+      "delta_t_04": "内外温差 S04",
+      "stress_04": "热应力估算 S04",
+      "strain_05": "应变 S05",
+      "temp_outer_05": "外侧壁温 S05",
+      "temp_inner_05": "内侧温度 S05",
+      "delta_t_05": "内外温差 S05",
+      "stress_05": "热应力估算 S05",
+      "strain_06": "应变 S06",
+      "temp_outer_06": "外侧壁温 S06",
+      "temp_inner_06": "内侧温度 S06",
+      "delta_t_06": "内外温差 S06",
+      "stress_06": "热应力估算 S06",
+      "strain_07": "应变 S07",
+      "temp_outer_07": "外侧壁温 S07",
+      "temp_inner_07": "内侧温度 S07",
+      "delta_t_07": "内外温差 S07",
+      "stress_07": "热应力估算 S07",
+      "strain_08": "应变 S08",
+      "temp_outer_08": "外侧壁温 S08",
+      "temp_inner_08": "内侧温度 S08",
+      "delta_t_08": "内外温差 S08",
+      "stress_08": "热应力估算 S08",
+      "load_mw": "机组负荷",
+      "main_steam_pressure": "主汽压力",
+      "main_steam_temperature": "主汽温度",
+      "reheat_temperature": "再热汽温",
+      "feedwater_temperature": "给水温度",
+      "feedwater_flow": "给水流量",
+      "oxygen": "烟气含氧量"
+    }
+  }
+}

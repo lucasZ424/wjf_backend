@@ -1,0 +1,11 @@
+{
+  "status": "PASSED",
+  "time": 1790671383.5268142,
+  "restored_event_id": "e1293355-b86d-4f2b-a174-3066ad8cc00e",
+  "coverage": "OBSERVED",
+  "archive_status": "SUBMITTED",
+  "source_points": 31,
+  "derived_points": 16,
+  "account_authority": "DATABASE_AUTHORITATIVE",
+  "config_id": "581828078ed52d1f10f8b00894fd9b829e08f1228a217e927f9009eb3234aae4"
+}

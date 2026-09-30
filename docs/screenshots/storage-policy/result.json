@@ -1,0 +1,26 @@
+{
+  "checks": [
+    "live budget 10 GiB",
+    "cleanup paused and external disabled",
+    "archive active",
+    "existing recall readable",
+    "health page policy visible",
+    "no browser script errors"
+  ],
+  "event_count": 1,
+  "history_rows": 267,
+  "health": {
+    "routing": "PRIMARY",
+    "storage_budget": {
+      "bytes_written": 838142,
+      "development_growth": 86925312,
+      "budget_bytes": 10737418240
+    },
+    "history_archive": {
+      "last_success_at": 1790675301.2468765,
+      "seconds_since_last_success": 0.8928260803222656,
+      "suspended": false,
+      "reason": null
+    }
+  }
+}

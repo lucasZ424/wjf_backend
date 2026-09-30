@@ -1,0 +1,1000 @@
+{
+  "recorded_at": "2026-09-29T17:12:25.865733",
+  "health": {
+    "uptime_seconds": 915.6816206000003,
+    "storage_budget": {
+      "bytes_written": 4863199,
+      "development_growth": 134217728,
+      "budget_bytes": 134217728
+    },
+    "runtime": {
+      "ingress_dropped": 0,
+      "archive_dropped": 56542,
+      "write_failures": 0,
+      "last_write": 1790672501.9293485,
+      "accounts": "DATABASE_AUTHORITATIVE",
+      "last_frame_write": 1790672500.2230794,
+      "write_error": "DEVELOPMENT_WRITE_BUDGET_EXHAUSTED"
+    },
+    "engine": {},
+    "storage": {
+      "primary_metrics": {
+        "bytes": 142464703,
+        "tables": [
+          {
+            "relname": "gap",
+            "n_live_tup": 12,
+            "n_dead_tup": 0,
+            "last_autovacuum": null
+          },
+          {
+            "relname": "config_snapshot",
+            "n_live_tup": 2,
+            "n_dead_tup": 0,
+            "last_autovacuum": null
+          },
+          {
+            "relname": "event_frame",
+            "n_live_tup": 1891,
+            "n_dead_tup": 0,
+            "last_autovacuum": "2026-09-29 16:28:07.873172+08"
+          },
+          {
+            "relname": "trigger_fact",
+            "n_live_tup": 32,
+            "n_dead_tup": 0,
+            "last_autovacuum": null
+          },
+          {
+            "relname": "write_probe",
+            "n_live_tup": 0,
+            "n_dead_tup": 0,
+            "last_autovacuum": null
+          },
+          {
+            "relname": "account",
+            "n_live_tup": 8,
+            "n_dead_tup": 8,
+            "last_autovacuum": null
+          },
+          {
+            "relname": "management_log",
+            "n_live_tup": 24,
+            "n_dead_tup": 0,
+            "last_autovacuum": null
+          },
+          {
+            "relname": "source_counter",
+            "n_live_tup": 31,
+            "n_dead_tup": 0,
+            "last_autovacuum": "2026-09-29 17:02:09.045611+08"
+          },
+          {
+            "relname": "frame_value",
+            "n_live_tup": 135607,
+            "n_dead_tup": 8391,
+            "last_autovacuum": "2026-09-29 16:43:17.248489+08"
+          },
+          {
+            "relname": "event",
+            "n_live_tup": 3,
+            "n_dead_tup": 28,
+            "last_autovacuum": "2026-09-29 16:17:07.631591+08"
+          },
+          {
+            "relname": "schema_version",
+            "n_live_tup": 3,
+            "n_dead_tup": 0,
+            "last_autovacuum": null
+          },
+          {
+            "relname": "routing_state",
+            "n_live_tup": 0,
+            "n_dead_tup": 0,
+            "last_autovacuum": null
+          },
+          {
+            "relname": "event_sample",
+            "n_live_tup": 7457,
+            "n_dead_tup": 0,
+            "last_autovacuum": "2026-09-29 16:35:08.149003+08"
+          },
+          {
+            "relname": "frame",
+            "n_live_tup": 2886,
+            "n_dead_tup": 0,
+            "last_autovacuum": "2026-09-29 16:59:09.024222+08"
+          },
+          {
+            "relname": "source_sample",
+            "n_live_tup": 7457,
+            "n_dead_tup": 0,
+            "last_autovacuum": "2026-09-29 16:35:08.11213+08"
+          }
+        ],
+        "last_frame_saved_at": 1790672500.217149,
+        "seed": [
+          {
+            "point_id": "strain_01",
+            "covered_seconds": 2885,
+            "first_window": 1790668725.0,
+            "last_window": 1790672500.0,
+            "good_seconds": 2864
+          },
+          {
+            "point_id": "temp_outer_01",
+            "covered_seconds": 2885,
+            "first_window": 1790668725.0,
+            "last_window": 1790672500.0,
+            "good_seconds": 2880
+          },
+          {
+            "point_id": "temp_inner_01",
+            "covered_seconds": 2885,
+            "first_window": 1790668725.0,
+            "last_window": 1790672500.0,
+            "good_seconds": 2861
+          },
+          {
+            "point_id": "strain_02",
+            "covered_seconds": 2885,
+            "first_window": 1790668725.0,
+            "last_window": 1790672500.0,
+            "good_seconds": 2883
+          },
+          {
+            "point_id": "temp_outer_02",
+            "covered_seconds": 2885,
+            "first_window": 1790668725.0,
+            "last_window": 1790672500.0,
+            "good_seconds": 2880
+          },
+          {
+            "point_id": "temp_inner_02",
+            "covered_seconds": 2885,
+            "first_window": 1790668725.0,
+            "last_window": 1790672500.0,
+            "good_seconds": 2880
+          },
+          {
+            "point_id": "strain_03",
+            "covered_seconds": 2885,
+            "first_window": 1790668725.0,
+            "last_window": 1790672500.0,
+            "good_seconds": 2883
+          },
+          {
+            "point_id": "temp_outer_03",
+            "covered_seconds": 2885,
+            "first_window": 1790668725.0,
+            "last_window": 1790672500.0,
+            "good_seconds": 2880
+          },
+          {
+            "point_id": "temp_inner_03",
+            "covered_seconds": 2885,
+            "first_window": 1790668725.0,
+            "last_window": 1790672500.0,
+            "good_seconds": 2880
+          },
+          {
+            "point_id": "strain_04",
+            "covered_seconds": 2885,
+            "first_window": 1790668725.0,
+            "last_window": 1790672500.0,
+            "good_seconds": 2883
+          },
+          {
+            "point_id": "temp_outer_04",
+            "covered_seconds": 2885,
+            "first_window": 1790668725.0,
+            "last_window": 1790672500.0,
+            "good_seconds": 2880
+          },
+          {
+            "point_id": "temp_inner_04",
+            "covered_seconds": 2885,
+            "first_window": 1790668725.0,
+            "last_window": 1790672500.0,
+            "good_seconds": 2880
+          },
+          {
+            "point_id": "strain_05",
+            "covered_seconds": 2885,
+            "first_window": 1790668725.0,
+            "last_window": 1790672500.0,
+            "good_seconds": 2883
+          },
+          {
+            "point_id": "temp_outer_05",
+            "covered_seconds": 2885,
+            "first_window": 1790668725.0,
+            "last_window": 1790672500.0,
+            "good_seconds": 2880
+          },
+          {
+            "point_id": "temp_inner_05",
+            "covered_seconds": 2885,
+            "first_window": 1790668725.0,
+            "last_window": 1790672500.0,
+            "good_seconds": 2880
+          },
+          {
+            "point_id": "strain_06",
+            "covered_seconds": 2885,
+            "first_window": 1790668725.0,
+            "last_window": 1790672500.0,
+            "good_seconds": 2883
+          },
+          {
+            "point_id": "temp_outer_06",
+            "covered_seconds": 2885,
+            "first_window": 1790668725.0,
+            "last_window": 1790672500.0,
+            "good_seconds": 2880
+          },
+          {
+            "point_id": "temp_inner_06",
+            "covered_seconds": 2885,
+            "first_window": 1790668725.0,
+            "last_window": 1790672500.0,
+            "good_seconds": 2880
+          },
+          {
+            "point_id": "strain_07",
+            "covered_seconds": 2885,
+            "first_window": 1790668725.0,
+            "last_window": 1790672500.0,
+            "good_seconds": 2883
+          },
+          {
+            "point_id": "temp_outer_07",
+            "covered_seconds": 2885,
+            "first_window": 1790668725.0,
+            "last_window": 1790672500.0,
+            "good_seconds": 2880
+          },
+          {
+            "point_id": "temp_inner_07",
+            "covered_seconds": 2885,
+            "first_window": 1790668725.0,
+            "last_window": 1790672500.0,
+            "good_seconds": 2880
+          },
+          {
+            "point_id": "strain_08",
+            "covered_seconds": 2885,
+            "first_window": 1790668725.0,
+            "last_window": 1790672500.0,
+            "good_seconds": 2883
+          },
+          {
+            "point_id": "temp_outer_08",
+            "covered_seconds": 2885,
+            "first_window": 1790668725.0,
+            "last_window": 1790672500.0,
+            "good_seconds": 2880
+          },
+          {
+            "point_id": "temp_inner_08",
+            "covered_seconds": 2885,
+            "first_window": 1790668725.0,
+            "last_window": 1790672500.0,
+            "good_seconds": 2880
+          },
+          {
+            "point_id": "load_mw",
+            "covered_seconds": 2885,
+            "first_window": 1790668725.0,
+            "last_window": 1790672500.0,
+            "good_seconds": 2880
+          },
+          {
+            "point_id": "main_steam_pressure",
+            "covered_seconds": 2885,
+            "first_window": 1790668725.0,
+            "last_window": 1790672500.0,
+            "good_seconds": 2880
+          },
+          {
+            "point_id": "main_steam_temperature",
+            "covered_seconds": 2885,
+            "first_window": 1790668725.0,
+            "last_window": 1790672500.0,
+            "good_seconds": 2880
+          },
+          {
+            "point_id": "reheat_temperature",
+            "covered_seconds": 2885,
+            "first_window": 1790668725.0,
+            "last_window": 1790672500.0,
+            "good_seconds": 2880
+          },
+          {
+            "point_id": "feedwater_temperature",
+            "covered_seconds": 2885,
+            "first_window": 1790668725.0,
+            "last_window": 1790672500.0,
+            "good_seconds": 2880
+          },
+          {
+            "point_id": "feedwater_flow",
+            "covered_seconds": 2885,
+            "first_window": 1790668725.0,
+            "last_window": 1790672500.0,
+            "good_seconds": 2880
+          },
+          {
+            "point_id": "oxygen",
+            "covered_seconds": 2885,
+            "first_window": 1790668725.0,
+            "last_window": 1790672500.0,
+            "good_seconds": 2880
+          }
+        ],
+        "seed_order": "COMMITTED_SEQUENCE; endpoints are not continuous wall-clock coverage",
+        "measured_at": 1790673141.98406
+      },
+      "primary": "OK",
+      "emergency_metrics": {
+        "bytes": 8951487,
+        "tables": [
+          {
+            "relname": "gap",
+            "n_live_tup": 0,
+            "n_dead_tup": 0,
+            "last_autovacuum": null
+          },
+          {
+            "relname": "config_snapshot",
+            "n_live_tup": 2,
+            "n_dead_tup": 0,
+            "last_autovacuum": null
+          },
+          {
+            "relname": "event_frame",
+            "n_live_tup": 0,
+            "n_dead_tup": 0,
+            "last_autovacuum": null
+          },
+          {
+            "relname": "trigger_fact",
+            "n_live_tup": 0,
+            "n_dead_tup": 0,
+            "last_autovacuum": null
+          },
+          {
+            "relname": "write_probe",
+            "n_live_tup": 0,
+            "n_dead_tup": 0,
+            "last_autovacuum": null
+          },
+          {
+            "relname": "account",
+            "n_live_tup": 0,
+            "n_dead_tup": 0,
+            "last_autovacuum": null
+          },
+          {
+            "relname": "management_log",
+            "n_live_tup": 0,
+            "n_dead_tup": 0,
+            "last_autovacuum": null
+          },
+          {
+            "relname": "source_counter",
+            "n_live_tup": 0,
+            "n_dead_tup": 0,
+            "last_autovacuum": null
+          },
+          {
+            "relname": "frame_value",
+            "n_live_tup": 0,
+            "n_dead_tup": 0,
+            "last_autovacuum": null
+          },
+          {
+            "relname": "event",
+            "n_live_tup": 0,
+            "n_dead_tup": 0,
+            "last_autovacuum": null
+          },
+          {
+            "relname": "schema_version",
+            "n_live_tup": 3,
+            "n_dead_tup": 0,
+            "last_autovacuum": null
+          },
+          {
+            "relname": "routing_state",
+            "n_live_tup": 0,
+            "n_dead_tup": 0,
+            "last_autovacuum": null
+          },
+          {
+            "relname": "event_sample",
+            "n_live_tup": 0,
+            "n_dead_tup": 0,
+            "last_autovacuum": null
+          },
+          {
+            "relname": "frame",
+            "n_live_tup": 0,
+            "n_dead_tup": 0,
+            "last_autovacuum": null
+          },
+          {
+            "relname": "source_sample",
+            "n_live_tup": 0,
+            "n_dead_tup": 0,
+            "last_autovacuum": null
+          }
+        ],
+        "last_frame_saved_at": null,
+        "seed": [
+          {
+            "point_id": "strain_01",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "temp_outer_01",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "temp_inner_01",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "strain_02",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "temp_outer_02",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "temp_inner_02",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "strain_03",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "temp_outer_03",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "temp_inner_03",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "strain_04",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "temp_outer_04",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "temp_inner_04",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "strain_05",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "temp_outer_05",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "temp_inner_05",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "strain_06",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "temp_outer_06",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "temp_inner_06",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "strain_07",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "temp_outer_07",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "temp_inner_07",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "strain_08",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "temp_outer_08",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "temp_inner_08",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "load_mw",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "main_steam_pressure",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "main_steam_temperature",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "reheat_temperature",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "feedwater_temperature",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "feedwater_flow",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          },
+          {
+            "point_id": "oxygen",
+            "covered_seconds": 0,
+            "good_seconds": 0,
+            "first_window": null,
+            "last_window": null
+          }
+        ],
+        "seed_order": "COMMITTED_SEQUENCE; endpoints are not continuous wall-clock coverage",
+        "measured_at": 1790673142.0382614
+      },
+      "emergency": "OK",
+      "cleaning": false,
+      "primary_cleanup": {
+        "ordinary_removed": 0,
+        "event_results_removed": 0,
+        "source_removed": 0,
+        "seconds": 0.007229900002130307,
+        "batch_saturated": false
+      },
+      "emergency_cleanup": {
+        "ordinary_removed": 0,
+        "event_results_removed": 0,
+        "source_removed": 0,
+        "seconds": 0.0009540999999444466,
+        "batch_saturated": false
+      }
+    },
+    "routing": "PRIMARY",
+    "history_archive": {
+      "last_success_at": 1790672500.2230794,
+      "seconds_since_last_success": 645.698664188385,
+      "suspended": false
+    },
+    "queues": {
+      "ingress": 0,
+      "ordinary": 0,
+      "event": 0,
+      "capture_jobs": 0,
+      "capture_bytes": 0
+    },
+    "points": {
+      "strain_01": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 595
+      },
+      "temp_outer_01": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 590
+      },
+      "temp_inner_01": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 590
+      },
+      "strain_02": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 595
+      },
+      "temp_outer_02": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 590
+      },
+      "temp_inner_02": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 590
+      },
+      "strain_03": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 595
+      },
+      "temp_outer_03": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 590
+      },
+      "temp_inner_03": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 590
+      },
+      "strain_04": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 595
+      },
+      "temp_outer_04": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 590
+      },
+      "temp_inner_04": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 590
+      },
+      "strain_05": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 595
+      },
+      "temp_outer_05": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 590
+      },
+      "temp_inner_05": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 590
+      },
+      "strain_06": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 595
+      },
+      "temp_outer_06": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 590
+      },
+      "temp_inner_06": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 590
+      },
+      "strain_07": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 595
+      },
+      "temp_outer_07": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 590
+      },
+      "temp_inner_07": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 590
+      },
+      "strain_08": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 595
+      },
+      "temp_outer_08": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 590
+      },
+      "temp_inner_08": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 590
+      },
+      "load_mw": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 590
+      },
+      "main_steam_pressure": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 590
+      },
+      "main_steam_temperature": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 590
+      },
+      "reheat_temperature": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 590
+      },
+      "feedwater_temperature": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 590
+      },
+      "feedwater_flow": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 590
+      },
+      "oxygen": {
+        "quality": "GOOD",
+        "state": "NORMAL",
+        "ring_count": 590
+      }
+    },
+    "capabilities": {
+      "real_sources": [
+        "mb_field",
+        "ua_field"
+      ],
+      "unconfigured_derived": []
+    }
+  },
+  "events": {
+    "items": [
+      {
+        "payload": {
+          "id": "02e3ebe7-0b7f-44f2-9344-d43a0d47995e",
+          "end": null,
+          "phase": "ACTIVE",
+          "start": 1790671901.9084115,
+          "run_id": "d9e48a64-92e2-45c0-8516-6bec69d28b62",
+          "coverage": "PARTIAL",
+          "revision": 2,
+          "config_id": "581828078ed52d1f10f8b00894fd9b829e08f1228a217e927f9009eb3234aae4",
+          "post_mono": null,
+          "profile_id": "wall_temperature_recall",
+          "previous_id": "154dbf76-7860-440d-86aa-b403180450a1",
+          "close_reason": null,
+          "recovered_at": null,
+          "started_mono": 18078.0434684,
+          "triggered_at": 1790672501.9084115,
+          "recovery_mono": null,
+          "archive_status": "PENDING",
+          "unavailable_mono": null
+        },
+        "has_gaps": true,
+        "_instance": "primary"
+      },
+      {
+        "payload": {
+          "id": "154dbf76-7860-440d-86aa-b403180450a1",
+          "end": 1790672501.0173368,
+          "phase": "CLOSED",
+          "start": 1790671900.8874078,
+          "run_id": "d9e48a64-92e2-45c0-8516-6bec69d28b62",
+          "coverage": "PARTIAL",
+          "revision": 8,
+          "config_id": "581828078ed52d1f10f8b00894fd9b829e08f1228a217e927f9009eb3234aae4",
+          "post_mono": null,
+          "profile_id": "wall_temperature_recall",
+          "previous_id": null,
+          "close_reason": "RESOURCE_LIMITED",
+          "recovered_at": null,
+          "started_mono": 18077.0224648,
+          "triggered_at": 1790672500.8874078,
+          "recovery_mono": null,
+          "archive_status": "PENDING",
+          "unavailable_mono": null
+        },
+        "has_gaps": true,
+        "_instance": "primary"
+      },
+      {
+        "payload": {
+          "id": "e1293355-b86d-4f2b-a174-3066ad8cc00e",
+          "end": 1790671098.8054318,
+          "phase": "CLOSED",
+          "start": 1790669208.1853442,
+          "run_id": "c45d17ba-e35a-45aa-8467-1c1ae576cc8f",
+          "coverage": "OBSERVED",
+          "revision": 35,
+          "config_id": "581828078ed52d1f10f8b00894fd9b829e08f1228a217e927f9009eb3234aae4",
+          "post_mono": 15474.9350017,
+          "profile_id": "wall_temperature_recall",
+          "previous_id": null,
+          "close_reason": "RECOVERED",
+          "recovered_at": 1790669898.7999444,
+          "started_mono": 15384.3204012,
+          "triggered_at": 1790669808.1853442,
+          "recovery_mono": 15414.9007498,
+          "archive_status": "SUBMITTED",
+          "unavailable_mono": null
+        },
+        "has_gaps": false,
+        "_instance": "primary"
+      }
+    ],
+    "partial": false,
+    "unavailable_instances": [],
+    "limit": 8,
+    "offset": 0,
+    "has_more": false,
+    "next_cursor": null,
+    "pagination_incomplete": false
+  },
+  "actions": [
+    {
+      "id": "50dd3099-a38b-4372-adfc-01950f9700c0",
+      "time": 1790672648.6897206,
+      "actor": "admin",
+      "action": "SCENARIO",
+      "target": "thermal_step",
+      "result": "CONFIRMED"
+    },
+    {
+      "id": "d8c493b2-6058-49a3-ba63-7ba9952c45a5",
+      "time": 1790672648.6706862,
+      "actor": "admin",
+      "action": "SCENARIO",
+      "target": "thermal_step",
+      "result": "REQUESTED"
+    },
+    {
+      "id": "716182f1-f24d-41c9-ac3d-e13b8d32fe62",
+      "time": 1790672500.818782,
+      "actor": "admin",
+      "action": "SCENARIO",
+      "target": "thermal_step",
+      "result": "CONFIRMED"
+    },
+    {
+      "id": "62784cbc-fa67-458e-996f-06368b76fe1f",
+      "time": 1790672500.8041112,
+      "actor": "admin",
+      "action": "SCENARIO",
+      "target": "thermal_step",
+      "result": "REQUESTED"
+    },
+    {
+      "id": "20c9790f-104b-4f40-a746-5c1750cb954a",
+      "time": 1790672392.9913034,
+      "actor": "admin",
+      "action": "SCENARIO",
+      "target": "bad_quality",
+      "result": "CONFIRMED"
+    },
+    {
+      "id": "82c98198-b6a1-4e7e-bec2-c2339c0c4522",
+      "time": 1790672392.9810534,
+      "actor": "admin",
+      "action": "SCENARIO",
+      "target": "bad_quality",
+      "result": "REQUESTED"
+    },
+    {
+      "id": "74a3e8da-1931-45e2-a008-ad3190708f42",
+      "time": 1790671182.39263,
+      "actor": "admin",
+      "action": "REVOKE_ACCOUNT",
+      "target": "ui_test_1790671182",
+      "result": "COMMITTED"
+    },
+    {
+      "id": "7de9c9f1-4b64-43f5-8cd1-ed56bbc4b044",
+      "time": 1790671182.152849,
+      "actor": "admin",
+      "action": "CREATE_ACCOUNT",
+      "target": "ui_test_1790671182",
+      "result": "COMMITTED"
+    }
+  ]
+}

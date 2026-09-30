@@ -1,0 +1,9 @@
+{
+  "mode": "production",
+  "time_basis": "received",
+  "sources": [{"id": "adc", "kind": "modbus", "enabled": false}, {"id": "dcs", "kind": "opcua", "enabled": false}],
+  "points": [],
+  "derived": [{"id": "thermal_stress", "inputs": [], "operation": "unconfigured", "unit": "MPa"}],
+  "profiles": [],
+  "storage": {"primary_path": "D:/HTSG/primary", "emergency_path": "C:/HTSG/emergency", "cleanup_enabled": false, "external_enabled": false, "external_path": "E:/HTSG/external", "external_start": 0.95}
+}

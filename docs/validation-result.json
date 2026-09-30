@@ -1,0 +1,138 @@
+{
+  "environment": {
+    "python": "3.13.4",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "instances": {
+      "primary": {
+        "data_directory": "D:/HTSG-dev/primary",
+        "server_version": "18.6",
+        "port": "55432",
+        "database_bytes": 10024639
+      },
+      "emergency": {
+        "data_directory": "D:/HTSG-dev/emergency",
+        "server_version": "18.6",
+        "port": "55433",
+        "database_bytes": 8689343
+      }
+    }
+  },
+  "tests": {
+    "tests": "51",
+    "failures": "0",
+    "errors": "0",
+    "skipped": "0",
+    "time": "31.903"
+  },
+  "continuous_smoke": {
+    "passed": true,
+    "duration_seconds": 63.1,
+    "frame_id": "ea843af7-60d0-453e-a0f6-cad2d9aa8087:1788941094",
+    "history_rows": 76,
+    "events": 2,
+    "archive_dropped": 0,
+    "database_location": "D:/HTSG-dev",
+    "limits": "Short smoke, not field or endurance acceptance"
+  },
+  "final_smoke": {
+    "passed": true,
+    "duration_seconds": 6.0,
+    "frame_id": "d91dc6d7-4f2f-455d-bfe4-93a7e1303c1b:1788941282",
+    "history_rows": 20,
+    "events": 3,
+    "archive_dropped": 0,
+    "database_location": "D:/HTSG-dev",
+    "limits": "Short smoke, not field or endurance acceptance"
+  },
+  "offline_install": "passed; local wheelhouse only; isolated package import and schema verified",
+  "dependency_warnings": 2,
+  "audit_revision_2026_09_21": {
+    "version": "0.1.1",
+    "schema_version": 2,
+    "tests": {
+      "tests": "69",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "41.755"
+    },
+    "junit": ".local/audit-final.xml",
+    "measurements": {
+      "test_full_capture_cycle_with_concurrent_pre_drain": {
+        "accelerated_cycle_seconds": 4.6178007999997135,
+        "peak_live_event_queue": 131.0
+      },
+      "test_production_pre_snapshot_drains_through_real_writer": {
+        "pre_owner_seconds": 0.0010688000002119225,
+        "pre_writer_drain_seconds": 1.6851437000004807
+      },
+      "test_cleanup_drains_aging_backlog_and_preserves_seed": {
+        "cleanup_max_seconds": 0.04387560000031954
+      }
+    },
+    "http_smoke": {
+      "passed": true,
+      "duration_seconds": 7.48,
+      "frame_id": "c791b28f-6324-4d63-af56-98b2032ec4c4:1789963597",
+      "history_rows": 28,
+      "events": 4,
+      "archive_dropped": 0,
+      "database_location": "D:/HTSG-dev",
+      "limits": "Short smoke, not field or endurance acceptance"
+    },
+    "offline_install": "passed; D:/HTSG-dev/offline-venv; no-index; pip check and isolated imports",
+    "dependency_warnings": 2,
+    "scope": "development regressions only; field/endurance/physical cross-volume acceptance remains open",
+    "post_full_suite_shutdown_regression": {
+      "tests": 16,
+      "failed": 0,
+      "skipped": 0,
+      "seconds": 7.79,
+      "junit": ".local/audit-shutdown.xml"
+    },
+    "wheel_sha256": "fcb8b96064e0a91b07150f5a125f3deccf6e5e32d4a1aa8285fdd8d441e5686f",
+    "instances": {
+      "primary": {
+        "data_directory": "D:/HTSG-dev/primary",
+        "server_version": "18.6",
+        "port": "55432",
+        "database_bytes": 10917567,
+        "schema_version": 2
+      },
+      "emergency": {
+        "data_directory": "D:/HTSG-dev/emergency",
+        "server_version": "18.6",
+        "port": "55433",
+        "database_bytes": 8836799,
+        "schema_version": 2
+      }
+    }
+  },
+  "fault_validation_2026_09_21": {
+    "version": "0.1.1",
+    "tests": {
+      "tests": "80",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0",
+      "time": "49.504"
+    },
+    "junit": ".local/fault-full.xml",
+    "added_fault_cases": [
+      "test_writer_retries_unknown_commit_without_duplicates[False]",
+      "test_writer_retries_unknown_commit_without_duplicates[True]",
+      "test_real_connection_termination_reconnects_without_stopping_detection",
+      "test_killed_capture_process_preserves_commits_and_restart_marks_interrupted[PRE]",
+      "test_killed_capture_process_preserves_commits_and_restart_marks_interrupted[ACTIVE]",
+      "test_killed_capture_process_preserves_commits_and_restart_marks_interrupted[POST]",
+      "test_blocked_writer_bounds_queues_and_recovers_with_visible_loss",
+      "test_real_cleanup_lock_timeout_rolls_back_then_recovers",
+      "test_schema_upgrade_failure_is_atomic_and_retryable",
+      "test_all_pending_capture_jobs_share_budget_then_release_it",
+      "test_stalled_calculation_bounds_queue_and_keeps_alarm_detection"
+    ],
+    "dependency_warnings": 2,
+    "business_code_changed": false,
+    "limits": "D: disposable databases; acknowledgement loss injected after real commit; owned capture subprocess termination; no physical power loss or disk filling"
+  }
+}

@@ -1,0 +1,4 @@
+# Optional browser validation tools; install into the project .venv only.
+playwright==1.63.0
+pyee==13.0.1
+greenlet==3.5.6

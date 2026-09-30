@@ -1,0 +1,70 @@
+{
+  "health": {
+    "runtime": {
+      "ingress_dropped": 0,
+      "archive_dropped": 0,
+      "write_failures": 0,
+      "last_write": 1790673532.2655308,
+      "accounts": "DATABASE_AUTHORITATIVE",
+      "last_frame_write": 1790673532.2655308,
+      "write_error": null
+    },
+    "history_archive": {
+      "last_success_at": 1790673532.2655308,
+      "seconds_since_last_success": 0.4478790760040283,
+      "suspended": false,
+      "reason": null
+    },
+    "storage_budget": {
+      "bytes_written": 3333857,
+      "development_growth": 6381568,
+      "budget_bytes": 134217728
+    }
+  },
+  "events": {
+    "items": [
+      {
+        "payload": {
+          "id": "38dbea33-e04d-457d-a81e-4bf97b1d10eb",
+          "end": null,
+          "phase": "RECOVERY_PENDING",
+          "start": 1790672902.5608208,
+          "run_id": "9c3d63a8-d9a5-474f-bc12-a85bfeae8054",
+          "coverage": "PARTIAL",
+          "revision": 31,
+          "config_id": "581828078ed52d1f10f8b00894fd9b829e08f1228a217e927f9009eb3234aae4",
+          "post_mono": null,
+          "profile_id": "wall_temperature_recall",
+          "previous_id": null,
+          "close_reason": null,
+          "recovered_at": null,
+          "started_mono": 19078.6958778,
+          "triggered_at": 1790673502.5608208,
+          "recovery_mono": 19108.146784,
+          "archive_status": "PENDING",
+          "unavailable_mono": null
+        },
+        "has_gaps": true,
+        "_instance": "primary"
+      }
+    ],
+    "partial": false,
+    "unavailable_instances": [],
+    "limit": 5,
+    "offset": 0,
+    "has_more": false,
+    "next_cursor": null,
+    "pagination_incomplete": false
+  },
+  "test_suite": {
+    "name": "pytest",
+    "errors": "0",
+    "failures": "0",
+    "skipped": "0",
+    "tests": "135",
+    "time": "88.558",
+    "timestamp": "2026-09-29T17:14:39.948299+08:00",
+    "hostname": "TXLAPTOP_ZLC"
+  },
+  "lab_tests_passed": 7
+}

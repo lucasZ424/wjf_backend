@@ -1,0 +1,19 @@
+{
+  "checks": [
+    "admin login and real protocol-fed numeric frame",
+    "configured station selection changes requested history point",
+    "thermal estimate metadata and temperature/load archived trends",
+    "two real active-reading protocol source panels",
+    "six desktop pages rendered and captured",
+    "admin creates and revokes actual test account with audit entry",
+    "WebSocket reconnect refreshes persisted history",
+    "HTTP fallback advances real frames while WS is disconnected",
+    "event selection restricts points and three thermal plots use full cursor-paged event interval",
+    "mobile layout remains within viewport",
+    "viewer controls hidden or disabled and backend mutation returns 403",
+    "no browser JavaScript exceptions"
+  ],
+  "count": 12,
+  "failures": [],
+  "time": 1790671187.9111004
+}
