@@ -65,7 +65,7 @@ async def test_slow_database_does_not_block_owner(settings, databases):
     try:
         runtime.submit("x", 10)
         await asyncio.sleep(0.1)
-        assert "p" in runtime.engine.active
+        assert runtime.engine.faults["x"].started is not None
         await asyncio.sleep(1.3)
         assert runtime.engine.latest_frame is not None
         assert len(runtime.events) <= settings.limits.event_queue
@@ -95,7 +95,7 @@ async def test_calculation_timeout_publishes_unavailable_without_blocking_detect
     try:
         runtime.submit("x", 10)
         await asyncio.sleep(0.1)
-        assert "p" in runtime.engine.active
+        assert runtime.engine.faults["x"].started is not None
         await asyncio.sleep(1.3)
         result = runtime.engine.latest_frame["derived_results"]["delta"]
         assert result["value"] is None and result["reason"] == "CALCULATION_TIMEOUT"
@@ -103,7 +103,7 @@ async def test_calculation_timeout_publishes_unavailable_without_blocking_detect
         await runtime.stop()
 
 
-def test_websocket_authentication_snapshot_and_trigger(settings, databases, tmp_path):
+def test_websocket_authentication_snapshot_and_fault(settings, databases, tmp_path):
     accounts = Accounts(tmp_path / "accounts.json")
     viewer = accounts.create("viewer", "viewer")
     admin = accounts.create("admin", "admin")
@@ -118,8 +118,17 @@ def test_websocket_authentication_snapshot_and_trigger(settings, databases, tmp_
                 json={"point_id": "x", "value": 10},
             )
             assert response.status_code == 200
-            for _ in range(10):
-                if ws.receive_json()["type"] == "trigger":
+            import time
+
+            for _ in range(6):
+                time.sleep(1)
+                client.post(
+                    "/api/development/observations",
+                    headers={"Authorization": "Bearer " + admin},
+                    json={"point_id": "x", "value": 10},
+                )
+            for _ in range(20):
+                if ws.receive_json()["type"] == "fault":
                     break
             else:
                 raise AssertionError("abnormal notification was not delivered")

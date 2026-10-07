@@ -159,20 +159,28 @@ class Store:
                     self._write(conn, kind, payload)
 
     def _write(self, conn, kind, payload):
-        if kind == "event":
+        if kind == "fault":
+            conn.execute(
+                "INSERT INTO fault_point(id,point_id,time,payload) VALUES(%s,%s,%s,%s) ON CONFLICT DO NOTHING",
+                (payload["id"], payload["point_id"], payload["time"], Jsonb(payload)),
+            )
+        elif kind == "event":
             self.write_event(conn, payload)
-        elif kind == "sample":
+        elif kind in ("sample", "raw"):
             if "event" in payload:
                 self.write_event(conn, payload["event"])
             sample = payload["sample"]
+            if kind == "raw":
+                sample = {**sample, "archive_scope": "continuous"}
             conn.execute(
                 "INSERT INTO source_sample(id,point_id,effective_time,payload) VALUES(%s,%s,%s,%s) ON CONFLICT DO NOTHING",
                 (sample["id"], sample["point_id"], sample["effective_time"], Jsonb(sample)),
             )
-            conn.execute(
-                "INSERT INTO event_sample VALUES(%s,%s) ON CONFLICT DO NOTHING",
-                (payload["event_id"], sample["id"]),
-            )
+            if kind == "sample":
+                conn.execute(
+                    "INSERT INTO event_sample VALUES(%s,%s) ON CONFLICT DO NOTHING",
+                    (payload["event_id"], sample["id"]),
+                )
         elif kind == "frame":
             frame = payload["frame"]
             conn.execute(
@@ -231,7 +239,27 @@ class Store:
         with self.session() as conn:
             params = []
             descending = False
-            if category in ("events", "event"):
+            if category == "faults":
+                select = "t.payload"
+                source = "fault_point t"
+                keys = ["t.time", "t.id"]
+                descending = True
+                where = "t.time>=%s AND t.time<%s AND (%s::text IS NULL OR t.point_id=%s)"
+                params = [start, end, point, point]
+            elif category == "replay":
+                select = "t.id,t.run_id,t.window_start,t.window_end,t.point_id,t.product,t.payload"
+                source = """(
+                    SELECT s.id,s.payload->>'run_id' AS run_id,s.effective_time AS window_start,
+                        s.effective_time AS window_end,s.point_id,'source'::text AS product,s.payload
+                    FROM source_sample s
+                    UNION ALL
+                    SELECT f.id,f.run_id,f.window_start,f.window_end,v.point_id,v.product,v.payload
+                    FROM frame f JOIN frame_value v ON v.frame_id=f.id WHERE v.product='derived'
+                ) t"""
+                where = "t.window_start>=%s AND t.window_start<%s AND (%s::text IS NULL OR t.point_id=%s)"
+                params = [start, end, point, point]
+                keys = ["t.window_start", "t.id", "t.point_id", "t.product"]
+            elif category in ("events", "event"):
                 select = "e.payload, EXISTS(SELECT 1 FROM gap g WHERE g.event_id=e.id) AS has_gaps"
                 source = "event e"
                 keys = ["coalesce((e.payload->>'triggered_at')::double precision,0)", "e.id"]
@@ -513,6 +541,7 @@ class Store:
             # Minimum one year from initial persistence; unknown or open references protected.
             expired = execute(
                 """SELECT s.id FROM source_sample s WHERE s.saved_at < to_timestamp(%s)
+                AND s.payload->>'archive_scope' IS DISTINCT FROM 'continuous'
                 AND NOT EXISTS(SELECT 1 FROM event_sample es LEFT JOIN event e ON e.id=es.event_id
                     WHERE es.sample_id=s.id AND (e.id IS NULL OR e.phase<>'CLOSED' OR e.payload->>'archive_status'='PENDING'))
                 AND NOT EXISTS(SELECT 1 FROM event_sample es JOIN event_frame ef ON ef.event_id=es.event_id
@@ -827,7 +856,7 @@ class Router:
             value = row.get("payload", row)
             key = (
                 (row["id"], row["point_id"], row["product"])
-                if category == "history"
+                if category in ("history", "replay")
                 else value.get("id", row.get("frame_id"))
             )
             old = unique.get(key)
@@ -841,7 +870,7 @@ class Router:
                     row[flag] = row.get(flag, False) or old.get(flag, False)
             unique[key] = row
         ordered = sorted(
-            unique.values(), key=lambda r: tuple(r["_key"]), reverse=category in ("event", "events")
+            unique.values(), key=lambda r: tuple(r["_key"]), reverse=category in ("event", "events", "faults")
         )
         page = ordered[offset : offset + requested]
         if category == "history" and page:

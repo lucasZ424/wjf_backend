@@ -14,29 +14,25 @@ def main():
     config = Settings.model_validate(args["config"])
     store = Store(args["dsn"])
 
+    faults = []
+
     def emit(kind, payload, priority):
-        if kind == "capture_plan":
-            if args["stage"] == "PRE":
-                return True
-            plan = payload["plan"]
-            store.write_batch(plan.batch(0, plan.count))
-            return None
         store.write(kind, payload)
+        if kind == "fault":
+            faults.append(payload)
 
     engine = Engine(config, emit, 1000, 0)
-    engine.receive("x", 2, 1000, 0)
-    engine.receive("y", 2, 1000, 0)
-    engine.receive("x", 10, 1000.1, 0.1)
-    if args["stage"] == "POST":
-        engine.receive("x", 2, 1001, 1)
-        engine.tick(1006, 6)
-        assert engine.active["p"].phase == "POST_CAPTURE"
-    event = engine.active["p"]
+    for t in range(3 if args["stage"] == "PENDING" else 6):
+        engine.receive("x", 10, 1000 + t, t)
+        engine.tick(1000 + t, t)
+    if args["stage"] == "RECOVERED":
+        engine.receive("x", 2, 1006, 6)
+    identity = faults[0]["id"] if faults else None
     conn = store.connect()
     conn.execute(
         "INSERT INTO source_sample(id,point_id,effective_time,payload) VALUES('uncommitted','x',1,'{}')"
     )
-    print(json.dumps({"id": event.id, "run_id": engine.run_id, "stage": args["stage"]}), flush=True)
+    print(json.dumps({"id": identity, "run_id": engine.run_id, "stage": args["stage"]}), flush=True)
     while True:
         time.sleep(1)
 

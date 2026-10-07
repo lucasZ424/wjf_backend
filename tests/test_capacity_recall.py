@@ -59,7 +59,6 @@ async def test_budget_pause_stops_archive_feedback_and_repeated_event_creation(s
     try:
         await runtime.writer()
         runtime.running = True
-        runtime.engine.blocked["p"] = "RESOURCE_LIMITED"
         subscriber = runtime.subscribe()
         tasks = [asyncio.create_task(runtime.owner()), asyncio.create_task(runtime.writer())]
         for index in range(6):
@@ -67,8 +66,7 @@ async def test_budget_pause_stops_archive_feedback_and_repeated_event_creation(s
             runtime.submit("x", 2 if index % 2 else 20)
             runtime.submit("y", 2)
             await asyncio.sleep(0.02)
-        assert not runtime.engine.active
-        assert runtime.engine.blocked["p"] == "RESOURCE_LIMITED"
+        assert not any(f.recorded for f in runtime.engine.faults.values())
         assert runtime.engine.states["x"].latest.value == 2
         frame = runtime.engine.make_frame(int(time.time()))
         runtime.engine.finish_frame(frame)
@@ -76,8 +74,8 @@ async def test_budget_pause_stops_archive_feedback_and_repeated_event_creation(s
         assert subscriber.frame["data"]["frame"]["id"] == frame["id"]
         await asyncio.sleep(0.07)
         assert len(router.calls) == 1, "A refused write must not generate self-repeating gap writes"
-        assert runtime.health["archive_dropped"] == 2  # Initial refusal and one new live frame.
-        assert not runtime.events and not runtime.ordinary and not runtime.capture_jobs
+        assert runtime.health["archive_dropped"] == 14  # Refusal, 12 raw observations and a live frame.
+        assert not runtime.events and not runtime.ordinary
         assert runtime.loss_summary is None
         gaps = [message for message in subscriber.events if message["type"] == "gap"]
         assert len(gaps) == 1 and gaps[0]["data"]["reason"] == "DEVELOPMENT_WRITE_BUDGET_EXHAUSTED"

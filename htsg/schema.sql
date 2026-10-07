@@ -114,3 +114,11 @@ CREATE TABLE IF NOT EXISTS management_log (
 );
 CREATE INDEX IF NOT EXISTS management_log_time ON management_log(time DESC,id DESC);
 INSERT INTO schema_version VALUES(3) ON CONFLICT DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS fault_point (
+    id text PRIMARY KEY, point_id text NOT NULL, time double precision NOT NULL,
+    payload jsonb NOT NULL, saved_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS fault_time ON fault_point(time DESC,id DESC);
+CREATE INDEX IF NOT EXISTS fault_channel_time ON fault_point(point_id,time DESC,id DESC);
+INSERT INTO schema_version VALUES(4) ON CONFLICT DO NOTHING;

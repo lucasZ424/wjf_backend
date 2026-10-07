@@ -62,7 +62,16 @@ class Point(StrictModel):
 class Derived(StrictModel):
     id: str
     inputs: tuple[str, ...]
-    operation: Literal["sum", "difference", "ratio", "mean", "derivative", "unconfigured", "thermal_stress"]
+    operation: Literal[
+        "sum",
+        "difference",
+        "ratio",
+        "mean",
+        "derivative",
+        "unconfigured",
+        "bridge_strain",
+        "thermal_stress",
+    ]
     model_id: str | None = None
     unit: str
     scale: float = 1
@@ -87,7 +96,7 @@ class Limits(StrictModel):
     maintenance_budget: float = Field(0.2, ge=0.01, le=3)
     cleanup_batch: int = Field(1024, ge=1, le=10000)
     ingress: int = Field(4096, ge=1, le=100000)
-    ordinary_queue: int = Field(128, ge=1, le=10000)
+    ordinary_queue: int = Field(4096, ge=1, le=10000)
     event_queue: int = Field(2048, ge=1, le=100000)
     ring_samples: int = Field(10000, ge=1, le=1000000)
     samples_per_window: int = Field(10000, ge=1, le=1000000)
@@ -128,6 +137,7 @@ class Storage(StrictModel):
 
 class Settings(StrictModel):
     mode: Literal["development", "production"] = "development"
+    dev_admin_login: bool = False
     time_basis: Literal["received", "source"] = "received"
     sources: tuple[Source, ...] = ()
     points: tuple[Point, ...] = ()
@@ -143,6 +153,8 @@ class Settings(StrictModel):
 
     @model_validator(mode="after")
     def references(self):
+        if self.dev_admin_login and self.mode != "development":
+            raise ValueError("dev_admin_login is only allowed in development mode")
         if (
             len(self.points) > 256
             or len(self.derived) > 128
@@ -176,8 +188,22 @@ class Settings(StrictModel):
                 raise ValueError("enabled OPC UA needs endpoint and node mapping")
             if source.kind == "simulator" and source.enabled and self.mode == "production":
                 raise ValueError("simulator forbidden in production")
+        if sum(sources[x.source].kind == "modbus" for x in self.points) > 8:
+            raise ValueError("Modbus Bridge channel capacity is 8")
+        if sum(sources[x.source].kind == "opcua" for x in self.points) > 200:
+            raise ValueError("OPC UA channel capacity is 200")
         for derived in self.derived:
-            if derived.operation == "thermal_stress":
+            if derived.operation == "bridge_strain":
+                if (
+                    len(derived.inputs) != 1
+                    or units.get(derived.inputs[0]) != "mV/V"
+                    or derived.unit != "με"
+                    or derived.model_id is not None
+                    or derived.scale != 1
+                    or derived.offset != 0
+                ):
+                    raise ValueError("bridge_strain needs one mV/V input, με output and identity scaling")
+            elif derived.operation == "thermal_stress":
                 if (
                     derived.model_id not in models
                     or len(derived.inputs) != 2

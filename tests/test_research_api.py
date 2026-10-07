@@ -13,7 +13,7 @@ def test_research_configuration_is_replaceable_and_model_references_are_checked(
     config = load_settings("config/research-sim.json")
     assert len(config.ui.stations) == 8
     assert {s.kind for s in config.sources} == {"modbus", "opcua"}
-    assert (config.profiles[0].pre, config.profiles[0].recovery, config.profiles[0].post) == (600, 60, 1200)
+    assert not config.profiles
     edited = config.model_dump()
     next(d for d in edited["derived"] if d["operation"] == "thermal_stress")["model_id"] = "missing"
     with pytest.raises(ValueError, match="thermal_stress needs"):

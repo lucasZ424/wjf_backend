@@ -1,7 +1,6 @@
 """Regression contracts for audit sections 8-11; clocks and watermarks never fill disks."""
 
 import asyncio
-import json
 import time
 from dataclasses import asdict
 
@@ -49,67 +48,40 @@ def test_hold_survives_next_bucket_arriving_before_seal(settings, phase):
         assert e.latest_frame["values"]["x"]["value"] == 2
 
 
-def test_future_normal_never_advances_frontier_or_recovers_alarm(settings):
+def test_future_normal_never_recovers_confirmed_fault(settings):
     settings = settings.model_copy(update={"time_basis": "source"})
     e, records = engine(settings)
-    high = put(e, "x", 10, 0.1, source_time=1000.1)
-    put(e, "y", 2, 0.1, source_time=1000.1)
-    bad = put(e, "x", 2, 0.2, source_time=1010)
+    for t in range(6):
+        put(e, "x", 10, t, source_time=1000 + t)
+        e.tick(1000 + t, t)
+    high = e.states["x"].frontier
+    bad = put(e, "x", 2, 6, source_time=1010)
     assert bad.quality == "BAD_TIME" and e.states["x"].frontier == high
-    assert e.active["p"].phase == "ACTIVE"
-    assert e.active["p"].coverage == "PARTIAL"
-    put(e, "x", 2, 0.3, source_time=1000.3)
-    assert e.active["p"].phase == "RECOVERY_PENDING"
-    assert any(k == "gap" and p["reason"] == "FUTURE_SOURCE_TIME" and p["event_id"] for k, p, _ in records)
+    assert e.faults["x"].recorded
+    put(e, "x", 2, 7, source_time=1007)
+    assert not e.faults["x"].recorded
+    assert any(k == "gap" and p["reason"] == "FUTURE_SOURCE_TIME" for k, p, _ in records)
 
 
-def test_known_loss_marks_current_and_subsequent_pre_event(settings):
+def test_known_loss_breaks_pending_confirmation_and_remains_visible(settings):
     e, records = engine(settings)
-    e.note_loss("x", "INGRESS_OVERFLOW", 999, 1000, 4)
-    put(e, "x", 10, 0.1)
-    event = e.active["p"]
-    event.coverage = "OBSERVED"
+    put(e, "x", 10, 0)
     e.note_loss("x", "INGRESS_OVERFLOW", 1001, 1002, 2)
-    assert event.coverage == "PARTIAL" and e.health["lost_observations"] == 6
-    assert any(
-        k == "gap" and p["event_id"] == event.id and p["reason"] == "PRE_SOURCE_LOSS" for k, p, _ in records
-    )
-    assert any(k == "gap" and p["event_id"] == event.id and p.get("point_id") == "x" for k, p, _ in records)
+    assert e.faults["x"].started is None
+    assert e.health["lost_observations"] == 2
+    assert any(k == "gap" and p.get("point_id") == "x" for k, p, _ in records)
 
 
-async def test_resource_recovery_does_not_erase_duration_suppression(settings):
-    runtime = Runtime(settings, None)
-    runtime.running = True
-    runtime.engine.capture_available = False
-    runtime.engine.blocked = {"p": "CAPTURE_DURATION_LIMIT", "other": "RESOURCE_LIMITED"}
-    task = asyncio.create_task(runtime.owner())
-    try:
-        await asyncio.sleep(0.07)
-        assert runtime.engine.blocked == {"p": "CAPTURE_DURATION_LIMIT"}
-        runtime.record_event_loss("event", {"id": "closed-id"}, "TEST_DROP")
-        assert "closed-id" in runtime.event_losses
-    finally:
-        runtime.running = False
-        task.cancel()
-        await asyncio.gather(task, return_exceptions=True)
-        release(runtime)
-
-
-def test_out_of_order_frame_completion_waits_for_all_associations(settings):
+def test_out_of_order_frame_completion_keeps_latest_display_and_archives_both(settings):
     e, records = engine(settings)
     put(e, "x", 10, 0.1)
-    event = e.active["p"]
     old, tail = e.make_frame(1000), e.make_frame(1001)
-    e.close_event(event, 1001.5, "RECOVERED")
-    e.capture_pending.add(event.id)
     e.finish_frame(tail)
-    e.capture_complete(event.id, True)
-    assert event in e.pending and event.archive_status == "PENDING"
     e.finish_frame(old)
-    assert event not in e.pending and event.archive_status == "SUBMITTED"
     archived = [p for k, p, _ in records if k == "frame"]
-    assert all(event.id in p["event_ids"] for p in archived)
+    assert len(archived) == 2 and all(not p["event_ids"] for p in archived)
     assert not archived[-1]["display"]
+    assert e.latest_frame["window_start"] == 1001
 
 
 @pytest.mark.parametrize("policy", [True, False])
@@ -140,66 +112,24 @@ async def test_writer_distinguishes_policy_refusal_from_programming_bug(settings
         release(runtime)
 
 
-async def test_production_pre_snapshot_drains_through_real_writer(settings, databases, record_property):
-    settings = settings.model_copy(
-        update={"profiles": (settings.profiles[0].model_copy(update={"pre": 600}),)}
-    )
+async def test_continuous_raw_drains_through_real_writer(settings, databases):
     router = Router(settings, *databases)
     router.initialize()
     runtime = Runtime(settings, router)
     runtime.running = True
     runtime.engine = Engine(settings, runtime.emit, 1000, 0)
     try:
-        # Warm 600 seconds at 5 Hz per point, without a large archive queue of prior history.
-        for n in range(3000):
-            t = n / 5
-            put(runtime.engine, "x", 2, t)
-            put(runtime.engine, "y", 2, t)
-            runtime.engine.tick(1000 + t, t)
-            runtime.ordinary.clear()
-        started = time.perf_counter()
-        put(runtime.engine, "x", 10, 600)
-        record_property("pre_owner_seconds", time.perf_counter() - started)
-        event = runtime.engine.active["p"]
-        plan = runtime.capture_jobs[0]["plan"]
-        expected = {s.id for s in plan.samples}
-        assert len(expected) == 6000 and len(runtime.capture_jobs) == 1
-        assert runtime.capture_bytes <= settings.limits.capture_budget_bytes
-        assert runtime.health["archive_dropped"] == 0 and runtime.accepting
-        assert len(runtime.events) < 20
-        frozen_revision = json.loads(plan.event_json)["revision"]
-        event.revision += 1
-        for state in runtime.engine.states.values():
-            state.ring.clear()
-        assert plan.batch(0, 1)[0][1]["event"]["revision"] == frozen_revision
+        expected = set()
+        for n in range(20):
+            for point in ("x", "y"):
+                expected.add(put(runtime.engine, point, 2, n).id)
+            runtime.engine.tick(1000 + n, n)
         runtime.running = False
-        started = time.perf_counter()
-        await asyncio.wait_for(runtime.writer(), 60)
-        record_property("pre_writer_drain_seconds", time.perf_counter() - started)
-        samples = pages(router, "samples", event_id=event.id)
-        assert expected <= {r["payload"]["id"] for r in samples}
-        assert len(samples) == 6001
-        assert len(pages(router, "products", event_id=event.id)) == len(plan.frames)
-        assert runtime.capture_bytes == 0 and not runtime.capture_jobs
-        assert runtime.health["archive_dropped"] == 0 and runtime.health["write_failures"] == 0
-    finally:
-        release(runtime)
-
-
-def test_pre_budget_rejection_is_explicit(settings):
-    settings = settings.model_copy(
-        update={"limits": settings.limits.model_copy(update={"capture_budget_bytes": 1024})}
-    )
-    runtime = Runtime(settings, None)
-    runtime.running = True
-    runtime.engine = Engine(settings, runtime.emit, 1000, 0)
-    try:
-        for n in range(5):
-            put(runtime.engine, "x", 2, n)
-        put(runtime.engine, "x", 10, 5)
-        assert not runtime.capture_jobs and runtime.capture_bytes == 0
-        assert any(k == "gap" and p["reason"] == "PRE_BUDGET_EXHAUSTED" for k, p in runtime.events)
-        assert runtime.engine.active["p"].coverage == "PARTIAL"
+        await asyncio.wait_for(runtime.writer(), 8)
+        saved = pages(router, "replay", start=1000, end=1020)
+        assert {r["id"] for r in saved if r["product"] == "source"} == expected
+        assert not pages(router, "faults")
+        assert runtime.health["archive_dropped"] == runtime.health["write_failures"] == 0
     finally:
         release(runtime)
 

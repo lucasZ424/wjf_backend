@@ -83,28 +83,17 @@ class UI(ResearchModel):
 def estimate_budget(config):
     """Startup estimate including observed row/index overhead; runtime guards remain authoritative."""
     rates = {s.id: 1 / s.interval for s in config.sources if s.enabled}
-    point_map = {p.id: p for p in config.points}
     source_rate = sum(rates.get(p.source, 0) for p in config.points)
-    pre_bytes = sum(
-        math.ceil(p.pre * sum(rates.get(point_map[x].source, 0) for x in p.source_points)) * 1024
-        + math.ceil(p.pre) * (len(config.points) + len(config.derived)) * 512
-        for p in config.profiles
-    )
     seconds = config.simulation.validation_duration_seconds
     frame_bytes = seconds * (len(config.points) + len(config.derived)) * 1024
-    raw_bytes = sum(
-        min(seconds, p.pre + p.recovery + p.post + 30)
-        * sum(rates.get(point_map[x].source, 0) for x in p.source_points)
-        * 1024
-        for p in config.profiles
-    )
+    raw_bytes = seconds * source_rate * 1024
     return {
         "source_samples_per_second": source_rate,
-        "capture_bytes_estimate": math.ceil(pre_bytes),
+        "capture_bytes_estimate": 0,
         "validation_bytes_estimate": math.ceil(frame_bytes + raw_bytes + 8 * 1024**2),
         "capture_budget_bytes": config.limits.capture_budget_bytes,
         "development_budget_bytes": config.storage.development_budget_bytes,
-        "estimate_note": "1024 B/stored frame value including indexes, 1024 B/event sample, 8 MiB overhead; estimate only; excludes existing data and WAL",
+        "estimate_note": "1024 B/stored frame value including indexes, 1024 B/continuous raw sample, 8 MiB overhead; estimate only; excludes existing data and WAL",
     }
 
 

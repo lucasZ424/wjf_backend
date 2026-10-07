@@ -41,3 +41,22 @@ def test_profile_cannot_omit_derived_input(settings):
     data["profiles"][0]["trigger_points"] = ["x"]
     with pytest.raises(ValidationError):
         Settings.model_validate(data)
+
+
+def test_opcua_deployment_configuration_rejects_more_than_two_hundred_channels(settings):
+    data = settings.model_dump()
+    data["sources"] = [{"id": "ua", "kind": "opcua", "enabled": False}]
+    data["points"] = [
+        {
+            "id": f"ua_{i:03d}",
+            "source": "ua",
+            "unit": "test",
+            "aggregation": "Last",
+            "node_id": f"ns=2;s=ua_{i:03d}",
+        }
+        for i in range(201)
+    ]
+    data["derived"] = []
+    data["profiles"] = []
+    with pytest.raises(ValidationError, match="OPC UA channel capacity is 200"):
+        Settings.model_validate(data)

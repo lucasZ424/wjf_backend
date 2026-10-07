@@ -1,7 +1,8 @@
 {
   "mode": "development",
+  "dev_admin_login": true,
   "time_basis": "received",
-  "sources": [{"id": "demo", "kind": "simulator", "enabled": true, "interval": 0.2}],
+  "sources": [{"id": "demo", "kind": "simulator", "enabled": true, "interval": 1}],
   "points": [
     {"id": "demo_temperature", "source": "demo", "unit": "demo_degC", "aggregation": "Mean", "low": 7, "high": 11.5, "stale_after": 5},
     {"id": "demo_strain", "source": "demo", "unit": "demo_microstrain", "aggregation": "Last", "simulator_base": 20, "high": 21.5, "stale_after": 5}
@@ -10,6 +11,6 @@
     {"id": "demo_temperature_rate", "inputs": ["demo_temperature"], "operation": "derivative", "unit": "demo_degC/s"},
     {"id": "thermal_stress", "inputs": [], "operation": "unconfigured", "unit": "MPa"}
   ],
-  "profiles": [{"id": "demo_capture", "trigger_points": ["demo_temperature", "demo_strain"], "source_points": ["demo_temperature", "demo_strain"], "derived_points": ["demo_temperature_rate"], "pre": 600, "recovery": 60, "post": 1200}],
+  "profiles": [],
   "storage": {"development_budget_bytes": 10737418240, "cleanup_enabled": false, "external_enabled": false, "external_path": "", "external_start": 0.95}
 }

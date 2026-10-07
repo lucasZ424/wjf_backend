@@ -69,8 +69,6 @@ class Runtime:
         self.pending_source_errors = set()
         self.event_losses = {}
         self.ingress_losses = {}
-        self.capture_jobs = deque()
-        self.capture_bytes = 0
         self.failed = asyncio.Event()
         self.started_mono = time.monotonic()
         self.communication_logs = deque(maxlen=500)
@@ -121,27 +119,6 @@ class Runtime:
             self.loss_summary = ("DISCONNECT_NOTIFICATION_OVERFLOW", time.time())
 
     def emit(self, kind, payload, priority):
-        if kind == "capture_plan":
-            plan = payload["plan"]
-            if (
-                not self.running
-                or not self.accepting
-                or self.capture_bytes + plan.size > self.config.limits.capture_budget_bytes
-            ):
-                self.health["capture_refused"] = self.health.get("capture_refused", 0) + 1
-                return False
-            self.capture_jobs.append(
-                {
-                    "plan": plan,
-                    "offset": 0,
-                    "event_id": payload["event_id"],
-                    "failed": False,
-                    "size": plan.size,
-                }
-            )
-            self.capture_bytes += plan.size
-            self.write_ready.set()
-            return True
         if kind == "frame_input":
             try:
                 self.calc_queue.put_nowait(copy.deepcopy(payload["frame"]))
@@ -154,6 +131,7 @@ class Runtime:
             # Preserve live delivery, but never turn an unpersistable loss notice into more work.
             if kind != "gap":
                 self.health["archive_dropped"] += 1
+                self.record_event_loss(kind, copied, self.archive_refusal)
         elif self.running:
             target = self.events if priority else self.ordinary
             if len(target) == target.maxlen:
@@ -182,12 +160,11 @@ class Runtime:
         return subscriber
 
     def snapshot(self):
-        from dataclasses import asdict
-
         return copy.deepcopy(
             {
                 "frame": self.engine.latest_frame,
-                "active_events": [asdict(e) for e in self.engine.active.values()],
+                "active_events": [],
+                "active_faults": [p for p, f in self.engine.faults.items() if f.recorded],
                 "mode": self.config.mode,
             }
         )
@@ -227,8 +204,6 @@ class Runtime:
                 "ingress": self.ingress.qsize(),
                 "ordinary": len(self.ordinary),
                 "event": len(self.events),
-                "capture_jobs": len(self.capture_jobs),
-                "capture_bytes": self.capture_bytes,
             },
             "points": {
                 p: {
@@ -277,7 +252,6 @@ class Runtime:
         while self.running:
             try:
                 kind, item = await asyncio.wait_for(self.ingress.get(), timeout=0.05)
-                self.synchronize_capture_availability()
                 if kind == "sample":
                     self.engine.receive(*item)
                     definition = self.engine.points.get(item[0])
@@ -285,14 +259,11 @@ class Runtime:
                         self.engine.health.pop(definition.source, None)
                 elif kind == "frame":
                     self.engine.finish_frame(item)
-                elif kind == "capture_done":
-                    self.engine.capture_complete(*item)
                 else:
                     self.engine.disconnected(item, time.time(), time.monotonic())
                 self.ingress.task_done()
             except TimeoutError:
                 pass
-            self.synchronize_capture_availability()
             for source in list(self.pending_source_errors):
                 self.engine.disconnected(source, time.time(), time.monotonic())
                 self.pending_source_errors.discard(source)
@@ -306,21 +277,17 @@ class Runtime:
                 self.engine.gap(reason, stamp, time.time())
             if self.event_losses and len(self.events) < self.events.maxlen // 2:
                 event_id, (reason, start) = self.event_losses.popitem()
-                for event in [*self.engine.active.values(), *self.engine.pending]:
-                    if event.id == event_id:
-                        event.coverage = "PARTIAL"
-                        self.engine.event_record(event)
                 self.engine.gap(reason, start, time.time(), event_id)
 
-    def synchronize_capture_availability(self):
-        if self.engine.capture_available != self.accepting:
-            self.engine.capture_available = self.accepting
-            if self.accepting:
-                self.engine.blocked = {
-                    p: r for p, r in self.engine.blocked.items() if r != "RESOURCE_LIMITED"
-                }
-
     def record_event_loss(self, kind, payload, reason):
+        if kind == "fault":
+            self.health["fault_archive_dropped"] = self.health.get("fault_archive_dropped", 0) + 1
+            self.health["last_fault_archive_loss"] = {
+                "point_id": payload["point_id"],
+                "time": payload["time"],
+                "reason": reason,
+            }
+            return
         ids = (
             payload.get("event_ids", [])
             if kind == "frame"
@@ -372,20 +339,19 @@ class Runtime:
     async def writer(self):
         backoff, maintained, turn = 0.2, time.monotonic(), 0
         loop = asyncio.get_running_loop()
-        while self.running or self.events or self.ordinary or self.capture_jobs:
+        while self.running or self.events or self.ordinary:
             if time.monotonic() - maintained >= self.config.limits.maintenance_interval:
                 await loop.run_in_executor(self.io, self.router.maintain)
                 maintained = time.monotonic()
-            job = None
-            # Bound each turn and give live events, Pre jobs and ordinary history a share.
-            choices = ("events", "capture", "ordinary")
+            # Give fault records and continuous history bounded, fair write turns.
+            choices = ("events", "ordinary")
             chosen = None
-            for n in range(3):
-                candidate = choices[(turn + n) % 3]
-                target = self.capture_jobs if candidate == "capture" else getattr(self, candidate)
+            for n in range(2):
+                candidate = choices[(turn + n) % 2]
+                target = getattr(self, candidate)
                 if target:
                     chosen = candidate
-                    turn = (turn + n + 1) % 3
+                    turn = (turn + n + 1) % 2
                     break
             if chosen is None:
                 self.write_ready.clear()
@@ -396,26 +362,29 @@ class Runtime:
                 except TimeoutError:
                     pass
                 continue
-            if chosen == "capture":
-                job = self.capture_jobs[0]
-                batch = await loop.run_in_executor(
-                    self.io, job["plan"].batch, job["offset"], self.config.limits.write_batch_records
-                )
-            else:
-                target = getattr(self, chosen)
-                batch = [
-                    target.popleft() for _ in range(min(len(target), self.config.limits.write_batch_records))
-                ]
-            completed = False
+            target = getattr(self, chosen)
+            batch = [
+                target.popleft() for _ in range(min(len(target), self.config.limits.write_batch_records))
+            ]
             try:
                 refused = await loop.run_in_executor(self.io, self.router.write_batch, batch)
                 for record, reason in refused:
                     self.health["archive_dropped"] += 1
                     self.loss_summary = (reason, time.time())
                     self.record_event_loss(*record, reason)
-                    if job:
-                        job["failed"] = True
                 self.health["last_write"] = time.time()
+                # Only committed fault records may appear in the history notification stream.
+                for record in batch:
+                    if record[0] == "fault" and not any(record == r for r, _ in refused):
+                        self.sequence += 1
+                        message = {
+                            "type": "fault",
+                            "seq": self.sequence,
+                            "run_id": record[1]["run_id"],
+                            "data": record[1],
+                        }
+                        for subscriber in self.subscribers:
+                            subscriber.push(message)
                 if any(k == "frame" for k, p in batch) and not refused:
                     self.health["last_frame_write"] = self.health["last_write"]
                 if not self.archive_refusal:
@@ -428,7 +397,6 @@ class Runtime:
                 ):
                     self.accepting = True
                 backoff = 0.2
-                completed = True
             except PolicyRefusal as error:
                 self.health["archive_dropped"] += len(batch)
                 self.health["write_error"] = str(error)
@@ -442,34 +410,20 @@ class Runtime:
                 for record in batch:
                     if record[0] != "gap":
                         self.record_event_loss(*record, str(error))
-                if job:
-                    job["failed"] = True
-                completed = True
             except psycopg.Error as error:
                 self.health["write_failures"] += 1
                 self.health["write_error"] = type(error).__name__
                 self.accepting = False
-                if job is None:
-                    target = getattr(self, chosen)
-                    for record in reversed(batch):
-                        if len(target) < target.maxlen:
-                            target.appendleft(record)
-                        else:
-                            self.health["archive_dropped"] += 1
-                            self.loss_summary = ("RETRY_QUEUE_FULL", time.time())
-                            self.record_event_loss(*record, "RETRY_QUEUE_FULL")
+                target = getattr(self, chosen)
+                for record in reversed(batch):
+                    if len(target) < target.maxlen:
+                        target.appendleft(record)
+                    else:
+                        self.health["archive_dropped"] += 1
+                        self.loss_summary = ("RETRY_QUEUE_FULL", time.time())
+                        self.record_event_loss(*record, "RETRY_QUEUE_FULL")
                 await asyncio.sleep(backoff)
                 backoff = min(5, backoff * 2)
-            # Unexpected programming errors deliberately escape to the worker supervisor.
-            if job and completed:
-                job["offset"] += len(batch)
-                if job["offset"] >= job["plan"].count:
-                    self.capture_jobs.popleft()
-                    self.capture_bytes -= job["size"]
-                    if self.running:
-                        await self.ingress.put(("capture_done", (job["event_id"], not job["failed"])))
-                    else:
-                        self.engine.capture_complete(job["event_id"], not job["failed"])
 
     async def stop(self):
         for task in self.tasks[2:]:

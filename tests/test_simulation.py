@@ -24,16 +24,15 @@ def free_port():
 
 def small_config():
     data = json.loads(Path("config/research-sim.json").read_text(encoding="utf-8"))
-    ids = {"strain_01", "temp_inner_01"}
+    ids = {"bridge_mvv_01", "temp_inner_01"}
     data["points"] = [p for p in data["points"] if p["id"] in ids]
     data["derived"] = []
     data["profiles"] = []
     data["ui"] = {}
     data["simulation"]["signals"] = [
-        {"point": "strain_01", "base": 60},
+        {"point": "bridge_mvv_01", "base": 0.708},
         {"point": "temp_inner_01", "base": 125},
     ]
-    data["points"][0].update(scale=0.5, offset=10)
     data["points"][1].update(scale=2, offset=5)
     data["simulation"]["scenarios"] = [
         {"name": "baseline", "label": "Baseline", "kind": "baseline"},
@@ -61,16 +60,17 @@ def test_research_configuration_has_bounded_full_duration_capture():
     config = load_settings("config/research-sim.json")
     budget = estimate_budget(config)
     assert len(config.points) == 31 and len(config.ui.stations) == 8
+    assert len([p for p in config.points if p.source == "mb_field"]) == 8
+    assert all(p.unit == "mV/V" for p in config.points if p.source == "mb_field")
     assert budget["capture_bytes_estimate"] < config.limits.capture_budget_bytes
-    assert budget["validation_bytes_estimate"] < 128 * 1024**2
-    assert config.profiles[0].pre == 600 and config.profiles[0].post == 1200
-    assert len(config.profiles[0].source_points) == 4
+    assert budget["validation_bytes_estimate"] < 256 * 1024**2
+    assert not config.profiles, "fault confirmation must not require a capture profile"
 
 
 def test_simulation_refuses_invalid_references_nonlocal_servers_and_overbudget():
     original = json.loads(Path("config/research-sim.json").read_text(encoding="utf-8"))
     # Exercise refusal with a small test quota; the live lab now deliberately allows 10 GiB.
-    original["storage"]["development_budget_bytes"] = 128 * 1024**2
+    original["storage"]["development_budget_bytes"] = 256 * 1024**2
     for mutate in (
         lambda d: d["sources"][0].update(host="0.0.0.0"),
         lambda d: d["simulation"]["signals"].pop(),
@@ -126,7 +126,9 @@ def test_freeze_preserves_source_timestamp_not_receipt_status():
     ],
 )
 def test_modbus_wire_encoding_against_independent_ieee754_fixture(word, byte, expected):
-    point = small_config().points[0].model_copy(update={"word_order": word, "byte_order": byte})
+    point = small_config().points[0].model_copy(
+        update={"word_order": word, "byte_order": byte, "scale": 0.5, "offset": 10}
+    )
     # Engineering 60 with scale .5/offset 10 is raw 100 == IEEE754 42c80000.
     assert encode_registers(60, point) == expected
     assert decode_registers(expected, point) == (60, "GOOD")
@@ -141,7 +143,7 @@ async def test_real_protocols_fixed_values_bad_quality_and_write_rejection():
     try:
         assert await client.connect()
         response = await client.read_holding_registers(0, count=2, device_id=1)
-        assert response.registers == [0x42C8, 0]
+        assert response.registers == encode_registers(0.708, config.points[0])
         rejected = await client.write_register(0, 0, device_id=1)
         assert rejected.isError()
         async with Client(config.sources[1].endpoint) as ua:
@@ -166,7 +168,7 @@ async def test_real_protocols_fixed_values_bad_quality_and_write_rejection():
 @pytest.mark.parametrize(
     "kind,scenario,source_id,point",
     [
-        ("modbus", "mb_off", "mb_field", "strain_01"),
+        ("modbus", "mb_off", "mb_field", "bridge_mvv_01"),
         ("opcua", "ua_off", "ua_field", "temp_inner_01"),
     ],
 )
@@ -192,7 +194,8 @@ async def test_backend_active_reads_both_real_protocols_and_source_restart(kind,
         while len({x[0] for x in observations}) < 2 and time.monotonic() < deadline:
             await asyncio.sleep(0.05)
         values = {x[0]: x[1] for x in observations}
-        assert values == {"strain_01": 60, "temp_inner_01": 125}
+        assert values["bridge_mvv_01"] == pytest.approx(0.708)
+        assert values["temp_inner_01"] == 125
         field.set_scenario(scenario)
         deadline = time.monotonic() + 8
         while not any(x[0] == source_id for x in errors) and time.monotonic() < deadline:

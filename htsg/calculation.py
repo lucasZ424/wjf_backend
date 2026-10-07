@@ -39,6 +39,9 @@ def calculate(config, frame, previous):
                         estimate = estimate_thermal(model, *ns)
                         value = estimate["value"]
                         metadata = {"estimate": estimate["estimate"]}
+                    case "bridge_strain":
+                        # Full bridge N=1, temporarily fixed gauge factor GF=6.
+                        value = ns[0] * 1000 / 6
                     case "sum":
                         value = math.fsum(ns)
                     case "mean":

@@ -294,7 +294,7 @@ class FieldSimulator:
             "ledger_retained": len(self.ledger),
             "ledger_limit": self.sim.ledger_limit,
             "budget": estimate_budget(self.config),
-            "freeze_note": "Freeze retains value and OPC UA source timestamp; received-time mode cannot diagnose frozen device values solely from successful polls.",
+            "freeze_note": "Freeze retains value and OPC UA source timestamp; received-time mode cannot diagnose frozen device values while the subscription remains healthy.",
         }
 
 

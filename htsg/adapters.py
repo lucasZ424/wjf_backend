@@ -9,6 +9,40 @@ import time
 from .config import Point, Source
 
 
+class OpcUaSubscriptionHandler:
+    """Keep the latest DataValue delivered for every configured monitored item."""
+
+    def __init__(self, points: list[Point]):
+        self.points = {point.node_id: point for point in points}
+        self.values = {}
+        self.ready = asyncio.Event()
+        self.status = None
+
+    def datachange_notification(self, node, value, data):
+        point = self.points.get(node.nodeid.to_string())
+        if point is None:
+            return
+        data_value = data.monitored_item.Value
+        good = data_value.StatusCode.is_good()
+        if (
+            not isinstance(value, (int, float))
+            or isinstance(value, bool)
+            or value in point.invalid_values
+        ):
+            good = False
+        stamp = data_value.SourceTimestamp.timestamp() if data_value.SourceTimestamp else None
+        self.values[point.id] = (
+            value * point.scale + point.offset if good else None,
+            "GOOD" if good else "BAD",
+            stamp,
+        )
+        if len(self.values) == len(self.points):
+            self.ready.set()
+
+    def status_change_notification(self, status):
+        self.status = status
+
+
 def decode_registers(registers: list[int], point: Point):
     words = list(registers)
     if point.word_order == "little":
@@ -77,7 +111,7 @@ async def adapter(source: Source, points: list[Point], submit, report):
                 finally:
                     client.close()
             else:
-                from asyncua import Client
+                from asyncua import Client, ua
 
                 client = Client(source.endpoint, timeout=source.timeout)
                 if source.username_env:
@@ -87,25 +121,23 @@ async def adapter(source: Source, points: list[Point], submit, report):
                     await client.set_security_string(source.security)
                 async with client:
                     nodes = [client.get_node(p.node_id) for p in points]
+                    handler = OpcUaSubscriptionHandler(points)
+                    subscription = await client.create_subscription(source.interval * 1000, handler)
+                    handles = await subscription.subscribe_data_change(
+                        nodes, queuesize=1, sampling_interval=source.interval * 1000
+                    )
+                    for handle in handles:
+                        if isinstance(handle, ua.StatusCode):
+                            handle.check()
+                    await asyncio.wait_for(
+                        handler.ready.wait(), max(source.timeout, source.interval * 3)
+                    )
                     while True:
-                        for p, node in zip(points, nodes):
-                            data = await node.read_data_value(raise_on_bad_status=False)
-                            good = data.StatusCode.is_good()
-                            value = data.Value.Value if data.Value else None
-                            if (
-                                not isinstance(value, (int, float))
-                                or isinstance(value, bool)
-                                or value in p.invalid_values
-                            ):
-                                good = False
-                            stamp = data.SourceTimestamp.timestamp() if data.SourceTimestamp else None
-                            submit(
-                                p.id,
-                                value * p.scale + p.offset if good else None,
-                                "GOOD" if good else "BAD",
-                                stamp,
-                                None,
-                            )
+                        await client.check_connection()
+                        if handler.status is not None and not handler.status.is_good():
+                            handler.status.check()
+                        for point_id, (value, quality, stamp) in tuple(handler.values.items()):
+                            submit(point_id, value, quality, stamp, None)
                         backoff = 1
                         await asyncio.sleep(source.interval)
         except asyncio.CancelledError:

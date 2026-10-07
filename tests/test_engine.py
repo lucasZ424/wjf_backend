@@ -16,7 +16,7 @@ def test_spike_is_detected_before_mean_and_both_directions_survive(settings):
     e, records = engine(settings)
     put(e, "x", 2, 0.1)
     put(e, "x", 10, 0.2)
-    assert any(k == "trigger" for k, _, _ in records)
+    assert not any(k == "fault" for k, _, _ in records), "a short spike must not confirm a fault"
     assert e.latest_frame is None
     put(e, "x", -2, 0.3)
     put(e, "x", 2, 0.4)
@@ -24,7 +24,7 @@ def test_spike_is_detected_before_mean_and_both_directions_survive(settings):
     value = e.latest_frame["values"]["x"]
     assert value["value"] == 3
     assert value["high_occurred"] and value["low_occurred"]
-    assert any(k == "sample" and p["sample"]["value"] == 10 for k, p, _ in records)
+    assert any(k == "raw" and p["sample"]["value"] == 10 for k, p, _ in records)
 
 
 def test_current_state_does_not_recover_from_known_old_normal(settings):
@@ -33,45 +33,23 @@ def test_current_state_does_not_recover_from_known_old_normal(settings):
     put(e, "y", 2, 0.1, source_time=1000.1)
     put(e, "x", 2, 0.2, source_time=999)
     assert e.states["x"].state == "HIGH"
-    assert e.active["p"].phase == "ACTIVE"
+    assert not e.faults["x"].recorded
     put(e, "x", 12, 0.3, source_time=998)
-    assert any(k == "trigger" and p["historical"] for k, p, _ in records)
+    assert not any(k == "fault" for k, _, _ in records)
 
 
-def test_recovery_restarts_after_real_unavailability(settings):
-    e, _ = engine(settings)
-    put(e, "x", 10, 0.1)
-    put(e, "y", 2, 0.2)
-    put(e, "x", 2, 1)
-    assert e.active["p"].phase == "RECOVERY_PENDING"
-    e.tick(1004, 4)
-    e.disconnected("s", 1004, 4)
-    put(e, "x", 2, 5)
-    put(e, "y", 2, 5)
-    e.tick(1007, 7)
-    assert e.active["p"].phase == "RECOVERY_PENDING"
-    e.tick(1010, 10)
-    assert e.active["p"].phase == "POST_CAPTURE"
-
-
-def test_post_retrigger_keeps_event_and_final_frame_is_archived(settings):
+def test_fault_recovery_allows_a_new_confirmation_without_post_capture(settings):
     e, records = engine(settings)
-    put(e, "x", 10, 0.1)
-    put(e, "y", 2, 0.1)
-    put(e, "x", 2, 1)
-    identity = e.active["p"].id
-    e.tick(1006.3, 6.3)
-    put(e, "x", 12, 7)
-    assert e.active["p"].id == identity and e.active["p"].phase == "ACTIVE"
-    put(e, "x", 2, 8)
-    e.tick(1013.1, 13.1)
-    e.tick(1015.2, 15.2)
-    assert "p" not in e.active
-    e.tick(1016.3, 16.3)
-    assert any(
-        k == "frame" and identity in p["event_ids"] and p["frame"]["window_start"] == 1015
-        for k, p, _ in records
-    )
+    for t in range(6):
+        put(e, "x", 10, t)
+        e.tick(1000+t, t)
+    put(e, "x", 2, 6)
+    for t in range(7, 13):
+        put(e, "x", 12, t)
+        e.tick(1000+t, t)
+    faults = [p for k, p, _ in records if k == "fault"]
+    assert [f["time"] for f in faults] == [1005, 1012]
+    assert not any(k in ("event", "capture_plan", "trigger") for k, _, _ in records)
 
 
 def test_hold_uses_window_end_and_disconnect_cannot_resurrect_cached_value(settings):
@@ -109,7 +87,8 @@ def test_source_time_late_bucket_not_silently_rewritten(settings):
     before = e.latest_frame["values"]["x"]["value"]
     put(e, "x", 10, 1.4, source_time=1000.2)
     assert e.latest_frame["values"]["x"]["value"] == before
-    assert any(k == "trigger" and p["window_start"] == 1000 for k, p, _ in records)
+    assert not any(k == "fault" for k, _, _ in records)
+    assert records[-1][0] == "raw", "late observations remain archived without confirming current faults"
 
 
 def test_resource_close_does_not_reopen_per_sample(settings):
@@ -120,7 +99,7 @@ def test_resource_close_does_not_reopen_per_sample(settings):
     count = sum(k == "event" for k, _, _ in records)
     put(e, "x", 11, 2.1)
     put(e, "x", 12, 2.2)
-    assert not e.active
+    assert not any(f.recorded for f in e.faults.values())
     assert sum(k == "event" for k, _, _ in records) == count
 
 
@@ -181,4 +160,4 @@ def test_finite_input_arithmetic_overflow_is_visible_without_stopping_engine(set
     e.tick(1001.3, 1.3)
     value = e.latest_frame["values"]["x"]
     assert value["value"] is None and value["quality"] == "PARTIAL"
-    assert value["high_occurred"] and e.active["p"].phase == "ACTIVE"
+    assert value["high_occurred"] and not e.faults["x"].recorded

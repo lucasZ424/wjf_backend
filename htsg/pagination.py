@@ -23,7 +23,7 @@ def decode(token, identity, category):
         version, saved, key = json.loads(base64.urlsafe_b64decode(token))
         if version != 1 or saved != identity or not isinstance(key, list):
             raise ValueError()
-        count = 4 if category == "history" else 1 if category == "products" else 2
+        count = 4 if category in ("history", "replay") else 1 if category == "products" else 2
         if len(key) != count:
             raise ValueError()
         if category != "products":

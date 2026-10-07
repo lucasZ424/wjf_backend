@@ -1,7 +1,7 @@
 {
   "mode": "production",
   "time_basis": "received",
-  "sources": [{"id": "adc", "kind": "modbus", "enabled": false}, {"id": "dcs", "kind": "opcua", "enabled": false}],
+  "sources": [{"id": "adc", "kind": "modbus", "enabled": false, "interval": 1}, {"id": "dcs", "kind": "opcua", "enabled": false, "interval": 1}],
   "points": [],
   "derived": [{"id": "thermal_stress", "inputs": [], "operation": "unconfigured", "unit": "MPa"}],
   "profiles": [],

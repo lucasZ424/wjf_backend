@@ -1,5 +1,6 @@
 {
   "mode": "development",
+  "dev_admin_login": true,
   "time_basis": "received",
   "project": {
     "title": "HTSG 660 MW 科研模拟监测",
@@ -28,11 +29,11 @@
   ],
   "points": [
     {
-      "id": "strain_01",
+      "id": "bridge_mvv_01",
       "source": "mb_field",
-      "unit": "με",
+      "unit": "mV/V",
       "aggregation": "Mean",
-      "high": 400,
+      "high": 2.4,
       "max_age": 2,
       "stale_after": 5,
       "address": 0,
@@ -60,11 +61,11 @@
       "node_id": "ns=2;s=temp_inner_01"
     },
     {
-      "id": "strain_02",
+      "id": "bridge_mvv_02",
       "source": "mb_field",
-      "unit": "με",
+      "unit": "mV/V",
       "aggregation": "Mean",
-      "high": 400,
+      "high": 2.4,
       "max_age": 2,
       "stale_after": 5,
       "address": 2,
@@ -92,11 +93,11 @@
       "node_id": "ns=2;s=temp_inner_02"
     },
     {
-      "id": "strain_03",
+      "id": "bridge_mvv_03",
       "source": "mb_field",
-      "unit": "με",
+      "unit": "mV/V",
       "aggregation": "Mean",
-      "high": 400,
+      "high": 2.4,
       "max_age": 2,
       "stale_after": 5,
       "address": 4,
@@ -124,11 +125,11 @@
       "node_id": "ns=2;s=temp_inner_03"
     },
     {
-      "id": "strain_04",
+      "id": "bridge_mvv_04",
       "source": "mb_field",
-      "unit": "με",
+      "unit": "mV/V",
       "aggregation": "Mean",
-      "high": 400,
+      "high": 2.4,
       "max_age": 2,
       "stale_after": 5,
       "address": 6,
@@ -156,11 +157,11 @@
       "node_id": "ns=2;s=temp_inner_04"
     },
     {
-      "id": "strain_05",
+      "id": "bridge_mvv_05",
       "source": "mb_field",
-      "unit": "με",
+      "unit": "mV/V",
       "aggregation": "Mean",
-      "high": 400,
+      "high": 2.4,
       "max_age": 2,
       "stale_after": 5,
       "address": 8,
@@ -188,11 +189,11 @@
       "node_id": "ns=2;s=temp_inner_05"
     },
     {
-      "id": "strain_06",
+      "id": "bridge_mvv_06",
       "source": "mb_field",
-      "unit": "με",
+      "unit": "mV/V",
       "aggregation": "Mean",
-      "high": 400,
+      "high": 2.4,
       "max_age": 2,
       "stale_after": 5,
       "address": 10,
@@ -220,11 +221,11 @@
       "node_id": "ns=2;s=temp_inner_06"
     },
     {
-      "id": "strain_07",
+      "id": "bridge_mvv_07",
       "source": "mb_field",
-      "unit": "με",
+      "unit": "mV/V",
       "aggregation": "Mean",
-      "high": 400,
+      "high": 2.4,
       "max_age": 2,
       "stale_after": 5,
       "address": 12,
@@ -252,11 +253,11 @@
       "node_id": "ns=2;s=temp_inner_07"
     },
     {
-      "id": "strain_08",
+      "id": "bridge_mvv_08",
       "source": "mb_field",
-      "unit": "με",
+      "unit": "mV/V",
       "aggregation": "Mean",
-      "high": 400,
+      "high": 2.4,
       "max_age": 2,
       "stale_after": 5,
       "address": 14,
@@ -348,6 +349,54 @@
     }
   ],
   "derived": [
+    {
+      "id": "strain_01",
+      "inputs": ["bridge_mvv_01"],
+      "operation": "bridge_strain",
+      "unit": "με"
+    },
+    {
+      "id": "strain_02",
+      "inputs": ["bridge_mvv_02"],
+      "operation": "bridge_strain",
+      "unit": "με"
+    },
+    {
+      "id": "strain_03",
+      "inputs": ["bridge_mvv_03"],
+      "operation": "bridge_strain",
+      "unit": "με"
+    },
+    {
+      "id": "strain_04",
+      "inputs": ["bridge_mvv_04"],
+      "operation": "bridge_strain",
+      "unit": "με"
+    },
+    {
+      "id": "strain_05",
+      "inputs": ["bridge_mvv_05"],
+      "operation": "bridge_strain",
+      "unit": "με"
+    },
+    {
+      "id": "strain_06",
+      "inputs": ["bridge_mvv_06"],
+      "operation": "bridge_strain",
+      "unit": "με"
+    },
+    {
+      "id": "strain_07",
+      "inputs": ["bridge_mvv_07"],
+      "operation": "bridge_strain",
+      "unit": "με"
+    },
+    {
+      "id": "strain_08",
+      "inputs": ["bridge_mvv_08"],
+      "operation": "bridge_strain",
+      "unit": "με"
+    },
     {
       "id": "delta_t_01",
       "inputs": [
@@ -515,29 +564,7 @@
       "reference_urls": []
     }
   ],
-  "profiles": [
-    {
-      "id": "wall_temperature_recall",
-      "trigger_points": [
-        "temp_inner_01",
-        "temp_outer_01",
-        "strain_01"
-      ],
-      "source_points": [
-        "strain_01",
-        "temp_outer_01",
-        "temp_inner_01",
-        "load_mw"
-      ],
-      "derived_points": [
-        "delta_t_01",
-        "stress_01"
-      ],
-      "pre": 600,
-      "recovery": 60,
-      "post": 1200
-    }
-  ],
+  "profiles": [],
   "limits": {
     "capture_budget_bytes": 67108864,
     "write_batch_records": 128,
@@ -565,11 +592,11 @@
     "validation_duration_seconds": 2100,
     "signals": [
       {
-        "point": "strain_01",
-        "base": 118,
-        "amplitude": 10,
+        "point": "bridge_mvv_01",
+        "base": 0.708,
+        "amplitude": 0.06,
         "period": 120,
-        "noise": 0.2,
+        "noise": 0.0012,
         "phase": 0.1
       },
       {
@@ -589,11 +616,11 @@
         "phase": 0.1
       },
       {
-        "point": "strain_02",
-        "base": 126,
-        "amplitude": 10,
+        "point": "bridge_mvv_02",
+        "base": 0.756,
+        "amplitude": 0.06,
         "period": 120,
-        "noise": 0.2,
+        "noise": 0.0012,
         "phase": 0.2
       },
       {
@@ -613,11 +640,11 @@
         "phase": 0.2
       },
       {
-        "point": "strain_03",
-        "base": 134,
-        "amplitude": 10,
+        "point": "bridge_mvv_03",
+        "base": 0.804,
+        "amplitude": 0.06,
         "period": 120,
-        "noise": 0.2,
+        "noise": 0.0012,
         "phase": 0.30000000000000004
       },
       {
@@ -637,11 +664,11 @@
         "phase": 0.30000000000000004
       },
       {
-        "point": "strain_04",
-        "base": 142,
-        "amplitude": 10,
+        "point": "bridge_mvv_04",
+        "base": 0.852,
+        "amplitude": 0.06,
         "period": 120,
-        "noise": 0.2,
+        "noise": 0.0012,
         "phase": 0.4
       },
       {
@@ -661,11 +688,11 @@
         "phase": 0.4
       },
       {
-        "point": "strain_05",
-        "base": 150,
-        "amplitude": 10,
+        "point": "bridge_mvv_05",
+        "base": 0.9,
+        "amplitude": 0.06,
         "period": 120,
-        "noise": 0.2,
+        "noise": 0.0012,
         "phase": 0.5
       },
       {
@@ -685,11 +712,11 @@
         "phase": 0.5
       },
       {
-        "point": "strain_06",
-        "base": 158,
-        "amplitude": 10,
+        "point": "bridge_mvv_06",
+        "base": 0.948,
+        "amplitude": 0.06,
         "period": 120,
-        "noise": 0.2,
+        "noise": 0.0012,
         "phase": 0.6000000000000001
       },
       {
@@ -709,11 +736,11 @@
         "phase": 0.6000000000000001
       },
       {
-        "point": "strain_07",
-        "base": 166,
-        "amplitude": 10,
+        "point": "bridge_mvv_07",
+        "base": 0.996,
+        "amplitude": 0.06,
         "period": 120,
-        "noise": 0.2,
+        "noise": 0.0012,
         "phase": 0.7000000000000001
       },
       {
@@ -733,11 +760,11 @@
         "phase": 0.7000000000000001
       },
       {
-        "point": "strain_08",
-        "base": 174,
-        "amplitude": 10,
+        "point": "bridge_mvv_08",
+        "base": 1.044,
+        "amplitude": 0.06,
         "period": 120,
-        "noise": 0.2,
+        "noise": 0.0012,
         "phase": 0.8
       },
       {
@@ -821,7 +848,7 @@
         "offsets": {
           "temp_inner_01": 80,
           "temp_outer_01": 20,
-          "strain_01": 220
+          "bridge_mvv_01": 1.32
         }
       },
       {
@@ -847,14 +874,14 @@
           "temp_outer_06": -25,
           "temp_outer_07": -25,
           "temp_outer_08": -25,
-          "strain_01": -40,
-          "strain_02": -40,
-          "strain_03": -40,
-          "strain_04": -40,
-          "strain_05": -40,
-          "strain_06": -40,
-          "strain_07": -40,
-          "strain_08": -40
+          "bridge_mvv_01": -0.24,
+          "bridge_mvv_02": -0.24,
+          "bridge_mvv_03": -0.24,
+          "bridge_mvv_04": -0.24,
+          "bridge_mvv_05": -0.24,
+          "bridge_mvv_06": -0.24,
+          "bridge_mvv_07": -0.24,
+          "bridge_mvv_08": -0.24
         }
       },
       {
@@ -863,7 +890,7 @@
         "kind": "bad_quality",
         "duration": 20,
         "points": [
-          "strain_01",
+          "bridge_mvv_01",
           "temp_inner_01"
         ]
       },
@@ -873,7 +900,7 @@
         "kind": "freeze",
         "duration": 20,
         "points": [
-          "strain_01",
+          "bridge_mvv_01",
           "temp_inner_01"
         ]
       },
@@ -998,41 +1025,49 @@
     ],
     "precision": 2,
     "point_labels": {
+      "bridge_mvv_01": "Bridge原始信号 S01",
       "strain_01": "应变 S01",
       "temp_outer_01": "外侧壁温 S01",
       "temp_inner_01": "内侧温度 S01",
       "delta_t_01": "内外温差 S01",
       "stress_01": "热应力估算 S01",
+      "bridge_mvv_02": "Bridge原始信号 S02",
       "strain_02": "应变 S02",
       "temp_outer_02": "外侧壁温 S02",
       "temp_inner_02": "内侧温度 S02",
       "delta_t_02": "内外温差 S02",
       "stress_02": "热应力估算 S02",
+      "bridge_mvv_03": "Bridge原始信号 S03",
       "strain_03": "应变 S03",
       "temp_outer_03": "外侧壁温 S03",
       "temp_inner_03": "内侧温度 S03",
       "delta_t_03": "内外温差 S03",
       "stress_03": "热应力估算 S03",
+      "bridge_mvv_04": "Bridge原始信号 S04",
       "strain_04": "应变 S04",
       "temp_outer_04": "外侧壁温 S04",
       "temp_inner_04": "内侧温度 S04",
       "delta_t_04": "内外温差 S04",
       "stress_04": "热应力估算 S04",
+      "bridge_mvv_05": "Bridge原始信号 S05",
       "strain_05": "应变 S05",
       "temp_outer_05": "外侧壁温 S05",
       "temp_inner_05": "内侧温度 S05",
       "delta_t_05": "内外温差 S05",
       "stress_05": "热应力估算 S05",
+      "bridge_mvv_06": "Bridge原始信号 S06",
       "strain_06": "应变 S06",
       "temp_outer_06": "外侧壁温 S06",
       "temp_inner_06": "内侧温度 S06",
       "delta_t_06": "内外温差 S06",
       "stress_06": "热应力估算 S06",
+      "bridge_mvv_07": "Bridge原始信号 S07",
       "strain_07": "应变 S07",
       "temp_outer_07": "外侧壁温 S07",
       "temp_inner_07": "内侧温度 S07",
       "delta_t_07": "内外温差 S07",
       "stress_07": "热应力估算 S07",
+      "bridge_mvv_08": "Bridge原始信号 S08",
       "strain_08": "应变 S08",
       "temp_outer_08": "外侧壁温 S08",
       "temp_inner_08": "内侧温度 S08",

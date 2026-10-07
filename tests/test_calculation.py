@@ -1,5 +1,5 @@
 from htsg.calculation import calculate
-from htsg.config import Derived
+from htsg.config import Derived, load_settings
 
 
 def test_chained_calculation_cannot_hide_held_input_age(settings):
@@ -36,3 +36,17 @@ def test_derivative_rejects_previous_frame_with_stale_hold(settings):
         "values": {"x": {"value": 2, "quality": "GOOD", "basis": "WINDOW_VALUE"}},
     }
     assert calculate(config, current, previous)["derived_results"]["d"]["reason"] == "PREVIOUS_UNAVAILABLE"
+
+
+def test_full_bridge_millivolts_per_volt_converts_with_fixed_gauge_factor_six():
+    config = load_settings("config/research-sim.json")
+    frame = {
+        "run_id": "r",
+        "window_start": 100,
+        "window_end": 101,
+        "values": {
+            "bridge_mvv_01": {"value": 0.708, "quality": "GOOD", "basis": "WINDOW_VALUE"}
+        },
+    }
+    result = calculate(config, frame, None)["derived_results"]["strain_01"]
+    assert result["value"] == 118

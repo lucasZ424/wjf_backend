@@ -14,7 +14,6 @@ import pytest
 from test_audit_regressions import release
 from test_storage import frame
 
-from htsg.capture import CapturePlan
 from htsg.engine import Engine, Event
 from htsg.runtime import Runtime
 from htsg.storage import Router
@@ -96,13 +95,13 @@ async def test_real_connection_termination_reconnects_without_stopping_detection
         assert not runtime.failed.is_set()
         # A completed empty Pre turn can precede the retried live-event transaction.
         async with asyncio.timeout(8):
-            while not (await runtime.db_call(runtime.router.merged, "events"))["items"]:
+            while not (await runtime.db_call(runtime.router.merged, "replay", point="x"))["items"]:
                 await asyncio.sleep(0.01)
     finally:
         await runtime.stop()
 
 
-@pytest.mark.parametrize("stage", ["PRE", "ACTIVE", "POST"])
+@pytest.mark.parametrize("stage", ["PENDING", "CONFIRMED", "RECOVERED"])
 async def test_killed_capture_process_preserves_commits_and_restart_marks_interrupted(
     settings, databases, stage
 ):
@@ -127,14 +126,15 @@ async def test_killed_capture_process_preserves_commits_and_restart_marks_interr
         await asyncio.wait_for(child.wait(), 8)
         router = Router(settings, *databases)
         router.initialize()
-        saved = router.merged("event", event_id=ready["id"])["items"][0]["payload"]
-        assert saved["archive_status"] == "INTERRUPTED" and saved["coverage"] == "PARTIAL"
-        assert saved["close_reason"] == "PROCESS_INTERRUPTED"
+        saved = router.merged("faults")["items"]
+        assert len(saved) == (0 if stage == "PENDING" else 1)
+        if saved:
+            assert saved[0]["payload"]["id"] == ready["id"]
         with databases[0].session() as conn:
             assert not conn.execute("SELECT id FROM source_sample WHERE id='uncommitted'").fetchall()
-        assert databases[0].query("samples", event_id=ready["id"])
+        assert databases[0].query("replay", point="x")
         fresh = Engine(settings, lambda *args: None, time.time(), time.monotonic())
-        assert fresh.run_id != ready["run_id"] and not fresh.active
+        assert fresh.run_id != ready["run_id"] and not any(f.recorded for f in fresh.faults.values())
     finally:
         if child.returncode is None:
             child.kill()
@@ -170,7 +170,7 @@ async def test_blocked_writer_bounds_queues_and_recovers_with_visible_loss(setti
                 runtime.submit("x", 10 + n)
             await asyncio.sleep(0.01)
             assert len(runtime.events) <= 16 and len(runtime.ordinary) <= 4
-            assert runtime.ingress.qsize() <= 16 and runtime.capture_bytes <= 2048
+            assert runtime.ingress.qsize() <= 16
         assert runtime.engine.seq > 0 and runtime.health["ingress_dropped"] > 0
         assert runtime.health["archive_dropped"] > 0 and not runtime.failed.is_set()
         gate.set()
@@ -178,7 +178,9 @@ async def test_blocked_writer_bounds_queues_and_recovers_with_visible_loss(setti
         await until(lambda: not runtime.event_losses and runtime.loss_summary is None)
         await until(lambda: not runtime.events)
         result = await runtime.db_call(router.merged, "gaps")
-        assert any(r["payload"]["event_id"] for r in result["items"])
+        assert any(
+            r["payload"]["reason"] in ("INGRESS_OVERFLOW", "ARCHIVE_QUEUE_FULL") for r in result["items"]
+        )
     finally:
         gate.set()
         await runtime.stop()
@@ -221,30 +223,20 @@ def test_schema_upgrade_failure_is_atomic_and_retryable(settings, databases, mon
     assert store.query("history")[0]["id"] == "kept"
 
 
-async def test_all_pending_capture_jobs_share_budget_then_release_it(settings, databases):
-    settings = settings.model_copy(
-        update={"limits": settings.limits.model_copy(update={"capture_budget_bytes": 4096})}
-    )
+async def test_fault_queue_bounds_and_reports_rejected_confirmations(settings, databases):
+    settings = settings.model_copy(update={"limits": settings.limits.model_copy(update={"event_queue": 4})})
     router = Router(settings, *databases)
     router.initialize()
     runtime = Runtime(settings, router)
     runtime.running = True
-    source = Engine(settings, lambda *args: None, 1000, 0).receive("x", 2, 1000, 0)
-    accepted = 0
     try:
         for i in range(12):
-            event = asdict(Event(f"e{i}", "p", source.run_id, settings.config_id, 990, 1000))
-            plan = CapturePlan(json.dumps(event).encode(), (source,), ())
-            admitted = runtime.emit("capture_plan", {"plan": plan, "event_id": event["id"]}, True)
-            accepted += admitted
-            assert runtime.capture_bytes <= 4096
-        assert 0 < accepted < 12 and len(runtime.capture_jobs) == accepted
-        assert runtime.health["capture_refused"] == 12 - accepted
+            runtime.emit("fault", {"id": f"f{i}", "point_id": "x", "time": i, "run_id": "r"}, True)
+        assert len(runtime.events) == 4
+        assert runtime.health["fault_archive_dropped"] == 8
         runtime.running = False
         await asyncio.wait_for(runtime.writer(), 8)
-        assert runtime.capture_bytes == 0 and not runtime.capture_jobs
-        for i in range(accepted):
-            assert len(databases[0].query("samples", event_id=f"e{i}")) == 1
+        assert len(databases[0].query("faults")) == 4
     finally:
         release(runtime)
 
@@ -272,9 +264,10 @@ async def test_stalled_calculation_bounds_queue_and_keeps_alarm_detection(settin
         for n in range(2, 10):
             runtime.engine.tick(1000 + n + 0.3, n + 0.3)
             assert runtime.calc_queue.qsize() <= 4
-        runtime.engine.receive("x", 10, 1009.4, 9.4)
+        for t in range(6):
+            runtime.engine.receive("x", 10, 1009.4 + t, 9.4 + t)
         assert runtime.engine.states["x"].state == "HIGH"
-        assert any(k == "trigger" for k, _ in runtime.events)
+        assert any(k == "fault" for k, _ in runtime.events)
         assert runtime.engine.latest_frame["derived_results"]["delta"]["reason"] == "CALCULATION_QUEUE_FULL"
         gate.set()
         await until(lambda: not runtime.ingress.empty())

@@ -38,8 +38,9 @@ async def test_modbus_local_server_enters_canonical_pipeline():
         await server.shutdown()
 
 
-async def test_opcua_local_server_preserves_value_quality_and_source_time():
+async def test_opcua_subscription_preserves_latest_value_quality_and_source_time(monkeypatch):
     from asyncua import Server
+    from asyncua.common.node import Node
 
     port = free_port()
     server = Server()
@@ -51,12 +52,53 @@ async def test_opcua_local_server_preserves_value_quality_and_source_time():
     source = Source(id="s", kind="opcua", enabled=True, endpoint=endpoint, interval=0.05)
     received = asyncio.Queue()
     async with server:
+        async def polling_is_forbidden(*args, **kwargs):
+            raise AssertionError("OPC UA acquisition must use monitored-item notifications")
+
+        monkeypatch.setattr(Node, "read_data_value", polling_is_forbidden)
         task = asyncio.create_task(
             adapter(source, [point], lambda *args: received.put_nowait(args), lambda *args: None)
         )
         try:
             sample = await asyncio.wait_for(received.get(), 10)
             assert sample[1] == 25.0 and sample[2] == "GOOD" and sample[3] is not None
+            repeated = await asyncio.wait_for(received.get(), 1)
+            assert repeated[1:4] == sample[1:4], (
+                "a healthy subscription must retain an unchanged value without polling the node"
+            )
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+
+async def test_one_opcua_subscription_accepts_planned_two_hundred_channels():
+    from asyncua import Server
+
+    port = free_port()
+    server = Server()
+    await server.init()
+    endpoint = f"opc.tcp://127.0.0.1:{port}/capacity/"
+    server.set_endpoint(endpoint)
+    nodes = [await server.nodes.objects.add_variable(2, f"Value{i}", float(i)) for i in range(200)]
+    points = [
+        Point(
+            id=f"ua_{i:03d}",
+            source="s",
+            unit="test",
+            aggregation="Last",
+            node_id=node.nodeid.to_string(),
+        )
+        for i, node in enumerate(nodes)
+    ]
+    source = Source(id="s", kind="opcua", enabled=True, endpoint=endpoint, interval=0.05, timeout=2)
+    received = asyncio.Queue()
+    async with server:
+        task = asyncio.create_task(
+            adapter(source, points, lambda *args: received.put_nowait(args), lambda *args: None)
+        )
+        try:
+            samples = [await asyncio.wait_for(received.get(), 10) for _ in points]
+            assert {sample[0] for sample in samples} == {point.id for point in points}
         finally:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)

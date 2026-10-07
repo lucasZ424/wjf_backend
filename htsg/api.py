@@ -51,6 +51,11 @@ def create_app(runtime: Runtime, accounts: Accounts):
     async def verify(token):
         if not isinstance(token, str) or len(token) > 256:
             return None
+        if runtime.config.mode == "development" and runtime.config.dev_admin_login and token == "admin:admin":
+            account = accounts.users.get("admin", {})
+            if not accounts.uncertain and account.get("active") and account.get("role") == "admin":
+                return {"username": "admin", "role": "admin"}
+            return None
         async with auth_slots:
             return await asyncio.to_thread(accounts.verify, token)
 
@@ -130,6 +135,26 @@ def create_app(runtime: Runtime, accounts: Accounts):
         cursor: str | None = Query(None, max_length=2048),
     ):
         return await query("events", limit=limit, offset=offset, cursor=cursor)
+
+    @app.get("/api/faults", dependencies=[Depends(user)])
+    async def faults(
+        point: str | None = None,
+        limit: int = Query(100, ge=1, le=1000),
+        cursor: str | None = Query(None, max_length=2048),
+    ):
+        return await query("faults", point=point, limit=limit, cursor=cursor)
+
+    @app.get("/api/replay", dependencies=[Depends(user)])
+    async def replay(
+        center: float = Query(allow_inf_nan=False),
+        seconds: float = Query(gt=0, le=366 * 86400, allow_inf_nan=False),
+        point: str | None = None,
+        limit: int = Query(100, ge=1, le=1000),
+        cursor: str | None = Query(None, max_length=2048),
+    ):
+        start, end = center - seconds / 2, center + seconds / 2
+        result = await query("replay", start=start, end=end, point=point, limit=limit, cursor=cursor)
+        return {**result, "center": center, "seconds": seconds, "start": start, "end": end}
 
     @app.get("/api/events/{event_id}", dependencies=[Depends(user)])
     async def event(event_id: str):
