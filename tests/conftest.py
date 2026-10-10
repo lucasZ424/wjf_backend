@@ -132,9 +132,17 @@ def rig(tmp_path_factory):
         yield running
 
 
+@pytest.fixture(scope="module")
+def archive_rig(tmp_path_factory):
+    from web_rig import WebRig
+
+    with WebRig(tmp_path_factory.mktemp("web"), archive=True) as running:
+        yield running
+
+
 @pytest.fixture
-def page(browser, rig):
-    context = browser.new_context(viewport={"width": 1440, "height": 1000}, locale="zh-CN")
+def page(browser):
+    context = browser.new_context(viewport={"width": 1440, "height": 1000}, locale="zh-CN", timezone_id="Asia/Shanghai")
     page = context.new_page()
     page.errors = []
     page.on("pageerror", lambda error: page.errors.append(str(error)))

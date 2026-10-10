@@ -65,6 +65,7 @@ const pages = [
     update() {
       $("process-table").innerHTML = table(["过程量", "数值", "状态"], (state.config.ui.process_points || []).map(id => [esc(label(id)), valueText(id), stateBadges(id)]));
     }},
+  {id: 5, name: "历史查询", html: historyHtml, mount: mountHistory},
 ];
 const currentPage = () => pages.find(p => p.id === state.page) || pages[0];
 
@@ -88,6 +89,130 @@ function invalidate() {
   if (state.drawing) return;
   state.drawing = true;
   requestAnimationFrame(() => { state.drawing = false; renderLive(); });
+}
+
+// ------------------------------------------------------------------------------- page 5: history (终版 §14)
+
+// The replay settings.  A locked fault only fills the centre time and the default channel; every field stays
+// editable, and a query never needs a fault.
+const replay = {fault: null, center: null, seconds: 300, points: []};
+const faults = {items: [], cursor: null, more: false, loading: false, epoch: 0, partial: false, error: "", query: ""};
+
+const stamp = seconds => Number.isFinite(seconds) ? new Date(seconds * 1000).toLocaleString("zh-CN", {hour12: false}) : "—";
+const toLocalInput = seconds => Number.isFinite(seconds) ? new Date(seconds * 1000 - new Date(seconds * 1000).getTimezoneOffset() * 60000).toISOString().slice(0, 19) : "";
+const fromLocalInput = text => text ? new Date(text).getTime() / 1000 : null;
+const faultChannels = () => definitions().filter(d => d.high != null || d.low != null);
+const option = (id, selected = false) => `<option value="${esc(id)}" ${selected ? "selected" : ""}>${esc(label(id))} · ${esc(id)}${definition(id).unit ? ` (${esc(definition(id).unit)})` : ""}</option>`;
+
+function historyHtml() {
+  return `<div class="history-layout">
+    <aside class="card" id="fault-panel" aria-label="故障记录">
+      <h3>故障记录</h3>
+      <div class="filters">
+        <label>检索通道<input id="fault-search" placeholder="名称或编号" autocomplete="off"></label>
+        <label>通道<select id="fault-point"></select></label>
+        <label>方向<select id="fault-direction"><option value="">全部</option><option value="HIGH">高</option><option value="LOW">低</option></select></label>
+        <label>起始<input id="fault-start" type="datetime-local" step="1"></label>
+        <label>截止<input id="fault-end" type="datetime-local" step="1"></label>
+        <div class="controls"><button id="fault-find" class="primary">检索</button><button id="fault-reset">清除过滤</button></div>
+      </div>
+      <div id="fault-list" class="scroll"></div>
+      <div class="controls"><span id="fault-count" class="muted"></span><button id="fault-more" hidden>加载更多</button></div>
+    </aside>
+    <section id="history-center">
+      <div class="card" id="replay-settings">
+        <h3>回溯设置</h3>
+        <p id="replay-lock" class="muted"></p>
+        <div class="controls">
+          <label>中心时间（本地）<input id="replay-center" type="datetime-local" step="1"></label>
+          <label>窗口长度（秒）<input id="replay-seconds" type="number" min="1" max="31622400" step="1"></label>
+        </div>
+        <div class="controls"><label>查看通道<input id="replay-filter" placeholder="检索名称或编号" autocomplete="off"></label></div>
+        <select id="replay-points" multiple size="7" aria-label="查看通道"></select>
+        <p class="chart-caption">窗口取中心时间前后各半个窗口；可同时查看同一窗口内其他已保存通道。选择故障只填入时间点和默认通道，也可全部手动填写。</p>
+      </div>
+      <div class="card" id="replay-board"><h3>回溯结果</h3><div id="replay-result" class="muted">尚未查询。</div></div>
+    </section>
+  </div>`;
+}
+function mountHistory() {
+  $("fault-point").innerHTML = `<option value="">全部通道</option>${faultChannels().map(d => option(d.id)).join("")}`;
+  $("replay-points").innerHTML = definitions().map(d => option(d.id, replay.points.includes(d.id))).join("");
+  const narrow = (input, select, keepAll) => input.oninput = () => {
+    const text = input.value.trim().toLowerCase();
+    for (const o of select.options) o.hidden = !!text && !o.textContent.toLowerCase().includes(text) && !(keepAll && o.value === "");
+  };
+  narrow($("fault-search"), $("fault-point"), true);
+  narrow($("replay-filter"), $("replay-points"), false);
+  $("fault-find").onclick = () => loadFaults(true);
+  $("fault-reset").onclick = () => {
+    for (const id of ["fault-search", "fault-point", "fault-direction", "fault-start", "fault-end"]) $(id).value = "";
+    $("fault-search").oninput();
+    loadFaults(true);
+  };
+  $("fault-more").onclick = () => loadFaults(false);
+  $("fault-list").onclick = event => { const row = event.target.closest("[data-fault]"); if (row) selectFault(row.dataset.fault); };
+  $("replay-center").onchange = event => { replay.center = fromLocalInput(event.target.value); drawLock(); };
+  $("replay-seconds").onchange = event => {
+    if (!event.target.checkValidity()) { event.target.reportValidity(); return; }
+    replay.seconds = Number(event.target.value);
+  };
+  $("replay-points").onchange = event => { replay.points = [...event.target.selectedOptions].map(o => o.value); };
+  $("replay-lock").onclick = event => { if (event.target.id === "unlock") { replay.fault = null; drawLock(); drawFaults(); } };
+  syncSettings();
+  loadFaults(true);
+}
+function syncSettings() {
+  $("replay-center").value = toLocalInput(replay.center);
+  $("replay-seconds").value = replay.seconds;
+  for (const o of $("replay-points").options) o.selected = replay.points.includes(o.value);
+  drawLock();
+}
+function drawLock() {
+  const f = replay.fault;
+  $("replay-lock").innerHTML = f
+    ? `参考故障：${esc(label(f.point_id))} · ${stamp(f.confirmed_wall)} · ${f.direction === "HIGH" ? "高" : "低"}${replay.center !== f.confirmed_wall ? "（中心时间已手动修改）" : ""} <button id="unlock">解除锁定</button>`
+    : "未锁定故障：请手动填写，或在左侧选择一条故障。";
+}
+function selectFault(id) {
+  const f = faults.items.find(x => x.id === id);
+  if (!f) return;
+  replay.fault = f;
+  replay.center = f.confirmed_wall;
+  replay.points = [f.point_id];
+  syncSettings();
+  drawFaults();
+}
+function faultFilter() {
+  return {point: $("fault-point").value, direction: $("fault-direction").value, start: fromLocalInput($("fault-start").value), end: fromLocalInput($("fault-end").value)};
+}
+async function loadFaults(fresh) {
+  if (fresh) {  // a new search: the filter is read once and then kept for "load more" (a cursor belongs to its query)
+    Object.assign(faults, {items: [], cursor: null, more: false, partial: false});
+    faults.query = new URLSearchParams(Object.entries(faultFilter()).filter(([, v]) => v !== "" && v !== null)).toString();
+  }
+  const epoch = ++faults.epoch;
+  Object.assign(faults, {loading: true, error: ""});
+  drawFaults();
+  try {
+    const result = await api(`/api/faults?limit=20&${faults.query}${!fresh && faults.cursor ? `&cursor=${encodeURIComponent(faults.cursor)}` : ""}`);
+    if (epoch !== faults.epoch) return;  // a newer search replaced this one
+    const seen = new Set(faults.items.map(x => x.id));
+    faults.items.push(...result.items.filter(x => !seen.has(x.id)));
+    Object.assign(faults, {cursor: result.next_cursor, more: result.has_more, partial: result.partial});
+  } catch (error) {
+    if (epoch === faults.epoch) faults.error = error.message;
+  } finally {
+    if (epoch === faults.epoch) { faults.loading = false; drawFaults(); }
+  }
+}
+function drawFaults() {
+  if (!$("fault-list")) return;
+  $("fault-list").innerHTML = faults.items.map(f => `<button class="fault-row ${replay.fault?.id === f.id ? "selected" : ""}" data-fault="${esc(f.id)}"><b>${esc(label(f.point_id))}</b> ${badge(f.direction === "HIGH" ? "高" : "低", "bad")}<br><small>${stamp(f.confirmed_wall)} · ${fmt(f.basis_value)} ${esc(definition(f.point_id).unit)}</small></button>`).join("")
+    || `<p class="empty">${faults.loading ? "正在读取…" : "没有符合条件的故障记录"}</p>`;
+  $("fault-count").textContent = faults.error ? `读取失败：${faults.error}` : `已显示 ${faults.items.length} 条${faults.partial ? " · 部分数据库不可读，列表不完整" : ""}`;
+  $("fault-more").hidden = !faults.more;
+  $("fault-more").disabled = faults.loading;
 }
 
 // ---------------------------------------------------------------------------------- the realtime socket

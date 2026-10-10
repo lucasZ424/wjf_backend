@@ -179,7 +179,11 @@ D36｜dev 分支工作区｜新增 `htsg/publisher.py`（`Publisher`、`encode_g
 
 **暴露的缺陷（已修）：** 缓冲满额后确认的故障只改了追踪器状态，不产生任何组，客户端永远不知道该通道已进入"已确认"（D44 要求此时显示归档不完整及计数）。现对被缓冲拒绝的确认发一个 `FAULT_REFUSED` 状态组（先例：`APP_LOSS`——损失一律成为存储状态；它也进归档，是状态行不是故障行，不冒充已找回的单条故障）。**实测：** 满量(417 路)一组 Modbus 轮的变化只带 24 个通道；发布器每组开销 0.23 ms；而 `Owner.accept` 处理一轮 Modbus 在满量配置下约 29 ms（不挂发布器也如此，非 D36 引入）——D46 的满量测量需覆盖，必要时优化。**D45 接线补充：** `Publisher(owner)`，`owner.publish = publisher.offer`，事件循环里常驻 `publisher.run()`。
 
-**同时修正上一次提交的笔误：** Capstone F 条目之后的 `## 2. 偏离、风险与未验收` 标题被我替换时误删，现已补回。
+**同时修正上一次提交的笔误：** Capstone F 条目之后的 `### D39 历史页布局与故障检索
+
+D39｜dev 分支工作区｜改 `htsg/static/app.js`（第 5 页：`historyHtml`、`mountHistory`、故障检索 `loadFaults`、设置 `replay`）、`style.css`；`tests/web_rig.py` 增加可选一次性归档库（`archive=True`：`CommitQueue` 写入真实库、`seed_faults` 直接写故障记录）、`tests/conftest.py` 增加 `archive_rig` 夹具与固定时区 Asia/Shanghai 的 `page`；新增 `tests/test_web_history.py`｜`pytest tests/test_web_history.py`｜5 通过 / 0 失败 / 0 跳过（约 8 秒）；D38 的 5 项复跑通过；`ruff check .`、`node --check` 通过；全套未重跑｜**布局**：左侧故障列表、中上回溯设置、中部结果区（同一中间栏，坐标核对：列表右缘 ≤ 设置左缘、设置下缘 ≤ 结果上缘、二者左缘与宽度一致）；窄屏单栏。**检索**：通道检索框收窄通道下拉后选择，方向、起止时间过滤；每页 20 条、"加载更多"续页，不重不漏、最新在前（45 条分三页）；"加载更多"沿用上次检索的条件（游标属于其查询），改了输入框但未点检索也不会因游标不符报错；快速连续检索时用代次丢弃迟到的旧响应；部分库不可读时列表标明不完整。**设置**：点选故障只填入中心时间和默认通道并加锁定提示，中心时间、窗口长度、通道（可多选、可检索）始终可改，改了中心时间会标"已手动修改"，可解除锁定而保留已填值，完全手动填写不需要任何故障（承接被删旧用例的意图）。变异：去掉迟到响应守卫 → 变红（此前该用例是空转的——守卫缺失只污染内存不重绘——已加"迟到响应后再触发重绘并核对条数"才抓得到）；"加载更多"改读未应用的输入框 → 变红｜设置尚未查询和持久化（D40）；结果区只是占位
+
+## 2. 偏离、风险与未验收` 标题被我替换时误删，现已补回。
 
 ### D37 慢客户端丢失即断开
 
@@ -199,7 +203,7 @@ D38｜dev 分支工作区｜新增 `htsg/static/stream.js`（`apply`/`newLive`/`
 
 ## 3. 交接（新会话从这里开始）
 
-**完成：** D01–D38（模块 A–F 全部，Capstone A–F，模块 G 的 D36–D38）。D36 提交时全套 **513 通过 / 0 失败 / 0 跳过，296.21 秒**；D37 另加 10 项、D38 另加 5 项并删除旧 `test_replay_ui.py` 1 项（见上，全套均未重跑，Capstone G 重跑），`ruff check .` 通过。**未做：** 模块 G 的 D39–D44（前端各页）与 Capstone G、模块 H（D45–D48、H0、最终 Capstone）。下一步是 D39（历史页布局与故障检索，基于 `/api/faults`，D35 的新接口形状见 `history_api.py`）。**接手前注意：** 第 2 节"已知但未修"一条（丢失期间已落库段可能不被收尾）与 D45 接线相关；`ruff format --check` 在旧文件上本就不通过，项目只要求 `ruff check` 与 `git diff --check`。
+**完成：** D01–D39（模块 A–F 全部，Capstone A–F，模块 G 的 D36–D39）。D36 提交时全套 **513 通过 / 0 失败 / 0 跳过，296.21 秒**；D37 另加 10 项、D38 另加 5 项并删除旧 `test_replay_ui.py` 1 项（见上，全套均未重跑，Capstone G 重跑），`ruff check .` 通过。**未做：** 模块 G 的 D40–D44（前端各页）与 Capstone G、模块 H（D45–D48、H0、最终 Capstone）。下一步是 D40（回溯设置的 sessionStorage 保留、查询与并发响应、起始依据/缺口/上限显示；`/api/replay` 形状见 `history_api.py` 与 `history.assemble`）。**接手前注意：** 第 2 节"已知但未修"一条（丢失期间已落库段可能不被收尾）与 D45 接线相关；`ruff format --check` 在旧文件上本就不通过，项目只要求 `ruff check` 与 `git diff --check`。
 
 **进入新会话的第一步：**
 ```powershell

@@ -7,16 +7,26 @@ test, so a browser test knows what the page must show.
 """
 
 import asyncio
+import json
 import socket
 import threading
 import time
+from pathlib import Path
+from uuid import uuid4
 
+import psycopg
 import uvicorn
 from live_support import BRIDGES, FULL, PROCESS, UA_NAMES
 from owner_support import poll
+from psycopg import sql
+from psycopg.conninfo import make_conninfo
+from test_archive_router import Disks
 
 from htsg import records as r
+from htsg.archive import ArchiveStore
+from htsg.archive_router import ArchiveRouter
 from htsg.auth import Accounts
+from htsg.commitq import CommitQueue
 from htsg.owner import Owner
 from htsg.publisher import Publisher
 from htsg.web import create_web_app
@@ -32,9 +42,36 @@ def nominal():
     }
 
 
+class Databases:
+    """Throw-away archive databases on the development clusters, dropped on exit (like `archive_db_factory`)."""
+
+    def __init__(self):
+        self.credentials = json.loads(Path(".local/database.json").read_text())
+        self.created, self.stores = [], []
+
+    def make(self, instance):
+        name = "htsg_test_" + uuid4().hex
+        admin = make_conninfo(self.credentials[instance], dbname="postgres")
+        with psycopg.connect(admin, autocommit=True) as conn:
+            conn.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
+        self.created.append((admin, name))
+        store = ArchiveStore(make_conninfo(self.credentials[instance], dbname=name))
+        self.stores.append(store)
+        return store
+
+    def drop(self):
+        for store in self.stores:
+            store.close()
+        for admin, name in self.created:
+            assert name.startswith("htsg_test_") and len(name) == 42
+            with psycopg.connect(admin, autocommit=True) as conn:
+                conn.execute(sql.SQL("DROP DATABASE {} WITH (FORCE)").format(sql.Identifier(name)))
+
+
 class WebRig:
-    def __init__(self, tmp_path, config=FULL, archive_router=None, steady=True):
-        self.config, self.archive_router, self.steady = config, archive_router, steady
+    def __init__(self, tmp_path, config=FULL, archive=False, steady=True):
+        self.config, self.archive, self.steady = config, archive, steady
+        self.databases, self.router, self.queue, self.seeded = None, None, None, 0
         self.accounts = Accounts(tmp_path / "accounts.json")
         self.credentials = {
             "admin": self.accounts.create("admin", "admin"),
@@ -54,17 +91,37 @@ class WebRig:
         try:
             self.loop = asyncio.get_running_loop()
             now, mono = time.time(), time.monotonic()
+            commit, writer = None, None
+            if self.archive:
+                self.databases = Databases()
+                self.router = ArchiveRouter(
+                    self.config, self.databases.make("primary"), self.databases.make("emergency"),
+                    disk_usage=Disks(),
+                )  # fmt: skip
+                self.router.initialize()
+                self.router.bind_run("web", self.config.config_id, now)
+                self.queue = CommitQueue(
+                    self.router, 400,
+                    on_committed=lambda g, res: self.owner.committed(g, res),
+                    on_refused=lambda g, why: self.owner.refused(g, why),
+                    is_void=lambda g: self.owner.is_void(g),
+                )  # fmt: skip
+                commit = self.queue.offer
+                writer = asyncio.create_task(self.queue.run())
             self.owner = Owner(
-                self.config, now, mono, publish=lambda group: self.publisher.offer(group), run_id="web"
-            )
+                self.config, now, mono, commit=commit, publish=lambda group: self.publisher.offer(group),
+                run_id="web",
+            )  # fmt: skip
             self.publisher = Publisher(self.owner)
+            if self.archive:
+                self.owner.start(now, mono)
             for source in (MB, UA):
                 self.owner.begin_generation(source, 1, now, mono)
             self.ua(list(nominal().items()))
             self.round()
             app = create_web_app(
                 config=self.config, accounts=self.accounts, publisher=self.publisher,
-                archive_router=self.archive_router,
+                archive_router=self.router,
             )  # fmt: skip
             self.server = uvicorn.Server(
                 uvicorn.Config(app, host="127.0.0.1", port=self.port, log_level="warning", lifespan="on")
@@ -74,6 +131,9 @@ class WebRig:
             await self.server.serve()
             feeder.cancel()
             starter.cancel()
+            if writer:
+                await self.queue.stop(2.0)
+                writer.cancel()
         except BaseException as error:  # noqa: BLE001 - reported to the test thread
             self.error = error
             self.ready.set()
@@ -136,6 +196,22 @@ class WebRig:
 
         self.call(cut)
 
+    def seed_faults(self, faults):
+        """Write fault records straight into the archive: (point, direction, confirmed_wall, value) tuples."""
+        self.seeded += 1
+        records = tuple(
+            r.FaultRecord(
+                f"seed/fault/{self.seeded}/{n}", "web", "ua_field", 1, n, point, direction, wall, 0.0, "OBSERVATION",
+                f"seed/obs/{self.seeded}/{n}", wall - 5.0, value, self.config.config_id, {"high": 490.0, "low": None},
+            )
+            for n, (point, direction, wall, value) in enumerate(faults, start=1)
+        )  # fmt: skip
+        group = r.CommitGroup(
+            f"web/gseed{self.seeded}", 1_000_000 + self.seeded, "web", "ua_field", r.GROUP_FAULT, time.time(),
+            faults=records,
+        )  # fmt: skip
+        assert self.router.write_group(group).durable
+
     def start(self):
         self.thread.start()
         assert self.ready.wait(20), "the web application did not start"
@@ -146,6 +222,8 @@ class WebRig:
     def stop(self):
         self.server.should_exit = True
         self.thread.join(10)
+        if self.databases:
+            self.databases.drop()
 
     def __enter__(self):
         return self.start()
