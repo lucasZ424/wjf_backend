@@ -185,6 +185,10 @@ D36｜dev 分支工作区｜新增 `htsg/publisher.py`（`Publisher`、`encode_g
 
 D37｜dev 分支工作区｜新增 `htsg/stream_api.py`（`serve`、`build_stream_router`）、`tests/test_stream.py`；改 `htsg/publisher.py`（`Client`、`Publisher.connect/disconnect`，`_send` 摘除掉队的客户端）｜`pytest tests/test_stream.py tests/test_publisher.py`｜20 通过 / 0 失败 / 0 跳过（D37 的 10 项约 1 秒）；`ruff check .` 通过；**全套未重跑**（只新增文件和发布器的新增类，未改既有行为；上次全套 513 通过，Capstone G 重跑）｜每个客户端一个有界发件箱（`limits.ws_queue`，默认 64，最小 2；快照占第一个位置）；放不下新消息即清空发件箱、标记丢失、发布器不再向它投递，`next()` 返回 None，端点以 1013 关闭——此前排队的消息不会在洞之后再发出；等待快照期间再次溢出同样断开（用例：连上后不读，两轮都被断开）；重连得到的是最新快照，其后的组无洞（参考客户端核对）。**5 秒发送超时**（`timing.client_send_timeout`）→ 1013；认证 5 秒（`AUTH_WAIT`）；凭据错/来源不符 → 1008（来源不符在 accept 之前）；账号停用：每条消息发送前询问 `account_ok`（由心跳触发），之后不再发送任何消息；`max_clients` 超限 → `RuntimeError("CLIENT_LIMIT")`。**其他客户端与归档**：6 条消息间一个客户端被断开，另一个客户端的状态 == owner，归档收到 1..order 的全部组且顺序不乱。**真实 WebSocket**（Starlette TestClient 的协议栈，事件循环线程里改 owner）：快照先到、组随后、重连得到更新的快照。变异试验：溢出时静默丢最新而不断开 → 4 项变红；去掉发送超时 → 1 项变红（均已还原）｜旧 `api.stream` 仍在；D45 挂 `build_stream_router(publisher, verify, account_ok, config)` 并删旧，`account_ok` 对应旧代码的 `accounts.uncertain or not users[...]["active"]`。**未测：** 16 个客户端同时 × 每秒 10 条消息的序列化开销（每个客户端各自 `send_json`），D46 覆盖；浏览器端真实慢连接由 Capstone G 验证
 
+### D38 前端摆脱 frame 并整组应用
+
+D38｜dev 分支工作区｜新增 `htsg/static/stream.js`（`apply`/`newLive`/`Rejected`，与 `tests/client_model.py` 同一套规则）、`htsg/web.py`（`create_web_app`：静态页、`/api/me`、`/api/ui-config`、实时 socket、历史路由）、`tests/web_rig.py`（服务线程里跑真实 owner/publisher/socket 的测试台）、`tests/browser_support.py`（Playwright+Chrome 夹具）、`tests/test_stream_js.py`、`tests/js/apply_messages.mjs`、`tests/test_web_stream.py`；重写 `htsg/static/app.js`、`index.html`；**删除** `tests/test_replay_ui.py`｜`pytest tests/test_web_stream.py tests/test_stream_js.py`｜5 通过 / 0 失败 / 0 跳过（浏览器 4 项约 11 秒、Node 契约 1 项）；`node --check` 两个 JS 文件通过；`ruff check .` 通过；**全套未重跑**（Capstone G 重跑）｜**前端规则**：整条消息先校验（首尾序号、组内连续、组内容形状、通道必须在快照中、视图必须有 `valid`）再整组应用，不过则整条丢弃、`ws.close()`、提示并重连取快照；快照整体替换缓存；断线即清空缓存（重连前页面显示"等待实时数据"，不保留旧值或残缺派生）；`valid=false` 一律显示"—"加原因，不当 0；连续 3 秒（`ui_stall_notice`）无任何消息显示延迟提示并标"消息中断"，下一条消息到来即清除，提示明确"不代表数据源状态"。**跨语言契约测试**：Python 发布器产出的真实消息（34 步故事）由 Node 用 `stream.js` 应用，终态与 owner 的 `channel_views` 完全相等；11 种破坏（首尾错、组内缺/乱序/前缺、未知通道、无 `valid`、缺字段、心跳领先、未知类型）全部被拒且状态逐字不变；变异（去掉前缺检查 / 改成先应用后校验）各使其变红。**真浏览器**（Chrome，viewer 登录）：有效值显示、Bad 质量变"—"+"质量不良"且绝无"0"；馈送器暂停+心跳停→约 3 秒后出现延迟提示、数值仍在但被标注，恢复后提示消失；断线（服务端按溢出切断）→"重连中"、旧值不保留、断线期间变化的值在重连快照中出现；注入一条被篡改的组消息（`last` 错，含 999 的伪造值）→ 页面绝不出现 999、提示"未通过校验"、重连后恢复真实值且提示消失；页面无 JS 错误。变异：断线时不清缓存 → "断线后不留任何东西"一项变红｜`htsg/web.py` 尚未被运行入口使用，D45 构造 owner/publisher/archive/accounts 后调用 `create_web_app(config=, accounts=, publisher=, archive_router=)`，并为 `accounts` 挂 `persist/reconcile`（旧 `api.py` lifespan 的做法）。**旧资料失效：** `scripts/validate_ui.py`、`validate_recall_ui.py` 针对旧页面（旧 id 与旧接口），已不能用，D45 删除或改写；被删的 `test_replay_ui.py` 测的是旧历史页"故障定位后仍可自由换通道、改中心时间和窗口"，**D39–D40 的新用例必须承接这一意图**（终版 §14）
+
 ## 2. 偏离、风险与未验收
 
 - 无偏离设计。方案"位置"列写的是改造旧文件；本次以新模块并存，D45 再删旧（见第 0 节）。
@@ -195,7 +199,7 @@ D37｜dev 分支工作区｜新增 `htsg/stream_api.py`（`serve`、`build_strea
 
 ## 3. 交接（新会话从这里开始）
 
-**完成：** D01–D37（模块 A–F 全部，Capstone A–F，模块 G 的 D36–D37，即后端推送部分）。D36 提交时全套 **513 通过 / 0 失败 / 0 跳过，296.21 秒**；D37 另加 10 项（见上，全套未重跑），`ruff check .` 通过。**未做：** 模块 G 的 D38–D44（全是前端）与 Capstone G、模块 H（D45–D48、H0、最终 Capstone）。下一步是 D38（前端摆脱 frame、整组应用）。**接手前注意：** 第 2 节"已知但未修"一条（丢失期间已落库段可能不被收尾）与 D45 接线相关；`ruff format --check` 在旧文件上本就不通过，项目只要求 `ruff check` 与 `git diff --check`。
+**完成：** D01–D38（模块 A–F 全部，Capstone A–F，模块 G 的 D36–D38）。D36 提交时全套 **513 通过 / 0 失败 / 0 跳过，296.21 秒**；D37 另加 10 项、D38 另加 5 项并删除旧 `test_replay_ui.py` 1 项（见上，全套均未重跑，Capstone G 重跑），`ruff check .` 通过。**未做：** 模块 G 的 D39–D44（前端各页）与 Capstone G、模块 H（D45–D48、H0、最终 Capstone）。下一步是 D39（历史页布局与故障检索，基于 `/api/faults`，D35 的新接口形状见 `history_api.py`）。**接手前注意：** 第 2 节"已知但未修"一条（丢失期间已落库段可能不被收尾）与 D45 接线相关；`ruff format --check` 在旧文件上本就不通过，项目只要求 `ruff check` 与 `git diff --check`。
 
 **进入新会话的第一步：**
 ```powershell

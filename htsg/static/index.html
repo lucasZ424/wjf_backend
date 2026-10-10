@@ -1,11 +1,11 @@
 <!doctype html>
 <html lang="zh-CN">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>HTSG 科研监测</title><link rel="stylesheet" href="/static/style.css"><script src="/static/app.js" defer></script></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>HTSG 科研监测</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/static/style.css"><script type="module" src="/static/app.js"></script></head>
 <body>
 <header><div class="brand">HTSG</div><div><h1 id="project-title">锅炉高温应变 · 科研监测</h1><small>RESEARCH MONITORING · 数据采集 / 窗口历史重现</small></div><div class="header-right"><span id="connection" class="badge warn">未连接</span><span id="identity">未登录</span><button id="logout" hidden>退出</button></div></header>
 <nav id="navigation" aria-label="主要导航"></nav>
 <div id="notice" role="status" hidden></div>
 <main id="workspace" hidden></main>
 <section id="login" class="login card"><span class="eyebrow">HTSG / RESEARCH WORKSPACE</span><h2>连接科研监测平台</h2><p>输入管理员提供的账户凭据。数据由后端从模拟现场主动读取。</p><form id="login-form"><label>账户凭据（用户名:令牌）<input id="credential" type="password" autocomplete="off" placeholder="用户名:令牌" required maxlength="256"></label><button class="primary" type="submit">连接平台</button></form><p class="muted">凭据仅保存在当前标签页会话中，不写入网址。</p><div id="login-error" role="alert"></div></section>
-<footer><span>科研估算 · 示意坐标不代表真实拓扑 · 不用于保护控制</span><span id="frame-time">等待后端数据</span></footer>
+<footer><span>科研估算 · 示意坐标不代表真实拓扑 · 不用于保护控制</span><span id="stream-time">等待后端数据</span></footer>
 </body></html>

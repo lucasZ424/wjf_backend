@@ -108,3 +108,36 @@ def archive_db_factory():
             assert name.startswith("htsg_test_") and len(name) == 42
             with psycopg.connect(admin, autocommit=True) as conn:
                 conn.execute(sql.SQL("DROP DATABASE {} WITH (FORCE)").format(sql.Identifier(name)))
+
+
+# ---- real-browser fixtures (Chrome through Playwright, a running web application); imports stay lazy so the
+# rest of the suite does not need Playwright
+
+
+@pytest.fixture(scope="session")
+def browser():
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        chrome = playwright.chromium.launch(channel="chrome", headless=True)
+        yield chrome
+        chrome.close()
+
+
+@pytest.fixture(scope="module")
+def rig(tmp_path_factory):
+    from web_rig import WebRig
+
+    with WebRig(tmp_path_factory.mktemp("web")) as running:
+        yield running
+
+
+@pytest.fixture
+def page(browser, rig):
+    context = browser.new_context(viewport={"width": 1440, "height": 1000}, locale="zh-CN")
+    page = context.new_page()
+    page.errors = []
+    page.on("pageerror", lambda error: page.errors.append(str(error)))
+    page.on("console", lambda m: page.errors.append(m.text) if m.type == "error" else None)
+    yield page
+    context.close()
