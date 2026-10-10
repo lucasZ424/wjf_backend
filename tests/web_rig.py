@@ -69,8 +69,10 @@ class Databases:
 
 
 class WebRig:
-    def __init__(self, tmp_path, config=FULL, archive=False, steady=True):
+    def __init__(self, tmp_path, config=FULL, archive=False, steady=True, run_id="web", feed_archive=True):
+        """`feed_archive=False` leaves the archive to the test (`write_groups`): the live owner does not write."""
         self.config, self.archive, self.steady = config, archive, steady
+        self.run_id, self.feed_archive = run_id, feed_archive
         self.databases, self.router, self.queue, self.seeded = None, None, None, 0
         self.accounts = Accounts(tmp_path / "accounts.json")
         self.credentials = {
@@ -99,7 +101,8 @@ class WebRig:
                     disk_usage=Disks(),
                 )  # fmt: skip
                 self.router.initialize()
-                self.router.bind_run("web", self.config.config_id, now)
+                self.router.bind_run(self.run_id, self.config.config_id, now)
+            if self.archive and self.feed_archive:
                 self.queue = CommitQueue(
                     self.router, 400,
                     on_committed=lambda g, res: self.owner.committed(g, res),
@@ -110,10 +113,10 @@ class WebRig:
                 writer = asyncio.create_task(self.queue.run())
             self.owner = Owner(
                 self.config, now, mono, commit=commit, publish=lambda group: self.publisher.offer(group),
-                run_id="web",
+                run_id=self.run_id,
             )  # fmt: skip
             self.publisher = Publisher(self.owner)
-            if self.archive:
+            if commit:
                 self.owner.start(now, mono)
             for source in (MB, UA):
                 self.owner.begin_generation(source, 1, now, mono)
@@ -201,16 +204,21 @@ class WebRig:
         self.seeded += 1
         records = tuple(
             r.FaultRecord(
-                f"seed/fault/{self.seeded}/{n}", "web", "ua_field", 1, n, point, direction, wall, 0.0, "OBSERVATION",
+                f"seed/fault/{self.seeded}/{n}", self.run_id, "ua_field", 1, n, point, direction, wall, 0.0, "OBSERVATION",
                 f"seed/obs/{self.seeded}/{n}", wall - 5.0, value, self.config.config_id, {"high": 490.0, "low": None},
             )
             for n, (point, direction, wall, value) in enumerate(faults, start=1)
         )  # fmt: skip
         group = r.CommitGroup(
-            f"web/gseed{self.seeded}", 1_000_000 + self.seeded, "web", "ua_field", r.GROUP_FAULT, time.time(),
+            f"{self.run_id}/gseed{self.seeded}", 1_000_000 + self.seeded, self.run_id, "ua_field", r.GROUP_FAULT, time.time(),
             faults=records,
         )  # fmt: skip
         assert self.router.write_group(group).durable
+
+    def write_groups(self, groups):
+        """Put prepared commit groups into the archive (they must belong to this rig's run and configuration)."""
+        for group in groups:
+            assert self.router.write_group(group).durable, group.group_id
 
     def start(self):
         self.thread.start()

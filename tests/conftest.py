@@ -140,6 +140,17 @@ def archive_rig(tmp_path_factory):
         yield running
 
 
+@pytest.fixture(scope="module")
+def replay_rig(tmp_path_factory):
+    """An archive that holds exactly the Capstone F scenario (run "f"), for tests that check a replay."""
+    from test_capstone_f import script
+    from web_rig import WebRig
+
+    with WebRig(tmp_path_factory.mktemp("web"), archive=True, run_id="f", feed_archive=False, steady=False) as running:
+        running.write_groups(script(running.config)[1])
+        yield running
+
+
 @pytest.fixture
 def page(browser):
     context = browser.new_context(viewport={"width": 1440, "height": 1000}, locale="zh-CN", timezone_id="Asia/Shanghai")

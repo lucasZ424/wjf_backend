@@ -183,6 +183,10 @@ D36｜dev 分支工作区｜新增 `htsg/publisher.py`（`Publisher`、`encode_g
 
 D39｜dev 分支工作区｜改 `htsg/static/app.js`（第 5 页：`historyHtml`、`mountHistory`、故障检索 `loadFaults`、设置 `replay`）、`style.css`；`tests/web_rig.py` 增加可选一次性归档库（`archive=True`：`CommitQueue` 写入真实库、`seed_faults` 直接写故障记录）、`tests/conftest.py` 增加 `archive_rig` 夹具与固定时区 Asia/Shanghai 的 `page`；新增 `tests/test_web_history.py`｜`pytest tests/test_web_history.py`｜5 通过 / 0 失败 / 0 跳过（约 8 秒）；D38 的 5 项复跑通过；`ruff check .`、`node --check` 通过；全套未重跑｜**布局**：左侧故障列表、中上回溯设置、中部结果区（同一中间栏，坐标核对：列表右缘 ≤ 设置左缘、设置下缘 ≤ 结果上缘、二者左缘与宽度一致）；窄屏单栏。**检索**：通道检索框收窄通道下拉后选择，方向、起止时间过滤；每页 20 条、"加载更多"续页，不重不漏、最新在前（45 条分三页）；"加载更多"沿用上次检索的条件（游标属于其查询），改了输入框但未点检索也不会因游标不符报错；快速连续检索时用代次丢弃迟到的旧响应；部分库不可读时列表标明不完整。**设置**：点选故障只填入中心时间和默认通道并加锁定提示，中心时间、窗口长度、通道（可多选、可检索）始终可改，改了中心时间会标"已手动修改"，可解除锁定而保留已填值，完全手动填写不需要任何故障（承接被删旧用例的意图）。变异：去掉迟到响应守卫 → 变红（此前该用例是空转的——守卫缺失只污染内存不重绘——已加"迟到响应后再触发重绘并核对条数"才抓得到）；"加载更多"改读未应用的输入框 → 变红｜设置尚未查询和持久化（D40）；结果区只是占位
 
+### D40 回溯设置、查询与并发响应
+
+D40｜dev 分支工作区｜改 `htsg/static/app.js`（`loadReplay/saveReplay/clearReplay`、`runReplay`、`drawReplay`、`plotReplay`、记录表）；`tests/web_rig.py` 增加 `run_id`/`feed_archive`/`write_groups`（只带归档、实时 owner 不写库）、`tests/conftest.py` 增加 `replay_rig`（归档里放入 Capstone F 场景）、`tests/test_capstone_f.py::script(cfg=None)`；新增 `tests/test_web_replay.py`｜`pytest tests/test_web_replay.py`｜10 通过 / 0 失败 / 0 跳过（约 16 秒）；前端全部 29 项（含 D36–D39 的浏览器与 Node 用例、Capstone F）复跑通过；`ruff check .`、`node --check` 通过；全套未重跑｜**设置**：只有设置存 sessionStorage（键 `htsg.replay`：fault、center、seconds、points、chart，实测 < 600 字符，不含任何结果）；刷新后保留并在进入页面时自动重新查询；"清空设置"与登出删除。**查询**：进入页面、点"查询"、选故障、切换图表通道都重新向数据库查询；没有设置时不发任何 `/api/replay` 请求，也没有"当前时刻"默认窗口（核对请求列表）；新请求取消旧请求，迟到的旧响应被丢弃，新窗口失败时不显示旧窗口结果。**显示**：查询时刻、窗口与中心、覆盖终点（全部来源确认到何时；任一来源未知则写"未知"）；逐通道汇总（窗口起点依据——值、原观测时间、实收/状态重申；窗口内记录数；最后一条；是否含无效或极值）；归档缺口逐条列出并在图上画阴影、缺口内不画线也不造数；有效段起点竖虚线；质量不良区间标红且不借前值；同一时刻的三个版本按批内序号逐行列出；窗口起点的保持值虚线加空心点、记录表标"窗口起点的保持值"并保留原观测时间；达到上限时按通道提示并标"截断"；数据库不可读时提示结果不完整。**对着已知答案核对**（Capstone F 场景）：缺口两条（UA 1027→1029、Modbus 1026→1029，QUEUE_FULL）、重申行 `原观测 08:16:41`、丢失的 479 没有"实收"行、Bad 区间红色像素有而青色线像素为 0、缺口内青色线像素为 0 而阴影像素有（读 canvas 像素，几何由页面提供）。变异：线拉到窗口末尾 → 缺口与 Bad 两项变红；登出不清设置 → 变红；去掉上限提示 → 变红｜**如实说明：** "旧窗口的迟到响应不能覆盖新窗口"这一项在可见行为上有取消请求与代次守卫两层保护，单独去掉其中一层，用户看不到差别（污染的状态不会被重绘），所以这项用例验证的是行为而不是某一层；记录表一次渲染全部行（上限每通道 10000 行），极端窗口下可能偏慢，D46 的浏览器测量覆盖。结果区按通道只画"图表与记录通道"一个，CSV 导出范围在 D41 确定
+
 ## 2. 偏离、风险与未验收` 标题被我替换时误删，现已补回。
 
 ### D37 慢客户端丢失即断开
@@ -203,7 +207,7 @@ D38｜dev 分支工作区｜新增 `htsg/static/stream.js`（`apply`/`newLive`/`
 
 ## 3. 交接（新会话从这里开始）
 
-**完成：** D01–D39（模块 A–F 全部，Capstone A–F，模块 G 的 D36–D39）。D36 提交时全套 **513 通过 / 0 失败 / 0 跳过，296.21 秒**；D37 另加 10 项、D38 另加 5 项并删除旧 `test_replay_ui.py` 1 项（见上，全套均未重跑，Capstone G 重跑），`ruff check .` 通过。**未做：** 模块 G 的 D40–D44（前端各页）与 Capstone G、模块 H（D45–D48、H0、最终 Capstone）。下一步是 D40（回溯设置的 sessionStorage 保留、查询与并发响应、起始依据/缺口/上限显示；`/api/replay` 形状见 `history_api.py` 与 `history.assemble`）。**接手前注意：** 第 2 节"已知但未修"一条（丢失期间已落库段可能不被收尾）与 D45 接线相关；`ruff format --check` 在旧文件上本就不通过，项目只要求 `ruff check` 与 `git diff --check`。
+**完成：** D01–D40（模块 A–F 全部，Capstone A–F，模块 G 的 D36–D40）。D36 提交时全套 **513 通过 / 0 失败 / 0 跳过，296.21 秒**；D37 另加 10 项、D38 另加 5 项并删除旧 `test_replay_ui.py` 1 项（见上，全套均未重跑，Capstone G 重跑），`ruff check .` 通过。**未做：** 模块 G 的 D41–D44（前端）与 Capstone G、模块 H（D45–D48、H0、最终 Capstone）。下一步是 D41（CSV 导出当前结果，数据来自 `view.result`，不新增查询）。**接手前注意：** 第 2 节"已知但未修"一条（丢失期间已落库段可能不被收尾）与 D45 接线相关；`ruff format --check` 在旧文件上本就不通过，项目只要求 `ruff check` 与 `git diff --check`。
 
 **进入新会话的第一步：**
 ```powershell

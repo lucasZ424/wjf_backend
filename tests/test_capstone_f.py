@@ -47,9 +47,9 @@ def config_with_external():
     return Settings.model_validate(payload)
 
 
-def script():
+def script(cfg=None):
     """Run the scenario through the owner; returns (config, groups the archive accepted)."""
-    cfg = config_with_external()
+    cfg = cfg or config_with_external()
     sink, unconfirmed = Sink(), []
 
     def commit(group):
