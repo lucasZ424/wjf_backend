@@ -106,6 +106,17 @@ def read_store(store, name, channels: dict[str, str], start: float, end: float, 
     return out
 
 
+def read_segment_rows(store, keys) -> list:
+    """Whatever this database stores about the given segments, wherever the window falls."""
+    with store.session() as conn:
+        return _rows(
+            conn,
+            "SELECT run_id,source_id,seg,conn_gen,start_wall,start_reason,end_wall,end_reason FROM segment "
+            "WHERE (run_id,source_id,seg) IN (SELECT * FROM unnest(%s::text[],%s::text[],%s::int[]))",
+            ([k[0] for k in keys], [k[1] for k in keys], [k[2] for k in keys]),
+        )
+
+
 def _merge_segments(reads: list[StoreRead]) -> dict:
     merged: dict[tuple, dict] = {}
     for read in reads:
@@ -147,7 +158,11 @@ def assemble(
         truncated |= read.truncated
     by_channel: dict[str, dict[tuple, list]] = {p: {} for p in channels}
     for row in rows.values():
-        by_channel[row["point_id"]].setdefault((row["run_id"], row["source_id"], row["seg"]), []).append(row)
+        key = (row["run_id"], row["source_id"], row["seg"])
+        ended = segments.get(key, {}).get("end_wall")
+        if ended is not None and ended < start and row["effective_wall"] < start:
+            continue  # the value in effect at `start` of a segment that was over by then: nothing is held
+        by_channel[row["point_id"]].setdefault(key, []).append(row)
     gap_list = sorted(gaps.values(), key=lambda g: (g["start_wall"], g["id"]))
     channels_out = {}
     for pid, per_segment in by_channel.items():
@@ -232,12 +247,23 @@ def assemble(
 
 def query(stores, channels: dict[str, str], start: float, end: float, limit: int = ROW_LIMIT, **kw) -> dict:
     """Read every available store; an unreadable one makes the answer partial, never silently complete."""
-    reads, unavailable = [], []
+    read, unavailable = [], []
     for name, store in stores:
         try:
-            reads.append(read_store(store, name, channels, start, end, limit))
+            read.append((store, read_store(store, name, channels, start, end, limit)))
         except psycopg.Error:
             unavailable.append(name)
+    # the start and the end of one segment can live in different databases, and the window test above is made
+    # per database: a database that missed a segment it holds a part of (its end, say) is asked for it now
+    seen = {(s["run_id"], s["source_id"], s["seg"]) for _, one in read for s in one.segments}
+    for store, one in read:
+        own = {(s["run_id"], s["source_id"], s["seg"]) for s in one.segments}
+        if seen - own:
+            try:
+                one.segments += read_segment_rows(store, sorted(seen - own))
+            except psycopg.Error:
+                unavailable.append(one.name)
+    reads = [one for _, one in read]
     return assemble(reads, channels, start, end, unavailable=tuple(unavailable), limit=limit, **kw)
 
 

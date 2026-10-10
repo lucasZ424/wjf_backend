@@ -163,18 +163,25 @@ D34｜同上｜`htsg/history.py`（`channel_sources`、`coverage_end`、`list_fa
 
 D35｜dev 分支工作区｜新增 `htsg/history_api.py`（`build_history_router`、`parse_instant`）、`tests/test_history_api.py`｜`pytest tests/test_history_api.py`｜19 通过 / 0 失败 / 0 跳过（约 15 秒）｜端点全是 GET：`/api/channels`、`/api/faults`（过滤 point/direction/source/start/end，游标分页）、`/api/replay`（`center` 为 UTC 秒或**带偏移**的 ISO，`seconds` ∈ (0, 366 天]，`points` 必须是配置内通道，`limit` ≤10000）、`/api/replay/basis/{result_id}`；返回含查询时刻、`coverage_end`（每源）与 `coverage_complete_until`（任一源未知则为 null）、缺口、来源、`truncated`、`partial`/`unavailable`；无凭据 401，viewer 与 admin 都可读；OpenAPI 里所有路径只有 get，POST/DELETE 通道返回 404/405；无故障记录也能指定窗口回溯；不带偏移的 ISO、`seconds<=0`、超 366 天、未知通道、`limit>10000`、非法游标均 422；同一瞬间用 UTC / +08:00 / 秒数表示查得的 UTC 窗口完全相同；一个库不可读→200 且 `partial`，全部不可读→503；库中即使有旧 `frame_value`/`source_sample` 表也不会混入结果｜`history_api` 尚未挂到 `api.create_app`（D45 与旧路由一并替换）；**D35 提交前只重跑了 D35 的 19 项和 ruff，全套未重跑**（只新增文件，未改既有代码；上次全套 473 通过）
 
-## 2. 偏离、风险与未验收
+### Capstone F 全局回放可验证
+
+F｜dev 分支工作区｜新增 `tests/test_capstone_f.py`；改 `htsg/owner.py`（`SourceState.lost_seg`）、`htsg/history.py`（`read_segment_rows`、`query` 补查、`assemble` 过滤）；回归用例加在 `tests/test_archive_gap.py`、`tests/test_history_merge.py`｜`pytest tests/test_capstone_f.py`｜9 通过 / 0 失败 / 0 跳过；**全套 503 通过 / 0 失败 / 0 跳过，284.33 秒**，`ruff check .` 与 `git diff --check` 通过｜满量配置(417 路)、t=101..145 秒的已知值脚本经 owner→整组路由→三个真实库→HTTP 回放：417 路逐项应答、无截断无部分；输入值与时间逐项对得上（静止点由原观测或重申支撑，窗口内无变化时仍给出同段保持值并保留原时间）；Modbus 每轮观测与应变等派生值逐轮对应，无"旧输入配新结果"；t=110 同点三版本按批内序全留、批末只算一次派生；t=120/122 数值不变仅质量变化得 3 条可区分记录，Bad 区间不借 Good 值；t=126–128 归档拒绝并在 t=127 丢一次 UA 变化——缺口不被跨越、丢失样本不被虚构、模拟量不跨缺口插值；t=137 墙钟 +10 秒开新段，三个通道均恰为 3 段，任何保持值不越过段终点，段起点 1047；墙钟 ≥1024 起整组走移动库，一个库离线→`partial` 且覆盖终点全 None、行数上限在 `truncated` 中明示；同一瞬间不同时区写法得到相同 UTC 窗口｜见下
+
+**写测试时没有迁就预期、逐项查因的结果（共 4 个失败，原因各不相同）：**
+1. **脚本接线缺陷（测试侧）**：`Sink` 只接收、从不回调 `owner.committed`，来源因此永远停在 `RECOVERING`，时钟跳变不开段、水位不再产生。脚本现在在写入器接收后、owner 调用返回之后才回调（与 `CommitQueue` 的异步确认一致；在 `commit` 内同步回调会赶在 `archive="RECOVERING"` 之前）。
+2. **owner 真实缺陷（已修）**：丢失期间每个 `tick` 的恢复尝试都先 `s.seg += 1` 再提交，被队列拒绝后段号白白用掉；最终成功的恢复单元的 `SEG_END` 指向最后一次尝试的段号（库里从未存在），缺口前真正落库的段永远不被收尾（`end_wall=NULL`）。修法：`SourceState.lost_seg` 记录丢失开始时档案里仍开着的段，恢复单元的 `SEG_END` 指向它，`committed` 确认恢复后清空。回归：`test_archive_gap.py::test_recovery_attempts_the_queue_turns_away_do_not_move_the_segment_the_gap_closes`（修前失败：`SEG_END.seg` 为 3 而非 1）。
+3. **历史读取真实缺陷（已修）**：段的开头在一个库、结尾（无起点的占位行）在另一个库时，`read_store` 对每个库各自按窗口过滤，窗口落在段结束之后时占位行被滤掉，合并只看到另一库里仍"开着"的段，回放把已结束的段当成仍在保持。修法：`query` 在各库读完后让每个可读库补查它缺少的段行；`assemble` 丢弃合并后确认已在窗口前结束的段中早于窗口的保持值行；补查失败按该库不可读计入 `partial`。回归：`test_history_merge.py::test_a_segment_whose_end_sits_in_another_database_is_not_open_for_a_window_after_that_end`（修前失败）。窗口取宽（980–1080）时合并本来就对，所以 D34 的用例没发现。
+4. **预期写错（测试侧，两处）**：(a) t=129 的那一轮在同一秒、`tick` 之前到达，来源仍是 `LOST`，设计上丢失期间不入队，它只作为恢复单元的基线重申入史（`STATE_ASSERTION`），不是 `RECEIVED`；用例现断言它以重申形式存在。(b) "安静窗口"原取 1043±3，但 t=137 的 +10 秒使 wall 1037–1046 不属于任何段，该窗口本就应什么都不声称；现改取段内的 1033±2 验证保持值，另加空洞窗口断言"无段、不声称"。
 
 - 无偏离设计。方案"位置"列写的是改造旧文件；本次以新模块并存，D45 再删旧（见第 0 节）。
 - **实现取值（非设计明文，需用户知晓）：** ① `Timing.ua_silence_margin=0.5` 秒（终版要求"静默+裕量<有效期"但未给数）；② 从未有过有效值的派生量首次算出 NA 时不写记录；③ 水位只约束开放段最后一条记录的尾部；④ Modbus 每轮原始观测逐轮存储，派生结果仅变化时存；⑤ `config_id` 改为键排序规范化哈希。
+- **已知但未修、未用例验证（按代码推断）：** `lost_seg` 只修了"丢失开始时该段开着、恢复尝试被拒"这条路径。下列情形仍可能让缺口前落库的段 `end_wall` 为 NULL：① 丢失期间来源又 EXPIRED/RESYNC（`SEG_END` 因 LOST 未入队，恢复单元看到 `open_segment=False` 不再补）；② 引发丢失的正是含 `SEG_START` 的组被拒（新段从未落库，旧段的结束也在被拒的同组里）；③ `RECOVERING→LOST` 后恢复单元又被策略拒绝（`lost_seg` 已被改记成恢复单元的新段）。这几种情形下回放仍受缺口行与水位约束，但段本身显示为开着；要修需在丢失期间把"已落库段的收尾事实"记下来、恢复时补发，D45 接线前后择机做。
 - **现场必须核验：** asyncua 测试服务器的保活比协商值晚一个发布周期（见 Capstone C 记录）；真实 Acheron、UA 网关、独立卷、一年容量均未验。
 - 会话预算：用户"用尽 session limit"指 5 小时会话额度；CLAUDE.md 的 30,000 token 条款，用户随后明确说"别控制预算了，我自己看着来"——预算由用户掌控，执行时不自行限额、不为预算停下或提问。
 
 ## 3. 交接（新会话从这里开始）
 
-**完成：** D01–D35（模块 A–E 全部，Capstone A–E，模块 F 的 D32–D35）。D34 提交时全套 **473 通过 / 0 失败 / 0 跳过，245.81 秒**，ruff 与 `git diff --check` 通过；D35 另加 19 项（见上）。**未做：** Capstone F（进行中，见下）、模块 G（D36–D44、Capstone G）、模块 H（D45–D48、H0、最终 Capstone）。
-
-**Capstone F 进行中（未提交）：** `tests/test_capstone_f.py` 是未跟踪的新文件，已写完 9 个用例（417 路逐项核对、静止点依据、批内重复时间、Good→Bad→Good 可追溯、缺口不被跨越、时钟跳变开段、外库离线显式不完整与行数上限、时区等价）。场景：满量配置，t=101..145 秒，已知值；t=110 同点三版本；t=120/122 质量单独变化；t=126–128 归档拒绝并在 t=127 丢一次 UA 变化；t=137 墙钟 +10 秒；墙钟 ≥1024 起组被路由到移动库。用 `-x` 跑了前两个：第 1 个通过；第 2 个（`test_inputs_match_the_known_values_and_a_still_value_is_backed_by_its_evidence`）在窗口 `center=1043, seconds=6` 查 `temp_outer_01` 时，`held[0]["origin"]` 得到 `RECEIVED` 而我预期是 `STATE_ASSERTION`（缺口后重申）。**我没来得及判断这是测试预期写错还是查询/落库的真实缺陷**：先打印该通道的 spans、`segment`/`archive_gap` 表，确认缺口后的重申是否真被写入（尤其 UA 源在 t=127 的那组是否真被拒绝并进入 LOST），其余 7 个用例还没跑。修完后把它提交。**不要在没弄清原因前改预期去迁就。**
+**完成：** D01–D35（模块 A–E 全部，Capstone A–E，模块 F 全部：D32–D35 与 Capstone F）。Capstone F 提交时全套 **503 通过 / 0 失败 / 0 跳过，284.33 秒**，ruff 与 `git diff --check` 通过（Capstone F 暴露并修复了 owner 与历史读取各一处缺陷，见上）。**未做：** 模块 G（D36–D44、Capstone G）、模块 H（D45–D48、H0、最终 Capstone）。下一步是 D36（见方案模块 G）。**接手前注意：** 第 2 节"已知但未修"一条（丢失期间已落库段可能不被收尾）与 D45 接线相关；`ruff format --check` 在旧文件上本就不通过，项目只要求 `ruff check` 与 `git diff --check`。
 
 **进入新会话的第一步：**
 ```powershell

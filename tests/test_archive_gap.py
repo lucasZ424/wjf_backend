@@ -6,7 +6,7 @@ certify a stale cache, rewrite a sample, or pile up memory without limit.
 
 import pytest
 from owner_support import Recorder, poll, small_config
-from test_source_validity import MONO0, WALL0, at, data, ua_only
+from test_source_validity import MONO0, WALL0, at, data, keepalive, ua_only
 
 from htsg import records as r
 from htsg.owner import Owner
@@ -82,6 +82,27 @@ def test_recovery_commits_gap_new_segment_baseline_and_first_watermark_as_one_gr
     values = {o.point_id: o.value for o in recovery.observations}
     assert values == {"ti": 502.0, "to": 450.0}, "the baseline is the CURRENT retained state, taken now"
     assert len(rec.pubs) == pubs_before, "an archive-only unit is not republished to clients"
+
+
+def test_recovery_attempts_the_queue_turns_away_do_not_move_the_segment_the_gap_closes():
+    owner, sink, _ = build()
+    data(owner, 101.0)
+    lose_the_archive(owner, sink)
+    stored = owner.sources["ua"].seg
+    sink.accept = False
+    for mono in (103.0, 104.0):  # each attempt is built, then turned away: nothing of it reaches the archive
+        keepalive(owner, mono)
+        owner.tick(*at(mono))
+        assert owner.sources["ua"].archive == "LOST"
+    sink.accept = True
+    keepalive(owner, 105.0)
+    owner.tick(*at(105.0))
+    recovery = sink.groups[-1]
+    assert recovery.kind == r.GROUP_RECOVERY
+    end = next(x for x in recovery.states if x.kind == "SEG_END")
+    start = next(x for x in recovery.states if x.kind == "SEG_START")
+    assert end.seg == stored and end.detail["end_wall"] == at(102.0)[0], "the segment the archive holds is closed"
+    assert start.seg > stored and recovery.states[-1].detail["seg"] == start.seg
 
 
 def test_the_baseline_keeps_original_identity_and_flags_values_derived_inside_the_gap():

@@ -60,6 +60,7 @@ class SourceState:
     lost_since_wall: float | None = None
     lost_reason: str | None = None
     lost_from_batch_seq: int | None = None
+    lost_seg: int | None = None  # the segment the archive holds open when the loss began; attempts burn numbers
     void_after_order: int | None = None  # groups queued after the first lost one are void until recovery
     recovery_order: int | None = None
     pending: list = field(default_factory=list)  # groups held, bounded, while RECOVERING
@@ -228,6 +229,7 @@ class Owner:
         self.health["archive_lost_groups"] += 1
         if s.archive != "LOST":
             s.archive, s.lost_reason = "LOST", reason
+            s.lost_seg = s.seg if s.open_segment else None
             s.lost_since_wall = min(s.lost_since_wall or group.built_wall, group.built_wall)
             s.lost_from_batch_seq = s.batch_seq
             if s.void_after_order is None or group.order < s.void_after_order:
@@ -255,7 +257,7 @@ class Owner:
                 self.confirmed_watermark[st.source_id] = max(self.confirmed_watermark.get(st.source_id, 0.0), covered)
         if s is not None and s.archive == "RECOVERING" and group.order == s.recovery_order:
             s.archive, s.recovery_order, s.lost_since_wall, s.lost_reason = "OK", None, None, None
-            s.void_after_order, s.lost_from_batch_seq = None, None
+            s.void_after_order, s.lost_from_batch_seq, s.lost_seg = None, None, None
             self.health["archive_recoveries"] += 1
             held, s.pending = s.pending, []
             for later in held:  # groups that waited behind the recovery group, in order
@@ -331,7 +333,10 @@ class Owner:
         states = list(lead)
         if s.open_segment:
             end = wall if close_old_at is None else close_old_at
-            states.append(self._state(s, "SEG_END", wall, mono, reason=reason, end_wall=end))
+            ended = self._state(s, "SEG_END", wall, mono, reason=reason, end_wall=end)
+            if s.lost_seg is not None:  # recovery attempts that were turned away consumed numbers, not segments
+                ended = replace(ended, seg=s.lost_seg)
+            states.append(ended)
         s.seg, s.open_segment = s.seg + 1, True
         states.append(self._state(s, "SEG_START", wall, mono, conn_gen=s.conn_gen, reason=reason))
         base_obs, base_results = self._baseline(s, wall, mono)

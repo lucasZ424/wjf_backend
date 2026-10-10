@@ -9,6 +9,7 @@ from test_archive_write import make_group
 from test_storage_routing import Rig3
 
 from htsg import history as h
+from htsg import records as r
 from htsg.archive_router import ArchiveRouter
 
 CHANNELS = {"ti": "ua"}
@@ -46,6 +47,23 @@ def test_one_segment_split_over_two_databases_reads_as_one_span_with_a_single_co
     third, fourth = raw[2], raw[3]
     assert third["ended_by"] == "NEXT_CHANGE" and third["until"] == fourth["time"], "the hold links across databases"
     assert result["partial"] is False and result["unavailable"] == []
+
+
+def test_a_segment_whose_end_sits_in_another_database_is_not_open_for_a_window_after_that_end(archive_db_factory):
+    rig = Rig3(archive_db_factory)
+    rig.write(primary=0.40)  # segment 1 starts in the normal database, its values at wall 1001
+    closing = r.StateRecord(
+        r.state_id("run1", "ua", 99), "run1", "ua", 1, "SEG_END", 1010.0, 110.0,
+        {"reason": "ARCHIVE_GAP", "end_wall": 1005.0},
+    )  # fmt: skip
+    rig.external.write_group(
+        make_group(order=2, config_id=rig.cfg.config_id, observations=(), results=(), states=(closing,), faults=())
+    )  # the close was routed to the removable database: there it is a row without a start
+    across = h.query(stores(rig), CHANNELS, 1003.0, 1004.0)
+    (span,) = across["channels"]["ti"]["segments"]
+    assert span["end_wall"] == 1005.0 and span["rows"][-1]["until"] == 1005.0, "the end is found in the other database"
+    after = h.query(stores(rig), CHANNELS, 1006.0, 1010.0)
+    assert after["channels"]["ti"]["segments"] == [], "nothing is held through time the segment no longer covers"
 
 
 def test_a_database_that_cannot_be_read_makes_the_answer_partial_not_silently_complete(archive_db_factory):
