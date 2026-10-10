@@ -206,7 +206,8 @@ def test_recovery_inside_three_to_six_seconds_keeps_the_generation_and_commits_o
     result_values = {x.point_id: (x.value, x.origin) for x in group.results}
     assert ("dt" in result_values) and 50.0 in [x.value for x in group.results if x.origin == r.ORIGIN_ASSERTION]
     assert owner.results["dt"].current.value == pytest.approx(51.0), "updated from the final valid state"
-    assert [x.kind for x in group.states] == ["SEG_START"] and group.states[0].detail["reason"] == "RECOVERY"
+    assert [x.kind for x in group.states] == ["SEG_START", "WATERMARK"], "the first watermark is part of the unit"
+    assert group.states[0].detail["reason"] == "RECOVERY"
 
 
 def test_recovery_by_a_keepalive_alone_restates_the_cache_and_changes_nothing_else():

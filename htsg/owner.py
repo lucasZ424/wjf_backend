@@ -13,9 +13,10 @@ from dataclasses import dataclass, field, replace
 from uuid import uuid4
 
 from . import records as rec
-from .config import Settings
+from .config import Settings, fault_rule
 from .derive import Input, Outcome, Topology, evaluate, unavailable
 from .extremes import is_extreme
+from .fault_tracker import FaultTracker
 
 # Source data states.  Only VALID sources contribute usable values.
 #   WAITING  new connection / subscription generation, nothing received yet
@@ -126,6 +127,24 @@ class Owner:
                 self.point_source.get(first) or self.result_source.get(first) or config.sources[0].id
             )
         self.baselines: dict[str, Baseline] = {}
+        # ordinary faults (§8): 304 channels in the research table; timing is the tracker's, state is ours
+        self.rules = {x.id: fault_rule(x) for x in (*config.points, *config.derived) if fault_rule(x)}
+        self.tracker = FaultTracker(self.rules, config.timing.fault_confirm_seconds)
+        self.source_deps: dict[str, frozenset[str]] = {}
+        for rule in config.derived:
+            deps = set()
+            for name in rule.inputs:
+                deps |= {name} if name in self.point_source else set(self.source_deps.get(name, ()))
+            self.source_deps[rule.id] = frozenset(deps)
+        self.tracked_by_source: dict[str, list[str]] = {}
+        for pid in self.rules:
+            owner_source = self.point_source.get(pid) or self.result_source[pid]
+            self.tracked_by_source.setdefault(owner_source, []).append(pid)
+        self.fault_counter: dict[str, int] = {}
+        self.fault_buffer: dict[str, rec.FaultRecord] = {}  # confirmed, not yet durable (in memory only)
+        self.fault_loss: dict[str, dict] = {}  # per source: faults the full buffer refused
+        self.fault_rejected_total = 0
+        self._multi: set[str] = set()
         self.order = 0
         self.pub_seq = 0
         self.health = {
@@ -221,7 +240,16 @@ class Owner:
     def committed(self, group: rec.CommitGroup, result=None):
         """The writer confirmed `group` durable.  Only now may history be called recovered."""
         s = self.sources.get(group.source_id)
+        for fault in group.faults:  # removed only now: durable
+            self.fault_buffer.pop(fault.id, None)
         for st in group.states:
+            if st.kind == "FAULT_LOSS":
+                summary = self.fault_loss.get(st.source_id)
+                if summary is not None:
+                    summary["count"] -= st.detail["count"]
+                    summary["inflight"] = 0
+                    if summary["count"] <= 0:
+                        del self.fault_loss[st.source_id]
             if st.kind == "WATERMARK":
                 covered = st.detail["covered_wall"]
                 self.confirmed_watermark[st.source_id] = max(self.confirmed_watermark.get(st.source_id, 0.0), covered)
@@ -313,10 +341,14 @@ class Owner:
                 s.batch_seq += 1
                 observations, _ = self._ingest(s, batch)
             results = self._recompute(s, batch, list(s.point_ids))  # validity returned: revisit dependents
+            self._fault_restart(s, mono)  # §11: timing restarts from the processed final state
         mark = self._watermark_state(s, wall, mono)
         s.watermark_wall, s.watermark_mono = (mark.detail["covered_wall"] if mark else 0.0), mono
         if mark is not None:
             states.append(mark)
+        loss = self._fault_loss_state(s, wall, mono)
+        if loss is not None:
+            states.append(loss)
         return self._build(
             rec.GROUP_RECOVERY,
             s.id,
@@ -328,7 +360,23 @@ class Owner:
         )
 
     def _buffered_faults(self, s: SourceState) -> list:
-        return []
+        return [f for f in self.fault_buffer.values() if f.source_id == s.id]
+
+    def _fault_loss_state(self, s: SourceState, wall: float, mono: float):
+        summary = self.fault_loss.get(s.id)
+        if not summary or summary["count"] <= 0:
+            return None
+        summary["inflight"] = summary["count"]
+        return self._state(
+            s,
+            "FAULT_LOSS",
+            wall,
+            mono,
+            count=summary["count"],
+            first_wall=summary["first_wall"],
+            last_wall=summary["last_wall"],
+            points=sorted(summary["points"]),
+        )
 
     def _input(self, name: str) -> Input:
         if name in self.points:
@@ -369,6 +417,7 @@ class Owner:
                 self._check_source(s, wall, mono)
                 if s.archive == "LOST":
                     self._try_archive_recovery(s, wall, mono)
+        self._advance_faults(wall, mono)  # AFTER communication has been judged for every source
         self._watermarks(wall, mono)
         self.last_tick_wall, self.last_tick_mono = wall, mono
 
@@ -412,6 +461,8 @@ class Owner:
             if self.result_source[rule.id] == s.id:
                 self.baselines.pop(rule.id, None)
                 self.results[rule.id].current = unavailable("SOURCE_INVALID")
+        for pid in self.tracked_by_source.get(s.id, ()):  # unknown data cannot confirm, nor recover, a fault
+            self.tracker.cancel(pid)
 
     def _expire(self, s: SourceState, wall: float, mono: float):
         """3 s without a valid response: data unusable, segment cut, no rebuild (§11)."""
@@ -560,6 +611,7 @@ class Owner:
 
     def _ingest(self, s: SourceState, batch) -> tuple[list[rec.Observation], list[str]]:
         observations, touched = [], []
+        versions: dict[str, set] = {}
         for item in batch.items:
             obs = self._observe(s, batch, item, len(observations))
             if obs is None:
@@ -567,6 +619,10 @@ class Owner:
             self._apply(obs)
             observations.append(obs)
             touched.append(obs.point_id)
+            versions.setdefault(obs.point_id, set()).add((obs.value, obs.quality))
+            if obs.point_id in self.rules:  # each version in batch order: a valid normal one clears the clock
+                self.tracker.observe(obs.point_id, self._valid_value(obs.point_id), obs.received_mono)
+        self._multi = {pid for pid, seen in versions.items() if len(seen) > 1}
         return observations, touched
 
     def _accept_notification(self, s: SourceState, batch) -> bool:
@@ -597,6 +653,9 @@ class Owner:
             ps.good, ps.reason = False, "POLL_MISSING"
         s.last_tick = batch.tick
         observations, _ = self._ingest(s, batch)
+        for pid in self.tracked_by_source.get(s.id, ()):
+            if pid in self.points and not self.points[pid].good:
+                self.tracker.observe(pid, None, batch.mono)
         results = self._recompute(s, batch, list(s.point_ids))
         poll = self._state(s, "POLL", batch.wall, batch.mono, **self._poll_detail(s, batch, observations))
         self._emit(rec.GROUP_BATCH, s, batch.wall, observations, results, [*states, poll])
@@ -623,6 +682,9 @@ class Owner:
             ps = self.points[pid]
             ps.good, ps.reason = False, "POLL_" + batch.outcome
         s.last_tick = batch.tick
+        for pid in self.tracked_by_source.get(s.id, ()):
+            if pid in self.points:
+                self.tracker.observe(pid, None, batch.mono)
         results = self._recompute(s, batch, list(s.point_ids))
         poll = self._state(s, "POLL", batch.wall, batch.mono, **self._poll_detail(s, batch, ()))
         self._emit(rec.GROUP_BATCH, s, batch.wall, (), results, [*states, poll])
@@ -770,6 +832,88 @@ class Owner:
                 s.watermark_wall = mark.detail["covered_wall"]
                 self._submit(s, self._build(rec.GROUP_WATERMARK, s.id, wall, states=[mark]))
 
+    # ------------------------------------------------------------------ faults
+
+    def _valid_value(self, pid: str):
+        """The current value of a tracked source point if it counts (Good, not extreme, source usable)."""
+        ps = self.points[pid]
+        usable = self.sources[self.point_source[pid]].state == VALID
+        return ps.obs.value if (usable and ps.good and ps.obs is not None) else None
+
+    def _fault_restart(self, s: SourceState, mono: float):
+        for pid in self.tracked_by_source.get(s.id, ()):
+            self.tracker.cancel(pid)
+            if pid in self.points:
+                value = self._valid_value(pid)
+            else:
+                out = self.results[pid].current
+                value = out.value if out and out.status == rec.RESULT_OK and not out.extreme else None
+            self.tracker.observe(pid, value, mono)
+
+    def _advance_faults(self, wall: float, mono: float):
+        confirmed: dict[str, list[rec.FaultRecord]] = {}
+        for pid, direction in self.tracker.advance(mono):
+            source_id = self.point_source.get(pid) or self.result_source[pid]
+            record = self._fault_record(pid, direction, self.sources[source_id], wall, mono)
+            if record is not None:
+                confirmed.setdefault(source_id, []).append(record)
+        for source_id, faults in confirmed.items():
+            self._emit(rec.GROUP_FAULT, self.sources[source_id], wall, faults=faults)
+
+    def _fault_record(self, pid: str, direction: str, s: SourceState, wall: float, mono: float):
+        if pid in self.points:
+            obs = self.points[pid].obs
+            kind, basis_id, basis_wall, value = "OBSERVATION", obs.id, obs.received_wall, obs.value
+            seg, batch_seq = obs.seg, obs.batch_seq
+        else:
+            last = self.results[pid].emitted
+            kind, basis_id, basis_wall, value = "RESULT", last.orig_id or last.id, last.at_wall, last.value
+            seg, batch_seq = last.seg, last.batch_seq
+        if len(self.fault_buffer) >= self.config.timing.fault_buffer_limit:
+            self._fault_rejected(pid, s, wall)  # kept: what is already buffered; refused: this new one
+            return None
+        n = self.fault_counter[pid] = self.fault_counter.get(pid, 0) + 1
+        record = rec.FaultRecord(
+            rec.fault_id(self.run_id, pid, n),
+            self.run_id,
+            s.id,
+            seg,
+            batch_seq,
+            pid,
+            direction,
+            wall,
+            mono,
+            kind,
+            basis_id,
+            basis_wall,
+            value,
+            self.config.config_id,
+            dict(self.rules[pid]),  # the thresholds and hysteresis in force when it was confirmed
+        )
+        self.fault_buffer[record.id] = record
+        return record
+
+    def _fault_rejected(self, pid: str, s: SourceState, wall: float):
+        self.fault_rejected_total += 1
+        self.health["fault_archive_incomplete"] = True
+        summary = self.fault_loss.setdefault(
+            s.id, {"count": 0, "first_wall": wall, "last_wall": wall, "points": set(), "inflight": 0}
+        )
+        summary["count"] += 1
+        summary["last_wall"] = wall
+        summary["points"].add(pid)
+
+    def fault_status(self) -> dict:
+        """What the current page must show about fault records: incomplete archive and counted losses."""
+        return {
+            "buffered": len(self.fault_buffer),
+            "limit": self.config.timing.fault_buffer_limit,
+            "rejected_total": self.fault_rejected_total,
+            "archive_incomplete": bool(self.fault_loss) or self.fault_rejected_total > 0,
+            "loss": {k: {**v, "points": sorted(v["points"])} for k, v in self.fault_loss.items()},
+            "durability": "IN_MEMORY_UNTIL_COMMITTED; lost if the process exits",
+        }
+
     # --------------------------------------------------------------- derived
 
     def _recompute(self, s: SourceState, batch, touched) -> list[rec.Result]:
@@ -779,6 +923,11 @@ class Owner:
             result = self._record(rule, outcome, s, batch)
             if result is not None:
                 out.append(result)
+            if rule.id in self.rules:
+                if self._multi & self.source_deps[rule.id]:
+                    self.tracker.cancel(rule.id)  # §8.2: a differently valued second version restarts the clock
+                ok = outcome.status == rec.RESULT_OK and not outcome.extreme
+                self.tracker.observe(rule.id, outcome.value if ok else None, batch.mono)
         return out
 
     def _plain(self, rule) -> Outcome:
