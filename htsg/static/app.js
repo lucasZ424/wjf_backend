@@ -54,10 +54,8 @@ function stateBadges(id) {
 // ------------------------------------------------------------------------------------------- pages
 
 const pages = [
-  {id: 1, name: "系统总览", html: () => `<div class="card"><h3>过程量 · 实时</h3><div id="process-table"></div></div>`,
-    update() {
-      $("process-table").innerHTML = table(["过程量", "数值", "状态"], (state.config.ui.process_points || []).map(id => [esc(label(id)), valueText(id), stateBadges(id)]));
-    }},
+  {id: 1, name: "系统总览", html: overviewHtml, update: updateOverview},
+  {id: 2, name: "水冷壁应变场", html: strainHtml, update: updateStrain},
   {id: 5, name: "历史查询", html: historyHtml, mount: mountHistory},
 ];
 const currentPage = () => pages.find(p => p.id === state.page) || pages[0];
@@ -82,6 +80,72 @@ function invalidate() {
   if (state.drawing) return;
   state.drawing = true;
   requestAnimationFrame(() => { state.drawing = false; renderLive(); });
+}
+
+// -------------------------------------------------------------- pages 1 and 2: overview and strain (终版 §17.1-17.2)
+
+// Three different quantities per station, never mixed: the bridge signal, the converted strain and the change.
+const stations = () => state.config?.ui?.stations || [];
+const bridgeOf = s => definition(s.strain).inputs?.[0];
+const SOURCE_STATES = {WAITING: "等待首次数据", VALID: "数据有效", EXPIRED: "数据已失效", RESYNC: "重新同步中"};
+const KINDS = {modbus: "Modbus", opcua: "OPC UA"};
+const STRAIN_HEAD = ["测点", "原始信号 (mV/V)", "换算应变 (με，GF=6，未作温度补偿)", "应变变化 (με，相邻两个计划轮次的增量)", "状态"];
+
+// One state per station, from the owner's own validity and fault state: why a block is grey is named, never guessed.
+function stationState(s) {
+  const bridge = channel(bridgeOf(s)), strain = channel(s.strain), change = channel(s.strain_change);
+  if (!strain) return {state: "invalid", why: "等待实时数据"};
+  const root = bridge && !bridge.valid ? bridge : strain;
+  if (!root.valid) return {state: "invalid", why: `无效：${reasonText(root.reason)}`};
+  const faults = [strain, change].filter(v => v && v.fault);
+  const confirmed = faults.find(v => v.fault === "CONFIRMED");
+  if (confirmed) return {state: "confirmed", why: `故障已确认${confirmed.fault_direction === "HIGH" ? "（高）" : confirmed.fault_direction === "LOW" ? "（低）" : ""}`};
+  if (faults.some(v => v.fault === "PENDING")) return {state: "pending", why: "越限待确认"};
+  return {state: "normal", why: "正常"};
+}
+const STATE_KIND = {normal: "ok", pending: "warn", confirmed: "bad", invalid: ""};
+const stationBadge = st => badge(st.why, STATE_KIND[st.state]);
+const quantity = (id, digits) => { const view = channel(id); return view && view.valid ? `${fmt(view.value, digits)} ${esc(definition(id).unit)}` : "—"; };
+
+function strainTable() {
+  return table(STRAIN_HEAD, stations().map(s => [esc(s.label || s.id), quantity(bridgeOf(s), 4), quantity(s.strain), quantity(s.strain_change), stationBadge(stationState(s))]));
+}
+const STRAIN_NOTE = '<p class="chart-caption">“换算应变”按 GF=6 换算、未作温度补偿，不是已验证的机械应变；原始信号（mV/V）、换算应变（με）和应变变化（με）是三种不同的量，分别显示，互不覆盖。</p>';
+
+function overviewHtml() {
+  return `<div id="source-status" class="grid metrics"></div>
+    <div class="card" style="margin-bottom:16px"><h3>越限状态</h3><div id="fault-summary"></div></div>
+    <div class="grid two"><div class="card"><h3>过程量 · 实时</h3><div id="process-table"></div></div>
+    <div class="card"><h3>应变测点 · 三种量分别显示</h3><div id="strain-table"></div>${STRAIN_NOTE}</div></div>`;
+}
+function updateOverview() {
+  const sources = state.live.status?.sources || {};
+  $("source-status").innerHTML = Object.entries(sources).map(([id, s]) => `<div class="card metric"><small>${esc(KINDS[s.kind] || s.kind)} · ${esc(id)}</small><div class="value" style="font-size:16px">${esc(SOURCE_STATES[s.state] || s.state)}</div>${s.alarm ? badge("通信告警", "bad") : badge("通信正常", "ok")} ${s.enabled ? "" : badge("已禁用")}<br><small>最后通信 ${clock(s.last_comm_wall)}</small></div>`).join("") || '<p class="muted">等待实时数据</p>';
+  const views = Object.values(state.live.channels || {});
+  const pending = views.filter(v => v.fault === "PENDING").length, confirmed = views.filter(v => v.fault === "CONFIRMED").length;
+  $("fault-summary").innerHTML = state.live.channels
+    ? `${badge(`越限待确认 ${pending} 个通道`, pending ? "warn" : "")} ${badge(`故障已确认 ${confirmed} 个通道`, confirmed ? "bad" : "")} <span class="muted">持续越限满 5 秒确认；此处只显示当前状态，不另设报警、确认或等级。</span>`
+    : '<span class="muted">等待实时数据</span>';
+  $("process-table").innerHTML = table(["过程量", "数值", "状态"], (state.config.ui.process_points || []).map(id => [esc(label(id)), valueText(id), stateBadges(id)]));
+  $("strain-table").innerHTML = strainTable();
+}
+
+function strainHtml() {
+  return `<div class="grid two"><div class="card"><h3>测点分布示意 · 8 个固定测点</h3><div id="strain-map" class="map strain-map"></div>
+    <div class="legend"><b>● 正常</b><span style="color:var(--amber)">● 越限待确认</span><em>● 故障已确认</em><span>● 无效（灰色，注明原因）</span></div>
+    <p class="chart-caption">8 个固定测点各一个色块；颜色只表示该测点的有效性与越限状态，不在测点之间插值，不构成连续应变场；示意坐标仅用于布局，不代表现场拓扑。</p></div>
+    <div class="card"><h3>三种量 · 分别显示</h3><div id="strain-table"></div>${STRAIN_NOTE}</div></div>`;
+}
+function updateStrain() {
+  $("strain-map").innerHTML = stations().map(s => {
+    const st = stationState(s), x = Math.max(24, Math.min(76, Number(s.x) || 0)), y = Math.max(10, Math.min(90, Number(s.y) || 0));
+    return `<div class="block" data-station="${esc(s.id)}" data-state="${st.state}" style="left:${x}%;top:${y}%"><b>${esc(s.label || s.id)}</b>
+      <div>换算应变 <strong>${quantity(s.strain)}</strong></div>
+      <div class="minor">原始信号 ${quantity(bridgeOf(s), 4)}</div>
+      <div class="minor">应变变化 ${quantity(s.strain_change)}</div>
+      <div class="why">${esc(st.why)}</div></div>`;
+  }).join("");
+  $("strain-table").innerHTML = strainTable();
 }
 
 // ------------------------------------------------------------------------------- page 5: history (终版 §14)

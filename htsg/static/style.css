@@ -10,3 +10,15 @@
 .fault-row.selected{border-color:var(--cyan);background:#28456b}
 #replay-points{width:100%;min-height:150px}
 @media(max-width:950px){.history-layout{grid-template-columns:1fr}}
+.map.strain-map{height:640px}
+.map.strain-map:before{content:"测点分布示意 · 示意坐标仅用于布局"}
+.block{position:absolute;transform:translate(-50%,-50%);width:44%;min-width:170px;padding:10px 12px;border:1px solid var(--edge);border-left-width:6px;border-radius:7px;line-height:1.6;background:#1b2d45}
+.block[data-state="normal"]{border-color:#2f8f73;background:#17383a}
+.block[data-state="pending"]{border-color:#d19a45;background:#4a3b22}
+.block[data-state="confirmed"]{border-color:#d9545b;background:#4d2630}
+.block[data-state="invalid"]{border-color:#6b7b8e;background:#2a3748;color:#9fb0c3}
+.block strong{font:19px Consolas,monospace}
+.block .minor,.block .why{font-size:11px;color:var(--muted)}
+.block .why{margin-top:3px;color:var(--text)}
+@media(max-width:520px){.block{width:46%;min-width:130px;padding:6px 8px;font-size:10px}.block strong{font-size:14px}}
+
