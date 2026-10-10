@@ -211,7 +211,7 @@ D38｜dev 分支工作区｜新增 `htsg/static/stream.js`（`apply`/`newLive`/`
 
 ## 3. 交接（新会话从这里开始）
 
-**完成：** D01–D40（模块 A–F 全部，Capstone A–F，模块 G 的 D36–D41）。D36 提交时全套 **513 通过 / 0 失败 / 0 跳过，296.21 秒**；D37 另加 10 项、D38 另加 5 项并删除旧 `test_replay_ui.py` 1 项（见上，全套均未重跑，Capstone G 重跑），`ruff check .` 通过。**未做：** 模块 G 的 D42–D44（前端）与 Capstone G、模块 H（D45–D48、H0、最终 Capstone）。下一步是 D42（总览与 8 点应变分布：原始 mV/V、换算应变 με（GF=6 未补偿）、应变变化 με 分别显示；8 个固定色块不插值；待确认/已确认/无效区分）。**接手前注意：** 第 2 节"已知但未修"一条（丢失期间已落库段可能不被收尾）与 D45 接线相关；`ruff format --check` 在旧文件上本就不通过，项目只要求 `ruff check` 与 `git diff --check`。
+**完成：** D01–D41（模块 A–F 全部，Capstone A–F，模块 G 的 D36–D41）。D36 提交时全套 **513 通过 / 0 失败 / 0 跳过，296.21 秒**；D37 另加 10 项、D38 另加 5 项并删除旧 `test_replay_ui.py` 1 项（见上，全套均未重跑，Capstone G 重跑），`ruff check .` 通过。**未做：** 模块 G 的 D42–D44（前端）与 Capstone G、模块 H（D45–D48、H0、最终 Capstone）。下一步是 D42（总览与 8 点应变分布：原始 mV/V、换算应变 με（GF=6 未补偿）、应变变化 με 分别显示；8 个固定色块不插值；待确认/已确认/无效区分）。**接手前注意：** 第 2 节"已知但未修"一条（丢失期间已落库段可能不被收尾）与 D45 接线相关；`ruff format --check` 在旧文件上本就不通过，项目只要求 `ruff check` 与 `git diff --check`。
 
 **进入新会话的第一步：**
 ```powershell
