@@ -159,6 +159,10 @@ D33｜同上｜`htsg/history.py`（`input_basis`）、`tests/test_input_basis.py
 
 D34｜同上｜`htsg/history.py`（`channel_sources`、`coverage_end`、`list_faults`、游标）、`tests/test_history_merge.py`｜`pytest tests/test_history_merge.py`｜7 通过｜同一段拆在两个库时合成一个 span、同 ID 记录只出现一份（含人为重复写入的副本），保持值能跨库衔接；库不可读→`partial=true`+`unavailable`，覆盖终点全部置 None，不把孤立的较晚样本当完整水位；`external_enabled=false` 后移动库不再被写入但已有历史仍可查；故障列表三库分页共 25 条（含同一时间戳并列、跨库重复投递），每页 7 条，不重不漏、(时间 desc, id desc) 稳定；游标绑定查询条件，换条件即拒绝；库不可读时列表仍可用并标 `pagination_incomplete`｜无
 
+### D35 故障检索与回溯 API
+
+D35｜dev 分支工作区｜新增 `htsg/history_api.py`（`build_history_router`、`parse_instant`）、`tests/test_history_api.py`｜`pytest tests/test_history_api.py`｜19 通过 / 0 失败 / 0 跳过（约 15 秒）｜端点全是 GET：`/api/channels`、`/api/faults`（过滤 point/direction/source/start/end，游标分页）、`/api/replay`（`center` 为 UTC 秒或**带偏移**的 ISO，`seconds` ∈ (0, 366 天]，`points` 必须是配置内通道，`limit` ≤10000）、`/api/replay/basis/{result_id}`；返回含查询时刻、`coverage_end`（每源）与 `coverage_complete_until`（任一源未知则为 null）、缺口、来源、`truncated`、`partial`/`unavailable`；无凭据 401，viewer 与 admin 都可读；OpenAPI 里所有路径只有 get，POST/DELETE 通道返回 404/405；无故障记录也能指定窗口回溯；不带偏移的 ISO、`seconds<=0`、超 366 天、未知通道、`limit>10000`、非法游标均 422；同一瞬间用 UTC / +08:00 / 秒数表示查得的 UTC 窗口完全相同；一个库不可读→200 且 `partial`，全部不可读→503；库中即使有旧 `frame_value`/`source_sample` 表也不会混入结果｜`history_api` 尚未挂到 `api.create_app`（D45 与旧路由一并替换）；**D35 提交前只重跑了 D35 的 19 项和 ruff，全套未重跑**（只新增文件，未改既有代码；上次全套 473 通过）
+
 ## 2. 偏离、风险与未验收
 
 - 无偏离设计。方案"位置"列写的是改造旧文件；本次以新模块并存，D45 再删旧（见第 0 节）。
@@ -168,7 +172,9 @@ D34｜同上｜`htsg/history.py`（`channel_sources`、`coverage_end`、`list_fa
 
 ## 3. 交接（新会话从这里开始）
 
-**完成：** D01–D34（模块 A–E 全部，Capstone A–E，模块 F 的 D32–D34）。D34 提交时全套 **473 通过 / 0 失败 / 0 跳过，245.81 秒**，ruff 通过，`git diff --check` 通过。**未做：** D35、Capstone F，模块 G（D36–D44、Capstone G）、模块 H（D45–D48、H0、最终 Capstone）。
+**完成：** D01–D35（模块 A–E 全部，Capstone A–E，模块 F 的 D32–D35）。D34 提交时全套 **473 通过 / 0 失败 / 0 跳过，245.81 秒**，ruff 与 `git diff --check` 通过；D35 另加 19 项（见上）。**未做：** Capstone F（进行中，见下）、模块 G（D36–D44、Capstone G）、模块 H（D45–D48、H0、最终 Capstone）。
+
+**Capstone F 进行中（未提交）：** `tests/test_capstone_f.py` 是未跟踪的新文件，已写完 9 个用例（417 路逐项核对、静止点依据、批内重复时间、Good→Bad→Good 可追溯、缺口不被跨越、时钟跳变开段、外库离线显式不完整与行数上限、时区等价）。场景：满量配置，t=101..145 秒，已知值；t=110 同点三版本；t=120/122 质量单独变化；t=126–128 归档拒绝并在 t=127 丢一次 UA 变化；t=137 墙钟 +10 秒；墙钟 ≥1024 起组被路由到移动库。用 `-x` 跑了前两个：第 1 个通过；第 2 个（`test_inputs_match_the_known_values_and_a_still_value_is_backed_by_its_evidence`）在窗口 `center=1043, seconds=6` 查 `temp_outer_01` 时，`held[0]["origin"]` 得到 `RECEIVED` 而我预期是 `STATE_ASSERTION`（缺口后重申）。**我没来得及判断这是测试预期写错还是查询/落库的真实缺陷**：先打印该通道的 spans、`segment`/`archive_gap` 表，确认缺口后的重申是否真被写入（尤其 UA 源在 t=127 的那组是否真被拒绝并进入 LOST），其余 7 个用例还没跑。修完后把它提交。**不要在没弄清原因前改预期去迁就。**
 
 **进入新会话的第一步：**
 ```powershell
@@ -179,8 +185,6 @@ git log --oneline -8; git status --short
 
 **新链路代码地图（均已就绪、已测，但 Runtime 尚未接线，D45 才切）：**
 `records.py`（记录与确定性 ID）→ `owner.py`（单所有者：批次接纳、有效性、派生、change 基线、来源状态机 WAITING/VALID/EXPIRED/RESYNC、告警、同代次恢复、段/时钟跳变/水位、归档状态 OK/LOST/RECOVERING、故障接入与缓冲）；`derive.py`（算子）；`fault_tracker.py`（5 秒计时/回差）；`ingress.py`（有序入口：批次+代次/断连/失步事件）；`modbus.py`、`ua.py`、`recovery.py`（采集与退避）；`commitq.py`（有序队列）→ `archive_router.py`（整组路由）→ `archive.py`（`ArchiveStore.write_group`）+ `archive_schema.sql`；`history.py`（读取、依据、故障列表）。测试支撑：`tests/owner_support.py`、`protocol_support.py`、`live_support.py`、`fault_support.py`、`conftest.py::archive_db_factory`。
-
-**D35 已想好的设计（照做即可）：** 新文件 `htsg/history_api.py`，`build_history_router(router, user_dep, config)` 返回 FastAPI `APIRouter`，不改旧 `api.py`（旧 `/api/history|events|replay|faults` 随 D45 替换）。端点：`GET /api/faults`（过滤 point/direction/source/start/end，游标分页，调 `history.list_faults(router.stores,…)`）；`GET /api/replay`（`center` 接受 UTC 秒或带偏移的 ISO，`seconds`>0 且 ≤366 天，`points` 逗号分隔且必须在 `history.channel_sources(config)` 内，`limit`≤10000；调 `history.query`，返回里补上 `query_time/coverage_end/gaps/sources/truncated/partial`）；`GET /api/replay/basis/{result_id}`（调 `input_basis`）。须有：无凭据 401、viewer 与 admin 都可读、**没有任何新增/删除/修改通道的路由**（用 OpenAPI 断言）、不查旧表、数据库调用走线程。验收对照方案 D35 与 Capstone F（417 路逐项核对、静止点有依据、跨段不连、跨库离线显式不完整、批内重复时间不丢行、达上限提示、Good→Bad→Good 可追溯、时区转换不改 UTC 窗口）。
 
 **D45 接线清单（Runtime 现仍是旧帧链路）：** `router.initialize(run_id)`+`bind_run` → `owner.start` → 每个启用源建 `ModbusAcquirer`/`UaAcquirer`，`hub=Ingress`，`owner.on_rebuild=uaa.request_rebuild`（多源需分派）→ `CommitQueue(on_committed=owner.committed, on_refused=owner.refused, is_void=owner.is_void)`，`owner.commit=queue.offer` → 事件循环里每秒 `owner.tick(time.time(), time.monotonic())`，`ingress.drain()` 由唤醒驱动 → 停止顺序：停采集、排空 ingress、`owner.shutdown`、`queue.stop`。要删的旧模块：`engine.py`、`runtime.py` 旧部分、`calculation.py`、`faults.py`、`adapters.py`（`decode_registers` 先搬进 `modbus.py`）、`storage.py`、`schema.sql`、`capture.py`；旧测试按第 1 节 D01 映射处理；`config.py` 中 `profiles/stale_after/max_age/derivative/aggregation/Source.timeout` 等旧字段随之删除。
 
