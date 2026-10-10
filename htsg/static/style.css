@@ -21,4 +21,3 @@
 .block .minor,.block .why{font-size:11px;color:var(--muted)}
 .block .why{margin-top:3px;color:var(--text)}
 @media(max-width:520px){.block{width:46%;min-width:130px;padding:6px 8px;font-size:10px}.block strong{font-size:14px}}
-

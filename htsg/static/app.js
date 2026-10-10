@@ -39,7 +39,7 @@ const channel = id => state.live.channels?.[id] ?? null;
 // What a channel shows: a value only while the owner says it is valid; otherwise "—" and the reason.
 function valueText(id) {
   const view = channel(id);
-  return view && view.valid ? `${fmt(view.value)} ${esc(definition(id).unit)}` : "—";
+  return view && view.valid ? `${fmt(view.value)} ${esc(unitText(definition(id).unit))}` : "—";
 }
 function stateBadges(id) {
   const view = channel(id);
@@ -56,6 +56,7 @@ function stateBadges(id) {
 const pages = [
   {id: 1, name: "系统总览", html: overviewHtml, update: updateOverview},
   {id: 2, name: "水冷壁应变场", html: strainHtml, update: updateStrain},
+  {id: 4, name: "热应力分析", html: trendHtml, mount: mountTrend, update: updateTrend},
   {id: 5, name: "历史查询", html: historyHtml, mount: mountHistory},
 ];
 const currentPage = () => pages.find(p => p.id === state.page) || pages[0];
@@ -105,7 +106,7 @@ function stationState(s) {
 }
 const STATE_KIND = {normal: "ok", pending: "warn", confirmed: "bad", invalid: ""};
 const stationBadge = st => badge(st.why, STATE_KIND[st.state]);
-const quantity = (id, digits) => { const view = channel(id); return view && view.valid ? `${fmt(view.value, digits)} ${esc(definition(id).unit)}` : "—"; };
+const quantity = (id, digits) => { const view = channel(id); return view && view.valid ? `${fmt(view.value, digits)} ${esc(unitText(definition(id).unit))}` : "—"; };
 
 function strainTable() {
   return table(STRAIN_HEAD, stations().map(s => [esc(s.label || s.id), quantity(bridgeOf(s), 4), quantity(s.strain), quantity(s.strain_change), stationBadge(stationState(s))]));
@@ -146,6 +147,125 @@ function updateStrain() {
       <div class="why">${esc(st.why)}</div></div>`;
   }).join("");
   $("strain-table").innerHTML = strainTable();
+}
+
+// ----------------------------------------------------------------- page 4: live three-panel trend (终版 §17.3)
+
+// Only what this page receives is plotted: the groups since it connected.  Custom history lives on page 5.
+const TREND_SECONDS = 300, KEEP_SECONDS = 600;
+const trend = {series: new Map(), pair: 0, cursor: null};
+const signed = (value, digits = 2) => typeof value === "number" && Number.isFinite(value) ? (value > 0 ? "+" : "") + fmt(value, digits) : "—";
+const UNIT_TEXT = {degC: "℃"};
+const unitText = unit => UNIT_TEXT[unit] || unit || "";
+
+const pairs = () => state.config._pairs ??= findPairs();  // the configuration does not change within a session
+function findPairs() {
+  const derived = state.config.derived, same = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
+  return derived.filter(d => d.operation === "difference").map(d => {
+    const stress = derived.find(x => x.operation === "thermal_stress" && same(x.inputs, d.inputs));
+    return {delta: d.id, stress: stress?.id, inner: d.inputs[0], outer: d.inputs[1], name: label(d.id).replace(/\s*内外壁温差$/, "")};
+  }).filter(p => p.stress);
+}
+const loadId = () => (state.config.ui.process_points || []).find(id => id.includes("load")) || "load_mw";
+const trendIds = () => state.config._trendIds ??= new Set([loadId(), ...pairs().flatMap(p => [p.delta, p.stress])]);
+
+// A series is a list of {t, v, valid}: the value in effect from t on.  An invalid state or a lost connection is a
+// point with no value, and nothing is drawn through it.
+function trendNote(channels, wall) {
+  const wanted = trendIds();
+  for (const [id, view] of Object.entries(channels)) {
+    if (!wanted.has(id)) continue;
+    const list = trend.series.get(id) || [], last = list[list.length - 1], valid = view.valid && Number.isFinite(view.value);
+    if (last && last.valid === valid && last.v === (valid ? view.value : null)) continue;
+    list.push({t: wall, v: valid ? view.value : null, valid});
+    while (list.length > 2 && list[1].t < wall - KEEP_SECONDS) list.shift();
+    trend.series.set(id, list);
+  }
+}
+function trendBreak(wall) {
+  for (const list of trend.series.values()) if (list.length && list[list.length - 1].valid) list.push({t: wall, v: null, valid: false});
+}
+const valueAt = (list, t) => { let found = null; for (const p of list) { if (p.t <= t) found = p; else break; } return found; };
+
+function trendHtml() {
+  return `<div class="controls"><label>温度对<select id="pair-select">${pairs().map((p, i) => `<option value="${i}">${esc(p.name)}</option>`).join("")}</select></label><span id="pair-inputs" class="muted"></span><span class="badge warn">热应力为研究估算</span></div>
+    <div class="card"><h3>负荷 · 内外壁温差 · 热应力代理（统一时间轴，最近 ${TREND_SECONDS / 60} 分钟）</h3>
+      <div id="trend-latest" class="controls"></div>
+      <canvas id="trend-canvas" class="chart" style="height:560px" aria-label="三分栏实时趋势"></canvas>
+      <div id="trend-readout" class="chart-caption">把鼠标移到图上查看同一时刻三栏各自的值。</div>
+      <p class="chart-caption">三栏共用同一条时间轴并带同步游标，各栏纵轴独立、保留单位与正负号，不做归一化、相关或回归；共同时间轴仅便于观察，不表示三者同步采样。热应力是基于温差与约束假设的研究代理量，不是实测应力；无效或连接中断处断开、不连线。本页只显示页面连接后收到的实时趋势，自定义历史查询请到“历史查询”页。</p></div>`;
+}
+function mountTrend() {
+  $("pair-select").value = String(trend.pair);
+  $("pair-select").onchange = event => { trend.pair = Number(event.target.value); updateTrend(); };
+  const canvas = $("trend-canvas");
+  canvas.onmousemove = event => {
+    const plot = canvas.plot;
+    if (!plot) return;
+    const x = event.clientX - canvas.getBoundingClientRect().left;
+    trend.cursor = x >= plot.left && x <= plot.right ? plot.t0 + (x - plot.left) / (plot.right - plot.left) * TREND_SECONDS : null;
+    updateTrend();
+  };
+  canvas.onmouseleave = () => { trend.cursor = null; updateTrend(); };
+}
+function trendPanels() {
+  const p = pairs()[trend.pair], ids = [loadId(), p.delta, p.stress];
+  // the difference and the stress can be either sign and say so; the load is a plain quantity
+  return ids.map((id, i) => ({id, name: i === 0 ? "负荷" : i === 1 ? "内外壁温差" : "热应力代理（研究估算）", unit: unitText(definition(id).unit), points: trend.series.get(id) || [], show: i === 0 ? fmt : signed}));
+}
+function updateTrend() {
+  const canvas = $("trend-canvas");
+  if (!canvas || !pairs().length) return;
+  const p = pairs()[trend.pair], panels = trendPanels(), now = state.serverWall || Date.now() / 1000;
+  $("pair-inputs").textContent = `内壁 ${p.inner} · 外壁 ${p.outer}（温差与热应力代理都由这一对算出）`;
+  $("trend-latest").innerHTML = panels.map(x => { const view = channel(x.id); return `<span data-panel="${esc(x.id)}">${esc(x.name)}：<b>${view && view.valid ? `${x.show(view.value)} ${esc(x.unit)}` : "—"}</b></span> ${stateBadges(x.id)}`; }).join(" ");
+  $("trend-readout").textContent = trend.cursor === null ? "把鼠标移到图上查看同一时刻三栏各自的值。"
+    : `游标 ${clock(trend.cursor)}（各栏取游标时刻之前最近一次的值，不代表同步采样）：` + panels.map(x => { const v = valueAt(x.points, trend.cursor); return `${x.name} ${v && v.valid ? `${x.show(v.v)} ${x.unit}` : "—（无数据或无效）"}`; }).join(" ｜ ");
+  plotTrend(canvas, panels, now);
+}
+function plotTrend(canvas, panels, now) {
+  const ratio = window.devicePixelRatio || 1, w = canvas.clientWidth, h = 560, left = 70, right = w - 16, gap = 22, top0 = 10, height = (h - 34 - top0 - gap * 2) / 3, t0 = now - TREND_SECONDS;
+  canvas.width = w * ratio;
+  canvas.height = h * ratio;
+  const c = canvas.getContext("2d");
+  c.scale(ratio, ratio);
+  c.font = '11px "Segoe UI",sans-serif';
+  const x = t => left + (Math.min(Math.max(t, t0), now) - t0) / TREND_SECONDS * (right - left);
+  canvas.plot = {left, right, t0, now, panels: []};
+  panels.forEach((panel, i) => {
+    const top = top0 + i * (height + gap), bottom = top + height;
+    const inside = panel.points.filter(q => q.t <= now), seen = inside.filter(q => q.valid && q.t >= t0);
+    const held = valueAt(inside, t0);
+    const values = [...seen.map(q => q.v), ...(held && held.valid ? [held.v] : [])];
+    let lo = Math.min(...values), hi = Math.max(...values);
+    if (!values.length) { lo = 0; hi = 1; }
+    const pad = (hi - lo) * 0.2 || Math.max(1, Math.abs(lo) * 0.02);
+    lo -= pad; hi += pad;
+    const y = v => bottom - (v - lo) / (hi - lo) * height;
+    canvas.plot.panels.push({id: panel.id, unit: panel.unit, lo, hi, top, bottom, points: inside.filter(q => q.t >= t0 || q === held).map(q => ({...q}))});
+    c.fillStyle = "#91aac5";
+    c.fillText(`${panel.name} (${panel.unit})`, left + 4, top + 11);
+    for (let k = 0; k <= 2; k++) {
+      const yy = top + height * k / 2;
+      c.strokeStyle = "#304968"; c.beginPath(); c.moveTo(left, yy); c.lineTo(right, yy); c.stroke();
+      c.fillStyle = "#91aac5"; c.fillText(panel.show(hi - (hi - lo) * k / 2, 1), 2, yy + 4);
+    }
+    inside.forEach((q, j) => {
+      const next = inside[j + 1], a = x(q.t), b = next ? x(next.t) : x(now);
+      if (b < left || x(q.t) > right) return;
+      if (q.valid) {
+        c.strokeStyle = "#73bcff"; c.lineWidth = 1.8;
+        c.beginPath(); c.moveTo(Math.max(a, left), y(q.v)); c.lineTo(Math.max(b, a + 1), y(q.v)); c.stroke();
+        if (next && next.valid) { c.beginPath(); c.moveTo(b, y(q.v)); c.lineTo(b, y(next.v)); c.stroke(); }
+      } else {
+        c.fillStyle = "#ff777b"; c.fillRect(Math.max(a, left), bottom - 5, Math.max(3, b - Math.max(a, left)), 5);
+      }
+    });
+    if (trend.cursor !== null) { c.strokeStyle = "#ffbd66"; c.beginPath(); c.moveTo(x(trend.cursor), top); c.lineTo(x(trend.cursor), bottom); c.stroke(); }
+  });
+  c.fillStyle = "#91aac5";
+  c.fillText(clock(t0), left, h - 8);
+  c.fillText(clock(now), right - 52, h - 8);
 }
 
 // ------------------------------------------------------------------------------- page 5: history (终版 §14)
@@ -459,9 +579,10 @@ function connect() {
 }
 function receive(ws, text) {
   if (ws !== state.ws) return;
-  let result;
+  let result, message;
   try {
-    result = apply(state.live, JSON.parse(text));
+    message = JSON.parse(text);
+    result = apply(state.live, message);
   } catch (error) {
     if (!(error instanceof Rejected) && !(error instanceof SyntaxError)) throw error;
     // nothing was applied: drop the connection and take a new snapshot rather than show half of a message
@@ -471,6 +592,9 @@ function receive(ws, text) {
     return;
   }
   state.lastMessage = Date.now();
+  if (Number.isFinite(message.wall)) state.serverWall = message.wall;  // the server's clock: the trend never mixes in this PC's
+  if (result.snapshot) trendNote(state.live.channels, state.serverWall);
+  for (const group of result.groups) trendNote(group.channels, group.wall);
   if (state.stalled) { state.stalled = false; notice(""); }
   else if (state.rejected && result.snapshot) { state.rejected = false; notice(""); }
   setConnection("实时连接", "ok");
@@ -479,6 +603,7 @@ function receive(ws, text) {
 function lost(ws, code) {
   if (ws !== state.ws || state.stopped) return;
   state.ws = null;
+  trendBreak(state.serverWall);
   state.live = newLive();  // a snapshot replaces everything on reconnect; nothing partial is kept meanwhile
   if (code === 1008) { logout("实时通道认证失败，请重新登录。"); return; }
   setConnection("重连中", "warn");
@@ -532,6 +657,7 @@ function logout(message = "") {
   clearTimeout(state.reconnect);
   if (state.ws) { const ws = state.ws; state.ws = null; ws.close(); }
   state.credential = "";
+  trend.series.clear();
   state.live = newLive();
   sessionStorage.removeItem("htsg.credential");
   clearReplay();
