@@ -73,6 +73,7 @@ class WebRig:
         """`feed_archive=False` leaves the archive to the test (`write_groups`): the live owner does not write."""
         self.config, self.archive, self.steady = config, archive, steady
         self.run_id, self.feed_archive = run_id, feed_archive
+        self.diagnostics = {}  # what the acquisition side would report (negotiated OPC UA parameters); set by a test
         self.databases, self.router, self.queue, self.seeded = None, None, None, 0
         self.accounts = Accounts(tmp_path / "accounts.json")
         self.credentials = {
@@ -102,6 +103,7 @@ class WebRig:
                 )  # fmt: skip
                 self.router.initialize()
                 self.router.bind_run(self.run_id, self.config.config_id, now)
+                self.accounts.persist = self.router.primary.sync_accounts  # account changes and their audit go to the archive
             if self.archive and self.feed_archive:
                 self.queue = CommitQueue(
                     self.router, 400,
@@ -124,7 +126,7 @@ class WebRig:
             self.round()
             app = create_web_app(
                 config=self.config, accounts=self.accounts, publisher=self.publisher,
-                archive_router=self.router,
+                archive_router=self.router, queue=self.queue, diagnostics=lambda: self.diagnostics,
             )  # fmt: skip
             self.server = uvicorn.Server(
                 uvicorn.Config(app, host="127.0.0.1", port=self.port, log_level="warning", lifespan="on")

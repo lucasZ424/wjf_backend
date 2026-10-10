@@ -58,6 +58,9 @@ const pages = [
   {id: 2, name: "水冷壁应变场", html: strainHtml, update: updateStrain},
   {id: 4, name: "热应力分析", html: trendHtml, mount: mountTrend, update: updateTrend},
   {id: 5, name: "历史查询", html: historyHtml, mount: mountHistory},
+  {id: 12, name: "系统自检", html: selfcheckHtml, mount: loadHealth, update: updateSelfcheck},
+  {id: 14, name: "系统管理·权限", html: permissionsHtml, mount: mountPeople},
+  {id: 15, name: "算法引擎·数字孪生", html: modelHtml, update: updateModel},
 ];
 const currentPage = () => pages.find(p => p.id === state.page) || pages[0];
 
@@ -73,6 +76,7 @@ function renderPage() {
 function renderLive() {
   if (!state.config) return;
   currentPage().update?.();
+  renderBanner();
   const live = state.live;
   $("stream-time").textContent = live.channels ? `最新消息：${clock(state.lastMessage / 1000)} · 序号 ${live.seq}` : "等待后端数据";
 }
@@ -562,6 +566,161 @@ function plotReplay(canvas, channel, result) {
   });
 }
 
+// ------------------------------------------- pages 12, 14, 15 and the archive banner (终版 §11, §12, §15)
+
+const ARCHIVE_STATES = {OK: ["正常", "ok"], LOST: ["已中断，缺口尚未恢复", "bad"], RECOVERING: ["恢复中，等待确认写入", "warn"]};
+const ROUTES = {PRIMARY: "正常库", EXTERNAL: "移动库", EMERGENCY: "应急库", UNKNOWN: "未知"};
+const ROLES = {admin: "管理员", viewer: "只读用户"};
+const health = {data: null, error: ""};
+// The backend names its conventions in English; the page says them in Chinese and shows an unknown one unchanged.
+const BACKEND_TEXT = {
+  "positive when first temperature exceeds second": "第一路温度（内壁）高于第二路（外壁）为正",
+  "parameter sensitivity only; excludes input and model-form errors": "只反映模型参数的变化，不含输入误差和模型形式误差",
+};
+const backendText = text => BACKEND_TEXT[text] || text;
+
+// What the page in front of the operator must say about the archive, whichever page that is.
+function renderBanner() {
+  const status = state.live.status, f = status?.faults, parts = [];
+  if (f?.archive_incomplete) {
+    const lost = Object.entries(f.loss || {}).map(([id, l]) => `${id}：${l.count} 条，${stamp(l.first_wall)} → ${stamp(l.last_wall)}`).join("；");
+    parts.push(`故障归档不完整：未写入的故障缓冲 ${f.buffered}/${f.limit}，已拒绝 ${f.rejected_total} 条新确认的故障${lost ? `（尚未写入摘要：${lost}）` : ""}。实时的“已确认”状态仍然正确，但历史故障列表缺少这些记录。`);
+  }
+  for (const [id, s] of Object.entries(status?.sources || {})) {
+    if (s.archive !== "OK") parts.push(`历史归档${s.archive === "LOST" ? "中断" : "恢复中"}：${id}。实时值仍在更新，但这一段历史可能缺失。`);
+  }
+  $("archive-banner").textContent = parts.join("　");
+  $("archive-banner").hidden = parts.length === 0;
+}
+
+async function loadHealth() {
+  try { health.data = await api("/api/health"); health.error = ""; } catch (error) { health.error = error.message; }
+  if (state.page === 12) updateSelfcheck();
+}
+setInterval(() => { if (!state.stopped && state.page === 12) loadHealth(); }, 5000);
+
+// ----------------------------------------------------------------------------------- page 12: self-check
+
+function selfcheckHtml() {
+  return `<div class="grid two"><div class="card"><h3>数据源与通信</h3><div id="check-sources"></div></div><div class="card"><h3>OPC UA 订阅协商参数</h3><div id="check-negotiated"></div></div></div>
+    <div class="grid two"><div class="card"><h3>历史归档</h3><div id="check-archive"></div></div><div class="card"><h3>故障记录归档</h3><div id="check-faults"></div></div></div>
+    <div class="card"><h3>运行时限（配置值）</h3><div id="check-timing"></div></div>
+    <div class="note">传感器零漂、自检信号、硬件温度与设备运行时间：未提供硬件诊断输入。此处展示的是软件采集、协商参数与归档的实际状态。</div>`;
+}
+function negotiatedRows(n) {
+  const r = n.requested || {}, rows = [
+    ["发布周期（秒）", r.publish_interval, n.publish_interval], ["保活计数", r.keepalive_count, n.keepalive_count],
+    ["寿命计数", r.lifetime_count, n.lifetime_count], ["测点队列（最小值）", r.queue_size, n.min_queue], ["会话超时（秒）", r.session_timeout, n.session_timeout],
+  ];
+  return rows.map(([name, asked, got]) => [name, fmt(asked, 3), `<b>${fmt(got, 3)}</b>${asked !== got ? " " + badge("与请求不同", "warn") : ""}`]);
+}
+function updateSelfcheck() {
+  const status = state.live.status, data = health.data, timing = state.config.timing || {};
+  const sources = Object.entries(status?.sources || {});
+  $("check-sources").innerHTML = table(["数据源", "类型", "数据状态", "通信", "最后通信"], sources.map(([id, s]) => [esc(id), esc(KINDS[s.kind] || s.kind), esc(SOURCE_STATES[s.state] || s.state), s.alarm ? badge("通信告警", "bad") : badge("正常", "ok"), clock(s.last_comm_wall)]));
+  const negotiated = data?.negotiated || {};
+  $("check-negotiated").innerHTML = health.error ? `<p class="log-error">读取失败：${esc(health.error)}</p>` : sources.filter(([, s]) => s.kind === "opcua").map(([id]) => {
+    const n = negotiated[id];
+    if (!n) return `<h3>${esc(id)}</h3><p class="muted">尚未取得协商结果（订阅未建立）。</p>`;
+    const limit = n.queue_capability === "OVERWRITE_UNDETECTABLE"
+      ? badge("覆盖不可检测", "warn") + " 服务端把测点队列修订为 1：中间通知可能被覆盖且没有溢出标记；发布序号连续不能证明监控项无丢值。"
+      : badge("队列溢出可检测", "ok") + " 队列大于 1，溢出会被检测并按失步处理。";
+    return `<h3>${esc(id)}</h3>${table(["参数", "请求值", "服务端实际授予"], negotiatedRows(n))}<p>${limit}</p>${(n.violations || []).map(v => `<p class="log-error">不满足约束：${esc(v)}</p>`).join("")}`;
+  }).join("") || '<p class="muted">没有 OPC UA 数据源。</p>';
+  const archive = data?.archive;
+  $("check-archive").innerHTML = !archive ? '<p class="muted">正在读取…</p>' : `<p>写入目标：${badge(ROUTES[archive.routing] || archive.routing || "未知")}${archive.queue ? ` · 写入队列 ${archive.queue.depth}/${archive.queue.capacity} · 已确认 ${archive.queue.committed} 组 · 被拒 ${archive.queue.refused} · 失败重试 ${archive.queue.failures + archive.queue.unknown}${archive.queue.last_error ? ` · 最近错误 ${esc(archive.queue.last_error)}` : ""}` : ""}</p>`
+    + table(["数据源", "归档状态", "已确认水位（历史覆盖终点）", "缺口起点"], Object.entries(archive.sources).map(([id, s]) => {
+      const [text, kind] = ARCHIVE_STATES[s.archive] || [s.archive, "warn"];
+      return [esc(id), badge(text, kind), s.confirmed_watermark == null ? "尚无已确认水位：只能说明已存的点，不推断其后" : stamp(s.confirmed_watermark), s.gap_since == null ? "—" : stamp(s.gap_since)];
+    }));
+  const f = status?.faults;
+  $("check-faults").innerHTML = !f ? '<p class="muted">等待实时数据</p>' : `<p>${f.archive_incomplete ? badge("故障归档不完整", "bad") : badge("故障归档完整", "ok")} 未写入的缓冲 <b>${f.buffered}/${f.limit}</b> · 累计拒绝 <b>${f.rejected_total}</b> 条</p>`
+    + table(["数据源", "缺口摘要：丢失条数", "最早", "最晚", "涉及通道"], Object.entries(f.loss || {}).map(([id, l]) => [esc(id), l.count, stamp(l.first_wall), stamp(l.last_wall), esc((l.points || []).join("、"))]))
+    + `<p class="chart-caption">故障记录在写入数据库之前只在内存中，进程退出会丢失。缓冲满额时保留已有记录、拒绝新记录，不覆盖、不阻塞采集。</p>`;
+  $("check-timing").innerHTML = table(["项目", "值"], [
+    ["故障确认时长", `${timing.fault_confirm_seconds} 秒`], ["OPC UA 数据有效期 / 断连告警", `${timing.ua_data_validity} 秒 / ${timing.ua_alarm_seconds} 秒`], ["Modbus 断连告警", `${timing.modbus_alarm_seconds} 秒`],
+    ["推送合并 / 空闲心跳", `${timing.push_coalesce * 1000} 毫秒 / ${timing.push_heartbeat} 秒`], ["前端消息延迟提示", `${timing.ui_stall_notice} 秒`], ["故障缓冲上限", `${timing.fault_buffer_limit} 条`], ["水位提交间隔", `${timing.watermark_interval} 秒`],
+  ]);
+}
+
+// ------------------------------------------------------------------------- page 14: roles and accounts
+
+const people = {list: null, audit: null, auditError: "", created: "", error: "", confirming: null};
+function mountPeople() {
+  people.created = "";  // a new credential is shown once, and not again when the page is entered later
+  loadPeople();
+}
+async function loadPeople() {
+  if (state.me.role !== "admin") { drawPeople(); return; }
+  try {
+    people.list = await api("/api/admin/accounts");
+  } catch (error) { people.error = error.message; }
+  try { people.audit = (await api("/api/admin/audit")).items; people.auditError = ""; } catch (error) { people.audit = null; people.auditError = error.message; }
+  drawPeople();
+}
+function permissionsHtml() {
+  return `<div class="grid two"><div class="card"><h3>权限</h3><p id="whoami"></p>${table(["操作", "只读用户", "管理员"], [
+      ["查看实时值、历史回溯、故障记录、系统自检；导出当前显示的 CSV", "允许", "允许"],
+      ["创建、停用账户；查看管理操作记录", "不允许", "允许"],
+      ["在线增加、删除或修改通道、阈值与配置", "不允许", "不允许（改配置文件后由部署人员重启）"],
+    ])}<p class="chart-caption">显示的是实际账户状态；不推算在线用户数量。配置不会在运行中热切换。</p></div>
+    <div class="card"><h3>账户管理</h3><div id="account-area"></div></div></div>
+    <div class="card"><h3>管理操作记录</h3><div id="audit-log" class="scroll"></div></div>`;
+}
+function drawPeople() {
+  if (!$("account-area")) return;
+  $("whoami").textContent = `当前身份：${state.me.username}（${ROLES[state.me.role] || state.me.role}）`;
+  if (state.me.role !== "admin") {
+    $("account-area").innerHTML = '<p class="muted">仅管理员可管理账户。</p>';
+    $("audit-log").innerHTML = '<p class="muted">仅管理员可查看管理操作记录。</p>';
+    return;
+  }
+  const rows = (people.list || []).map(a => [esc(a.username), esc(ROLES[a.role] || a.role), a.active ? "有效" : "已停用",
+    !a.active ? "—" : people.confirming === a.username ? `<button data-revoke="${esc(a.username)}" class="primary">确认停用 ${esc(a.username)}</button>` : `<button data-revoke="${esc(a.username)}">停用</button>`]);
+  $("account-area").innerHTML = `${people.created ? `<div class="credential-result" id="new-credential">仅此一次显示，请保存新凭据：${esc(people.created)}</div>` : ""}${people.error ? `<p class="log-error">${esc(people.error)}</p>` : ""}
+    <form id="account-form" class="controls"><input name="username" aria-label="新用户名" placeholder="新用户名" required maxlength="64" pattern="[A-Za-z0-9_\\-]+"><select name="role" aria-label="账户角色"><option value="viewer">只读用户</option><option value="admin">管理员</option></select><button type="submit">创建账户</button></form>${table(["账户", "角色", "状态", "操作"], rows)}`;
+  $("account-form").onsubmit = async event => {
+    event.preventDefault();
+    people.error = "";
+    try {
+      people.created = (await api("/api/admin/accounts", {method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(event.target)))})).credential;
+    } catch (error) { people.created = ""; people.error = error.message; }
+    loadPeople();
+  };
+  $("account-area").querySelectorAll("[data-revoke]").forEach(b => b.onclick = async () => {
+    if (people.confirming !== b.dataset.revoke) { people.confirming = b.dataset.revoke; drawPeople(); return; }  // a second click confirms
+    people.confirming = null;
+    people.error = "";
+    try { await api(`/api/admin/accounts/${encodeURIComponent(b.dataset.revoke)}`, {method: "DELETE"}); } catch (error) { people.error = error.message; }
+    loadPeople();
+  });
+  $("audit-log").innerHTML = people.audit ? table(["时间", "操作者", "操作", "对象", "结果"], people.audit.map(a => [stamp(a.time), esc(a.actor), esc(a.action), esc(a.target), esc(a.result)])) : `<p class="muted">管理操作记录不可用：${esc(people.auditError || "正在读取…")}</p>`;
+}
+
+// -------------------------------------------------------------------------------- page 15: the model
+
+function modelHtml() {
+  return `<div id="model-cards"></div>
+    <div class="note">应力值是基于温差与约束假设的研究代理量；参数敏感性范围只反映上述参数的变化，不含输入误差、几何和模型形式误差，也不是统计置信区间。正负号只表示两路温度的差异方向（第一路高于第二路为正），不直接代表材料的拉压应力。本期只有这一个轻量的温差—应力代理模型。</div>`;
+}
+function updateModel() {
+  const models = state.config.models || [], p = pairs()[0], estimate = p && channel(p.stress)?.estimate;
+  $("model-cards").innerHTML = models.map(m => {
+    const users = state.config.derived.filter(d => d.model_id === m.id);
+    return `<div class="card" style="margin-bottom:16px"><h3>${esc(m.id)} · 版本 ${esc(m.version)}</h3>
+      <p>${esc(m.basis)}</p>
+      ${table(["科研假设参数", "配置值"], [
+        ["弹性模量 E", `${fmt(m.young_mpa / 1000, 1)} GPa（相对变化 ±${fmt(m.young_relative_uncertainty * 100, 0)}%）`],
+        ["线膨胀系数 α", `${m.expansion_per_k.toExponential(2)} 1/K（相对变化 ±${fmt(m.expansion_relative_uncertainty * 100, 0)}%）`],
+        ["约束系数 k（0～1）", `${fmt(m.restraint, 2)}（绝对变化 ±${fmt(m.restraint_uncertainty, 2)}）`],
+        ["温度适用范围", `${fmt(m.min_temperature_c, 0)} ～ ${fmt(m.max_temperature_c, 0)} ℃`],
+        ["使用该模型的通道", `${users.length} 路热应力代理量`],
+        ["参考链接", (m.reference_urls || []).length ? esc(m.reference_urls.join("、")) : "无（合成科研假设，非现场标定）"],
+      ])}
+      ${estimate && estimate.model_id === m.id ? `<h3 style="margin-top:14px">当前估算示例 · ${esc(p.name)}</h3><p>温差 ${signed(estimate.temperature_difference_k)} K → 代理值 ${signed(channel(p.stress).value)} MPa，参数敏感性范围 ${estimate.parameter_range_mpa.map(v => signed(v)).join(" ～ ")} MPa。符号约定：${esc(backendText(estimate.sign_convention))}。范围含义：${esc(backendText(estimate.range_meaning))}。</p>` : '<p class="muted">等待实时数据以显示当前估算示例。</p>'}</div>`;
+  }).join("") || '<div class="card"><p class="muted">配置中没有热应力模型。</p></div>';
+}
+
 // ---------------------------------------------------------------------------------- the realtime socket
 
 function setConnection(text, kind) {
@@ -669,6 +828,9 @@ function logout(message = "") {
   $("identity").textContent = "未登录";
   setConnection("未连接", "warn");
   $("stream-time").textContent = "等待后端数据";
+  $("archive-banner").hidden = true;
+  health.data = null;
+  Object.assign(people, {list: null, audit: null, created: "", error: "", confirming: null});
   notice("");
   $("login-error").textContent = message;
 }
