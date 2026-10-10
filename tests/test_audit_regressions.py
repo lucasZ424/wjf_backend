@@ -33,7 +33,7 @@ def pages(router, category, **kwargs):
 
 
 @pytest.mark.parametrize("phase", [0.1, 0.6])
-def test_hold_survives_next_bucket_arriving_before_seal(settings, phase):
+def test_next_bucket_never_fills_a_missing_second(settings, phase):
     e, _ = engine(settings)
     for cycle in range(10):
         t = cycle * 2 + phase
@@ -44,8 +44,8 @@ def test_hold_survives_next_bucket_arriving_before_seal(settings, phase):
         if phase < 0.2:
             put(e, "x", 2, cycle * 2 + 2.1)
         e.tick(1002.3 + cycle * 2, 2.3 + cycle * 2)
-        assert e.latest_frame["values"]["x"]["basis"] == "HELD_VALUE"
-        assert e.latest_frame["values"]["x"]["value"] == 2
+        assert e.latest_frame["values"]["x"]["basis"] == "UNAVAILABLE"
+        assert e.latest_frame["values"]["x"]["value"] is None
 
 
 def test_future_normal_never_recovers_confirmed_fault(settings):

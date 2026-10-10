@@ -249,9 +249,12 @@ class Runtime:
             self.failed.set()
 
     async def owner(self):
+        next_tick = time.monotonic() + 1
         while self.running:
             try:
-                kind, item = await asyncio.wait_for(self.ingress.get(), timeout=0.05)
+                kind, item = await asyncio.wait_for(
+                    self.ingress.get(), timeout=max(0.001, next_tick - time.monotonic())
+                )
                 if kind == "sample":
                     self.engine.receive(*item)
                     definition = self.engine.points.get(item[0])
@@ -270,7 +273,12 @@ class Runtime:
             for point, span in list(self.ingress_losses.items()):
                 self.engine.note_loss(point, "INGRESS_OVERFLOW", *span)
                 self.ingress_losses.pop(point, None)
-            self.engine.tick(time.time(), time.monotonic())
+            now = time.monotonic()
+            if now >= next_tick:
+                self.engine.tick(time.time(), now)
+                next_tick += 1
+                if next_tick <= now:
+                    next_tick = now + 1
             if self.loss_summary and len(self.events) < self.events.maxlen // 2:
                 reason, stamp = self.loss_summary
                 self.loss_summary = None

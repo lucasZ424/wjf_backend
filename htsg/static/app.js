@@ -4,7 +4,7 @@ const esc = value => String(value ?? "—").replace(/[&<>"']/g, c => ({"&":"&amp
 const time = value => Number.isFinite(value) ? new Date(value * 1000).toLocaleString("zh-CN", {hour12:false}) : "—";
 const number = value => typeof value === "number" && Number.isFinite(value) ? value.toLocaleString("zh-CN", {maximumFractionDigits:state.config?.ui?.precision ?? 2}) : "—";
 const pages = [[1,"系统总览"],[2,"水冷壁应变场"],[4,"热应力分析"],[5,"历史查询"],[12,"系统自检"],[14,"通信 · 日志"],[15,"系统管理 · 权限"]];
-const state = {credential:sessionStorage.getItem("htsg.credential") || "", config:null, me:null, frame:null, active:[], page:1, point:null, field:"strain", station:null, seconds:300, center:null, history:[], historyEpoch:0, thermalEpoch:0, events:[], event:null, health:null, communications:null, ws:null, stopped:true, reconnect:null, refreshing:false, eventsLoading:false, eventsPending:false, eventsTimer:null};
+const state = {credential:sessionStorage.getItem("htsg.credential") || "", config:null, me:null, frame:null, active:[], page:1, point:null, field:"strain", station:null, seconds:300, center:null, history:[], historyEpoch:0, thermalEpoch:0, historyLoading:false, thermalLoading:false, events:[], event:null, health:null, communications:null, ws:null, stopped:true, reconnect:null, refreshing:false, eventsLoading:false, eventsPending:false, eventsTimer:null};
 function notice(message) { $("notice").textContent=message; $("notice").hidden=!message; }
 function archiveStopReason() {
   const h=state.health, budget=h?.storage_budget;
@@ -19,7 +19,7 @@ function renderArchiveWarning() {
 }
 function scheduleEvents() {
   if(state.stopped||state.page!==5||state.eventsTimer)return;
-  state.eventsTimer=setTimeout(()=>{state.eventsTimer=null;if(!state.stopped&&state.page===5)loadEvents(false,true);},500);
+  state.eventsTimer=setTimeout(()=>{state.eventsTimer=null;if(!state.stopped&&state.page===5)loadEvents(false,true);},1000);
 }
 async function api(path, options={}) {
   const response = await fetch(path, {...options, headers:{Authorization:`Bearer ${state.credential}`, "Content-Type":"application/json", ...options.headers}});
@@ -35,8 +35,8 @@ function definition(id) { return definitions().find(p=>p.id===id) || {id,unit:""
 function label(id) { const p=definition(id); return state.config?.ui?.point_labels?.[id] || p.label || p.name || id; }
 function value(id) { return state.frame?.values?.[id] || state.frame?.derived_results?.[id] || {}; }
 function quality(item) { return item?.quality || item?.status || "UNAVAILABLE"; }
-function badge(text) { const ok=["GOOD","OK","NORMAL","PRIMARY","EXTERNAL","connected","CONNECTED"].includes(text); const bad=["HIGH","LOW","BAD","UNAVAILABLE","NOT_AVAILABLE","DISCONNECTED","PARTIAL"].includes(text); return `<span class="badge ${ok?"ok":bad?"bad":"warn"}">${esc(text)}</span>`; }
-function card(id) { const p=definition(id), v=value(id), abnormal=v.high_occurred||v.low_occurred; return `<div class="card metric ${abnormal?"alarm":""}"><small>${esc(label(id))}</small><div class="value">${number(v.value)}<small>${esc(p.unit)}</small></div>${badge(abnormal?"窗口发生越限":quality(v))} ${v.estimate?'<span class="badge warn">研究估算</span>':""}</div>`; }
+function badge(text) { const ok=["GOOD","OK","NORMAL","PRIMARY","EXTERNAL","connected","CONNECTED"].includes(text); const bad=["EXTREME","HIGH","LOW","BAD","UNAVAILABLE","NOT_AVAILABLE","DISCONNECTED","PARTIAL"].includes(text); return `<span class="badge ${ok?"ok":bad?"bad":"warn"}">${esc(text)}</span>`; }
+function card(id) { const p=definition(id), v=value(id), abnormal=v.extreme||v.high_occurred||v.low_occurred; return `<div class="card metric ${abnormal?"alarm":""}"><small>${esc(label(id))}</small><div class="value">${number(v.value)}<small>${esc(p.unit)}</small></div>${badge(v.extreme?"EXTREME":abnormal?"窗口发生越限":quality(v))} ${v.estimate?'<span class="badge warn">研究估算</span>':""}</div>`; }
 function table(head,rows) { return `<div class="table-wide"><table><thead><tr>${head.map(h=>`<th>${esc(h)}</th>`).join("")}</tr></thead><tbody>${rows.length?rows.map(row=>`<tr>${row.map(x=>`<td>${x}</td>`).join("")}</tr>`).join(""):`<tr><td colspan="${head.length}" class="empty">暂无数据</td></tr>`}</tbody></table></div>`; }
 function stations() { return state.config?.ui?.stations || []; }
 function selectedStation() { return stations().find(s=>s.id===state.station) || stations()[0]; }
@@ -59,7 +59,7 @@ function renderPage() {
   const name=pages.find(p=>p[0]===state.page)[1];
   let content="";
   if(state.page===1) content=`<div id="overview-metrics" class="grid metrics"></div><div class="card" style="margin-bottom:16px"><h3>过程量 · 全部配置通道</h3><div id="process-overview"></div></div><div class="card"><h3>模拟现场场景</h3><div id="scenario-controls"></div><div id="simulation-status" class="chart-caption"></div></div>`;
-  if(state.page===2) content=`<div class="grid two"><div class="card"><div class="controls"><h3>测点着色示意</h3><select id="field-select"><option value="strain">应变</option><option value="temperature">壁温</option><option value="stress">应力研究估算</option></select></div><div id="station-map" class="map"></div><div class="legend"><b>● 有效值</b><em>● 配置阈值越限</em><span>● 无有效数据</span></div><p class="chart-caption">仅表示配置测点的位置，不插值连续场，不推断真实结构拓扑。</p></div><div class="card"><h3>测点排序 · 按当前数值</h3><div id="station-ranking"></div></div></div>`;
+  if(state.page===2) content=`<div class="grid two"><div class="card"><div class="controls"><h3>测点着色示意</h3><select id="field-select"><option value="strain">应变</option><option value="strain_change">应变变化量</option><option value="temperature">壁温</option><option value="stress">应力研究估算</option></select></div><div id="station-map" class="map"></div><div class="legend"><b>● 有效值</b><em>● 配置阈值越限</em><span>● 无有效数据</span></div><p class="chart-caption">仅表示配置测点的位置，不插值连续场，不推断真实结构拓扑。</p></div><div class="card"><h3>测点排序 · 按当前数值</h3><div id="station-ranking"></div></div></div>`;
   if(state.page===4) content=`<div class="controls"><label>分析测点<select id="station-select">${stations().map(s=>`<option value="${esc(s.id)}" ${state.event&&!historyDefinitions().some(p=>p.id===s.stress)?"disabled":""}>${esc(s.label||s.id)}</option>`).join("")}</select></label><span class="badge warn">点级研究估算</span></div><div id="thermal-metrics" class="grid metrics"></div><p class="chart-caption">上方数值为当前实时估算；下方曲线展示最近 5 分钟归档；自定义窗口请进入历史查询。</p><div><div class="card"><h3>模型依据与参数</h3><div id="model-info"></div></div></div><div id="thermal-trends" class="grid three"></div><div class="note">应力值是基于温差与约束假设的研究代理量；参数敏感性范围不是统计置信区间。正负号描述两路温度的差异方向，不直接代表材料拉压应力。</div>`;
   if(state.page===5) content=`<div class="grid two">${chartBlock()}<div class="card"><h3>故障参考点</h3><div id="active-events"></div><div class="controls"><button id="events-refresh">刷新故障记录</button><button id="events-more" hidden>更多故障记录</button></div><div id="events" class="scroll"></div></div></div><div id="event-detail" class="card" hidden></div>`;
   if(state.page===12) content=`<div id="health-metrics" class="grid metrics"></div><div class="grid two"><div class="card"><h3>队列与采集质量</h3><div id="health-queues"></div><div id="health-points" class="scroll"></div></div><div class="card"><h3>归档与存储</h3><div id="health-storage"></div></div></div><div class="note">传感器零漂、自检信号、硬件温度与设备运行时间：未提供硬件诊断输入。此处展示的是软件采集、队列和归档的实际状态。</div>`;
@@ -113,36 +113,38 @@ function parameterTable(parameters) {
 }
 function renderLive() {
   $("frame-time").textContent=state.frame?`最新帧：${time(state.frame.window_end)} · ${state.frame.config_id.slice(0,12)}`:"等待后端数据";
-  if($("overview-metrics")){const s=stations()[0]||{};const ids=[...(state.config.ui?.process_points||[]).slice(0,3),s.strain,s.temperature,s.stress].filter(Boolean);$("overview-metrics").innerHTML=ids.map(card).join("");}
+  if($("overview-metrics")){const s=stations()[0]||{};const ids=[...(state.config.ui?.process_points||[]).slice(0,3),s.strain,s.temperature,s.delta_temperature,"thermal_stress_peak"].filter(id=>id&&definitions().some(p=>p.id===id));$("overview-metrics").innerHTML=ids.map(card).join("");}
   if($("process-overview"))$("process-overview").innerHTML=table(["过程量","数值","质量","本窗口异常"],(state.config.ui?.process_points||[]).map(id=>{const v=value(id);return[esc(label(id)),`${number(v.value)} ${esc(definition(id).unit)}`,badge(quality(v)),v.high_occurred?badge("HIGH"):v.low_occurred?badge("LOW"):"—"];}));
   if($("station-map")){
     const list=stations().map(s=>({s,v:value(s[state.field]),id:s[state.field]}));
-    $("station-map").innerHTML=list.map(({s,v,id})=>{const p=definition(id);const bad=v.high_occurred||v.low_occurred;const color=!["GOOD","OK"].includes(quality(v))?"#91aac5":bad?"#ff777b":"#57d1a6";return `<button class="station ${s.id===state.station?"selected":""}" data-station="${esc(s.id)}" style="left:${Math.max(8,Math.min(92,Number(s.x)||0))}%;top:${Math.max(15,Math.min(90,Number(s.y)||0))}%;--dot:${color}"><i></i><span>${esc(s.label||s.id)}<br>${number(v.value)} ${esc(p.unit)}</span></button>`;}).join("");
+    $("station-map").innerHTML=list.map(({s,v,id})=>{const p=definition(id);const bad=v.extreme||v.high_occurred||v.low_occurred;const color=!["GOOD","OK"].includes(quality(v))?"#91aac5":bad?"#ff777b":"#57d1a6";return `<button class="station ${s.id===state.station?"selected":""}" data-station="${esc(s.id)}" style="left:${Math.max(8,Math.min(92,Number(s.x)||0))}%;top:${Math.max(15,Math.min(90,Number(s.y)||0))}%;--dot:${color}"><i></i><span>${esc(s.label||s.id)}<br>${number(v.value)} ${esc(p.unit)}</span></button>`;}).join("");
     $("station-map").querySelectorAll("button").forEach(b=>b.onclick=()=>{state.station=b.dataset.station;state.point=selectedStation()[state.field];renderPage();});
     $("station-ranking").innerHTML=table(["测点","数值","质量"],list.sort((a,b)=>(b.v.value??-Infinity)-(a.v.value??-Infinity)).map(({s,v,id})=>[esc(s.label||s.id),`${number(v.value)} ${esc(definition(id).unit)}`,badge(quality(v))]));
   }
-  if($("thermal-metrics")){const modelOpen=$("model-info").querySelector("details")?.open;const s=selectedStation()||{};$("thermal-metrics").innerHTML=[s.temperature,s.inner_temperature,s.delta_temperature,s.stress].filter(Boolean).map(card).join("");const v=value(s.stress);const estimate=v.estimate;const rule=definition(s.stress);$("model-info").innerHTML=estimate?`<p>${esc(estimate.model_id)} / ${esc(estimate.model_version)}</p><p>${esc(estimate.basis)}</p><p>参数敏感性范围：${(estimate.parameter_range_mpa||[]).map(number).join(" ～ ")} MPa</p>${parameterTable(estimate.parameters)}`:`<p>${badge(quality(v))} ${esc(v.reason || "等待模型输出")}</p>${parameterTable((state.config.models||[]).find(m=>m.id===rule.model_id))}`;$("model-info").innerHTML+=`<details><summary>完整模型配置与来源</summary><pre>${esc(JSON.stringify({derived:rule,models:state.config.models||[]},null,2))}</pre></details>`;$("model-info").querySelector("details").open=!!modelOpen;}
+  if($("thermal-metrics")){const modelOpen=$("model-info").querySelector("details")?.open;const s=selectedStation()||{};$("thermal-metrics").innerHTML=[s.temperature,s.inner_temperature,s.delta_temperature,s.stress,s.strain_change].filter(Boolean).map(card).join("");const v=value(s.stress);const estimate=v.estimate;const rule=definition(s.stress);$("model-info").innerHTML=estimate?`<p>${esc(estimate.model_id)} / ${esc(estimate.model_version)}</p><p>${esc(estimate.basis)}</p><p>参数敏感性范围：${(estimate.parameter_range_mpa||[]).map(number).join(" ～ ")} MPa</p>${parameterTable(estimate.parameters)}`:`<p>${badge(quality(v))} ${esc(v.reason || "等待模型输出")}</p>${parameterTable((state.config.models||[]).find(m=>m.id===rule.model_id))}`;$("model-info").innerHTML+=`<details><summary>完整模型配置与来源</summary><pre>${esc(JSON.stringify({derived:rule,models:state.config.models||[]},null,2))}</pre></details>`;$("model-info").querySelector("details").open=!!modelOpen;}
 }
 async function loadHistory() {
   if(!$("trend")||!state.point) return;
   const epoch=++state.historyEpoch, point=state.point, {center,start,end}=historyWindow();
   let cursor=null, rows=[],partial=false,more=false;
   $("history-status").textContent="正在读取已归档历史…";
+  state.historyLoading=true;
   try {
     do { const query=new URLSearchParams({center,seconds:state.seconds,point,limit:1000});if(cursor)query.set("cursor",cursor); const result=await api(`/api/replay?${query}`); if(epoch!==state.historyEpoch)return; rows.push(...result.items);partial ||= result.partial;cursor=result.next_cursor;more=result.has_more; } while(cursor && rows.length<10000);
     if(!$("trend")||epoch!==state.historyEpoch)return;
-    state.history=rows.map(r=>({t:r.window_start,run:r.run_id,v:r.payload?.value,q:quality(r.payload)})).sort((a,b)=>a.t-b.t);
+    state.history=rows.map(r=>({t:r.window_start,run:r.run_id,v:r.payload?.value,q:quality(r.payload),extreme:!!r.payload?.extreme})).sort((a,b)=>a.t-b.t);
     $("trend-title").textContent=`${label(point)} · ${state.center!==null?"窗口历史重现":"归档趋势"}`;
     $("history-status").textContent=`${time(start)} → ${time(end)} · ${rows.length} 条${partial?" · 部分数据库不可用":""}${more?" · 已达本次显示上限，请缩短时间窗":""}。无效值与时间缺口不连线。`;
     plot($("trend"),state.history,definition(point).unit,start,end);
   } catch(error){ if(epoch===state.historyEpoch&&$("history-status")){$("history-status").textContent=`历史读取失败：${error.message}`;state.history=[];plot($("trend"),[],definition(point).unit,start,end);} }
+  finally {if(epoch===state.historyEpoch)state.historyLoading=false;}
 }
 function plot(canvas,rows,unit,start,end){
   if(!canvas)return;rows=rows.slice().sort((a,b)=>a.t-b.t);canvas.plotData={rows,unit,start,end};const ratio=window.devicePixelRatio||1,w=canvas.clientWidth,h=215;canvas.width=w*ratio;canvas.height=h*ratio;const c=canvas.getContext("2d");c.scale(ratio,ratio);const valid=rows.filter(r=>typeof r.v==="number"&&Number.isFinite(r.v)&&["GOOD","OK"].includes(r.q));c.font='11px "Segoe UI",sans-serif';c.fillStyle="#91aac5";c.fillText(unit||"",5,12);
   if(!valid.length){c.fillText("暂无有效的已归档数据",Math.max(45,w/2-70),110);return;}
   let lo=Math.min(...valid.map(r=>r.v)),hi=Math.max(...valid.map(r=>r.v));const pad=(hi-lo)*.12||Math.max(1,Math.abs(lo)*.01);lo-=pad;hi+=pad;const left=60,right=w-12,top=23,bottom=185;
   for(let i=0;i<=4;i++){const y=top+(bottom-top)*i/4;c.strokeStyle="#304968";c.beginPath();c.moveTo(left,y);c.lineTo(right,y);c.stroke();c.fillStyle="#91aac5";c.fillText(number(hi-(hi-lo)*i/4),2,y+4);}
-  const x=t=>left+(t-start)/Math.max(1,end-start)*(right-left),y=v=>bottom-(v-lo)/(hi-lo)*(bottom-top);c.strokeStyle="#73bcff";c.lineWidth=1.7;c.beginPath();let last=null;for(const r of rows){if(typeof r.v!=="number"||!["GOOD","OK"].includes(r.q)){last=null;continue;}if(!last||r.t-last.t>1.5||(last.run&&r.run&&last.run!==r.run))c.moveTo(x(r.t),y(r.v));else c.lineTo(x(r.t),y(r.v));last=r;}c.stroke();c.fillStyle="#73bcff";if(valid.length===1){c.beginPath();c.arc(x(valid[0].t),y(valid[0].v),3,0,Math.PI*2);c.fill();}c.fillStyle="#91aac5";c.fillText(new Date(start*1000).toLocaleTimeString("zh-CN",{hour12:false}),left,207);c.fillText(new Date(end*1000).toLocaleTimeString("zh-CN",{hour12:false}),Math.max(left,right-64),207);
+  const x=t=>left+(t-start)/Math.max(1,end-start)*(right-left),y=v=>bottom-(v-lo)/(hi-lo)*(bottom-top);c.strokeStyle="#73bcff";c.lineWidth=1.7;c.beginPath();let last=null;for(const r of rows){if(typeof r.v!=="number"||!["GOOD","OK"].includes(r.q)){last=null;continue;}if(!last||r.t-last.t>1.5||(last.run&&r.run&&last.run!==r.run))c.moveTo(x(r.t),y(r.v));else c.lineTo(x(r.t),y(r.v));last=r;}c.stroke();for(const r of valid.filter(r=>r.extreme)){c.fillStyle="#ff777b";c.beginPath();c.arc(x(r.t),y(r.v),4,0,Math.PI*2);c.fill();}c.fillStyle="#73bcff";if(valid.length===1){c.beginPath();c.arc(x(valid[0].t),y(valid[0].v),3,0,Math.PI*2);c.fill();}c.fillStyle="#91aac5";c.fillText(new Date(start*1000).toLocaleTimeString("zh-CN",{hour12:false}),left,207);c.fillText(new Date(end*1000).toLocaleTimeString("zh-CN",{hour12:false}),Math.max(left,right-64),207);
 }
 async function loadEvents(more=false,background=false){
   if(state.eventsLoading){if(!more)state.eventsPending=true;return;}
@@ -173,7 +175,7 @@ function renderDiagnostics(){
   renderArchiveWarning();
   const h=state.health;
   if(h&&$("health-metrics")){const openDetails=[...$("health-storage").querySelectorAll("details")].map(d=>d.open);const fields=[["后端运行时长",`${number(h.uptime_seconds)} s`],["归档路由",h.routing],["待写事件",h.queues?.event],["Pre 捕获作业",h.queues?.capture_jobs],["归档停写时长",h.history_archive?.seconds_since_last_success==null?"—":`${number(h.history_archive.seconds_since_last_success)} s`]];$("health-metrics").innerHTML=fields.map(([k,v])=>`<div class="card metric"><small>${k}</small><div class="value">${esc(v)}</div></div>`).join("");$("health-queues").innerHTML=table(["队列","当前占用"],Object.entries(h.queues||{}).map(([k,v])=>[esc(k),esc(v)]));$("health-points").innerHTML=table(["测点","质量","状态"],Object.entries(h.points||{}).map(([k,v])=>[esc(label(k)),badge(v.quality),badge(v.state)]));$("health-storage").innerHTML=`<p>自动清理：${h.storage?.cleanup_enabled?"启用":"已暂停"}；移动盘接续：${h.storage?.external_enabled?"已配置":"未启用（待接入）"}</p><p>最后成功归档：${time(h.history_archive?.last_success_at)}</p><p>历史归档暂停：${h.history_archive?.suspended?"是":"否"}</p>${table(["存储预算项","当前值"],[["本进程累计写入估算",`${number(h.storage_budget?.bytes_written/1048576)} MiB`],["实验库表与索引总占用",`${number(h.storage_budget?.development_growth/1048576)} MiB`],["开发写入／占用上限",`${number(h.storage_budget?.budget_bytes/1048576)} MiB`]])}<details><summary>存储与维护诊断详情</summary><pre>${esc(JSON.stringify(h.storage,null,2))}</pre></details><details><summary>运行与引擎诊断</summary><pre>${esc(JSON.stringify({runtime:h.runtime,engine:h.engine},null,2))}</pre></details>`;$("health-storage").querySelectorAll("details").forEach((d,i)=>d.open=!!openDetails[i]);}
-  if(state.communications&&$("source-cards")){const data=state.communications;$("source-cards").innerHTML=(data.sources||[]).map(s=>`<div class="card"><h3>${esc(s.id)} · ${esc(s.kind)} ${badge(s.connected?"CONNECTED":"DISCONNECTED")}</h3><p class="chart-caption">主动读取间隔 ${esc(s.interval)} s · 最后接收 ${time(s.last_received_at)} · ${esc(s.health||"")}</p><div class="scroll">${table(["通道 / 地址","数值","质量 / 接收时间"],(s.points||[]).map(p=>[`${esc(label(p.id))}<br><small>${esc(p.address??p.node_id??"—")} · ${esc(p.data_type||"")}</small>`,`${number(p.value)} ${esc(p.unit)}`,`${badge(p.quality)}<br><small>${time(p.received_at)}</small>`]))}</div></div>`).join("");$("communication-logs").innerHTML=table(["时间","数据源","级别","信息"],(data.logs||[]).map(l=>[time(l.time),esc(l.source),esc(l.level),esc(l.message)]));}
+  if(state.communications&&$("source-cards")){const data=state.communications;$("source-cards").innerHTML=(data.sources||[]).map(s=>`<div class="card"><h3>${esc(s.id)} · ${esc(s.kind)} ${badge(s.connected?"CONNECTED":"DISCONNECTED")}</h3><p class="chart-caption">主动读取间隔 ${esc(s.interval)} s · 最后接收 ${time(s.last_received_at)} · ${esc(s.health||"")}</p><div class="scroll">${table(["通道 / 地址","数值","质量 / 接收时间"],(s.points||[]).map(p=>[`${esc(label(p.id))}<br><small>${esc(p.address??p.node_id??"—")} · ${esc(p.data_type||"")}</small>`,`${number(p.value)} ${esc(p.unit)}`,`${badge(p.extreme?"EXTREME":p.quality)}<br><small>${time(p.received_at)}</small>`]))}</div></div>`).join("");$("communication-logs").innerHTML=table(["时间","数据源","级别","信息"],(data.logs||[]).map(l=>[time(l.time),esc(l.source),esc(l.level),esc(l.message)]));}
 }
 function simulationText(data){
   const selected=(state.config.simulation?.scenarios||[]).find(s=>s.name===data.scenario);
@@ -189,17 +191,19 @@ function logout(message=""){state.stopped=true;clearTimeout(state.reconnect);cle
 $("login-form").onsubmit=async e=>{e.preventDefault();state.credential=$("credential").value.trim();await login();};$("logout").onclick=()=>logout();
 async function loadThermalTrends(){
   if(!$("thermal-trends"))return;
+  state.thermalLoading=true;
   const epoch=++state.thermalEpoch, station=selectedStation()||{}, load=(state.config.ui?.process_points||[]).find(id=>id.toLowerCase().includes("load"));
   const seconds=300, end=Date.now()/1000, start=end-seconds, center=end-seconds/2;
   const ids=[station.stress,station.delta_temperature,load].filter(Boolean);
   $("thermal-trends").innerHTML=ids.map((id,i)=>`<div class="card"><h3>${esc(label(id))} · 最近 5 分钟</h3><canvas id="thermal-chart-${i}" class="chart"></canvas><p id="thermal-status-${i}" class="chart-caption">加载同一时间窗的归档趋势…</p></div>`).join("");
-  await Promise.all(ids.map(async(id,i)=>{try{
+  try { await Promise.all(ids.map(async(id,i)=>{try{
     const query=new URLSearchParams({center,seconds,point:id,limit:1000});
     let rows=[],cursor=null,partial=false,more=false;
     do {if(cursor)query.set("cursor",cursor);const result=await api(`/api/replay?${query}`);if(epoch!==state.thermalEpoch||!$("thermal-chart-"+i))return;rows.push(...result.items);partial ||= result.partial;cursor=result.next_cursor;more=result.has_more;}while(cursor&&rows.length<10000);
-    plot($("thermal-chart-"+i),rows.map(r=>({t:r.window_start,run:r.run_id,v:r.payload?.value,q:quality(r.payload)})),definition(id).unit,start,end);
+    plot($("thermal-chart-"+i),rows.map(r=>({t:r.window_start,run:r.run_id,v:r.payload?.value,q:quality(r.payload),extreme:!!r.payload?.extreme})),definition(id).unit,start,end);
     $("thermal-status-"+i).textContent=`${time(start)} → ${time(end)} · ${rows.length} 条${partial?" · 部分数据库不可用":""}${more?" · 达到显示上限":""}`;
-  }catch(error){if(epoch===state.thermalEpoch&&$("thermal-status-"+i))$("thermal-status-"+i).textContent=error.message;}}));
+  }catch(error){if(epoch===state.thermalEpoch&&$("thermal-status-"+i))$("thermal-status-"+i).textContent=error.message;}})); }
+  finally {if(epoch===state.thermalEpoch)state.thermalLoading=false;}
 }
 
-setInterval(refresh,3000);setInterval(()=>{if(!state.stopped&&state.center===null&&$("trend")){loadHistory();if(state.page===4)loadThermalTrends();}},15000);window.addEventListener("resize",()=>{document.querySelectorAll("canvas").forEach(canvas=>{if(canvas.plotData){const p=canvas.plotData;plot(canvas,p.rows,p.unit,p.start,p.end);}});});if(state.credential)login();
+setInterval(()=>{refresh();if(!state.stopped){if(state.center===null&&$("trend")&&!state.historyLoading)loadHistory();if(state.page===4&&!state.thermalLoading)loadThermalTrends();}},1000);window.addEventListener("resize",()=>{document.querySelectorAll("canvas").forEach(canvas=>{if(canvas.plotData){const p=canvas.plotData;plot(canvas,p.rows,p.unit,p.start,p.end);}});});if(state.credential)login();

@@ -49,7 +49,7 @@ class Scenario(ResearchModel):
 class Simulation(ResearchModel):
     enabled: bool = False
     seed: int = 6602026
-    interval: float = Field(1, ge=0.02, le=60)
+    interval: Literal[1] = 1
     control_host: Literal["127.0.0.1"] = "127.0.0.1"
     control_port: int = Field(14841, ge=1024, le=65535)
     token_env: str = "HTSG_SIM_TOKEN"
@@ -66,6 +66,7 @@ class Station(ResearchModel):
     x: float = Field(ge=0, le=100)
     y: float = Field(ge=0, le=100)
     strain: str
+    strain_change: str | None = None
     temperature: str
     inner_temperature: str
     stress: str
@@ -110,6 +111,8 @@ def validate_research(config):
             station.stress,
             station.delta_temperature,
         )
+        if station.strain_change is not None:
+            refs = (*refs, station.strain_change)
         if not set(refs) <= known:
             raise ValueError("UI station references unknown points")
     if not set(config.ui.process_points) <= known or any(x <= 0 for x in config.ui.history_windows):

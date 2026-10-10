@@ -4,11 +4,10 @@
   "time_basis": "received",
   "sources": [{"id": "demo", "kind": "simulator", "enabled": true, "interval": 1}],
   "points": [
-    {"id": "demo_temperature", "source": "demo", "unit": "demo_degC", "aggregation": "Mean", "low": 7, "high": 11.5, "stale_after": 5},
-    {"id": "demo_strain", "source": "demo", "unit": "demo_microstrain", "aggregation": "Last", "simulator_base": 20, "high": 21.5, "stale_after": 5}
+    {"id": "demo_temperature", "source": "demo", "unit": "demo_degC", "aggregation": "Direct", "low": 7, "high": 11.5, "stale_after": 5},
+    {"id": "demo_strain", "source": "demo", "unit": "demo_microstrain", "aggregation": "Direct", "simulator_base": 20, "high": 21.5, "stale_after": 5}
   ],
   "derived": [
-    {"id": "demo_temperature_rate", "inputs": ["demo_temperature"], "operation": "derivative", "unit": "demo_degC/s"},
     {"id": "thermal_stress", "inputs": [], "operation": "unconfigured", "unit": "MPa"}
   ],
   "profiles": [],

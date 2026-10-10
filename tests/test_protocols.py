@@ -24,8 +24,8 @@ async def test_modbus_local_server_enters_canonical_pipeline():
     server = ModbusTcpServer(context, address=("127.0.0.1", port))
     await server.serve_forever(background=True)
     received = asyncio.Queue()
-    point = Point(id="x", source="s", unit="test", aggregation="Last", address=0)
-    source = Source(id="s", kind="modbus", enabled=True, host="127.0.0.1", port=port, interval=0.05)
+    point = Point(id="x", source="s", unit="test", aggregation="Direct", address=0)
+    source = Source(id="s", kind="modbus", enabled=True, host="127.0.0.1", port=port, interval=1)
     task = asyncio.create_task(
         adapter(source, [point], lambda *args: received.put_nowait(args), lambda *args: None)
     )
@@ -48,8 +48,8 @@ async def test_opcua_subscription_preserves_latest_value_quality_and_source_time
     endpoint = f"opc.tcp://127.0.0.1:{port}/test/"
     server.set_endpoint(endpoint)
     node = await server.nodes.objects.add_variable(2, "TestValue", 25.0)
-    point = Point(id="x", source="s", unit="test", aggregation="Last", node_id=node.nodeid.to_string())
-    source = Source(id="s", kind="opcua", enabled=True, endpoint=endpoint, interval=0.05)
+    point = Point(id="x", source="s", unit="test", aggregation="Direct", node_id=node.nodeid.to_string())
+    source = Source(id="s", kind="opcua", enabled=True, endpoint=endpoint, interval=1)
     received = asyncio.Queue()
     async with server:
         async def polling_is_forbidden(*args, **kwargs):
@@ -62,7 +62,7 @@ async def test_opcua_subscription_preserves_latest_value_quality_and_source_time
         try:
             sample = await asyncio.wait_for(received.get(), 10)
             assert sample[1] == 25.0 and sample[2] == "GOOD" and sample[3] is not None
-            repeated = await asyncio.wait_for(received.get(), 1)
+            repeated = await asyncio.wait_for(received.get(), 3)
             assert repeated[1:4] == sample[1:4], (
                 "a healthy subscription must retain an unchanged value without polling the node"
             )
@@ -85,12 +85,12 @@ async def test_one_opcua_subscription_accepts_planned_two_hundred_channels():
             id=f"ua_{i:03d}",
             source="s",
             unit="test",
-            aggregation="Last",
+            aggregation="Direct",
             node_id=node.nodeid.to_string(),
         )
         for i, node in enumerate(nodes)
     ]
-    source = Source(id="s", kind="opcua", enabled=True, endpoint=endpoint, interval=0.05, timeout=2)
+    source = Source(id="s", kind="opcua", enabled=True, endpoint=endpoint, interval=1, timeout=2)
     received = asyncio.Queue()
     async with server:
         task = asyncio.create_task(

@@ -79,6 +79,8 @@ def calculate_stress(**input_overrides):
                 operation="thermal_stress",
                 model_id="research",
                 max_age=2,
+                extreme_low=None,
+                extreme_high=None,
                 scale=1,
                 offset=0,
             ),

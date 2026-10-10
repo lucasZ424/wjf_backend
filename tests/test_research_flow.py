@@ -17,12 +17,22 @@ def isolated_config(time_basis="received"):
     data["time_basis"] = time_basis
     data["points"] = [p for p in data["points"] if p["id"] in ids]
     for point in data["points"]:
-        point.update(stale_after=0.5, max_age=0.2)
-    data["derived"] = [d for d in data["derived"] if d["id"] in {"strain_01", "stress_01", "delta_t_01"}]
+        point.update(stale_after=2.5)
+    data["derived"] = [
+        d
+        for d in data["derived"]
+        if d["id"]
+        in {
+            "strain_01",
+            "strain_change_01",
+            "stress_01",
+            "delta_t_01",
+        }
+    ]
     data["ui"]["stations"] = data["ui"]["stations"][:1]
     data["ui"]["process_points"] = ["load_mw"]
     data["ui"]["point_labels"] = {}
-    data["simulation"].update(interval=0.1, validation_duration_seconds=60)
+    data["simulation"].update(interval=1, validation_duration_seconds=60)
     data["simulation"]["signals"] = [s for s in data["simulation"]["signals"] if s["point"] in ids]
     for scenario in data["simulation"]["scenarios"]:
         scenario["points"] = [p for p in scenario["points"] if p in ids]
@@ -36,9 +46,9 @@ def isolated_config(time_basis="received"):
     finally:
         for sock in held:
             sock.close()
-    data["sources"][0].update(port=ports[0], interval=0.1, timeout=0.5)
+    data["sources"][0].update(port=ports[0], interval=1, timeout=0.5)
     data["sources"][1].update(
-        endpoint=f"opc.tcp://127.0.0.1:{ports[1]}/research-test/", interval=0.1, timeout=0.5
+        endpoint=f"opc.tcp://127.0.0.1:{ports[1]}/research-test/", interval=1, timeout=0.5
     )
     data["simulation"]["control_port"] = ports[2]
     return Settings.model_validate(data)
@@ -70,7 +80,7 @@ async def test_real_protocol_capture_bad_quality_and_both_disconnects(databases)
         await runtime.start()
         await eventually(lambda: derived_status(runtime) == "OK")
         await asyncio.sleep(2.2)
-        field.set_scenario("thermal_step")
+        field.set_scenario("extreme_temperature")
 
         async def archived_fault():
             rows = await runtime.db_call(runtime.router.merged, "faults")
@@ -114,22 +124,22 @@ async def test_real_protocol_capture_bad_quality_and_both_disconnects(databases)
         await field.stop()
 
 
-async def test_source_timestamp_freeze_stales_ua_even_while_transport_reads_succeed(databases):
-    config = isolated_config("source")
+async def test_received_time_constant_subscription_remains_available_without_dead_point_detection(databases):
+    config = isolated_config()
     field = FieldSimulator(config)
     runtime = Runtime(config, Router(config, *databases))
     await field.start()
     try:
         await runtime.start()
         await eventually(lambda: derived_status(runtime) == "OK")
-        # Received-time default intentionally cannot detect a frozen valid value.
-        # With source time selected, repeated identical source timestamps cannot
-        # keep an old engineering observation available or the model qualified.
+        # An unchanged value does not imply a dead point. A healthy subscription
+        # still supplies one received-time snapshot per second without preprocessor holding.
         field.set_scenario("freeze")
-        await eventually(lambda: not runtime.engine.states["temp_inner_01"].available)
-        await eventually(lambda: derived_status(runtime) == "NOT_AVAILABLE")
+        await asyncio.sleep(4)
+        assert runtime.engine.states["temp_inner_01"].available
+        await eventually(lambda: derived_status(runtime) == "OK")
         assert "ua_field" not in runtime.source_errors
-        assert time.time() - runtime.source_receipts["ua_field"] < 0.5
+        assert time.time() - runtime.source_receipts["ua_field"] < 1.5
         assert runtime.engine.states["temp_outer_01"].available
         field.set_scenario("baseline")
         await eventually(lambda: derived_status(runtime) == "OK")

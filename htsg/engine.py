@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import math
-import statistics
 from collections import deque
 from dataclasses import asdict, dataclass, field
 from typing import Callable
 from uuid import uuid4
 
 from .config import Settings
+from .extremes import is_extreme
 from .faults import FaultState
 
 
@@ -26,14 +26,13 @@ class Sample:
     effective_time: float
     mono: float
     source_seq: int | None = None
+    extreme: bool = False
 
 
 @dataclass
 class PointState:
     ring: deque = field(default_factory=deque)
     latest: Sample | None = None
-    usable: Sample | None = None
-    holds: deque = field(default_factory=deque)
     frontier: Sample | None = None
     state: str = "UNKNOWN"
     available: bool = False
@@ -105,9 +104,12 @@ class Engine:
 
     def assess(self, point_id, value):
         point = self.points[point_id]
-        if point.high is not None and (value > point.high):
+        low, high = point.low, point.high
+        if point.extreme_low is not None or point.extreme_high is not None:
+            low, high = point.extreme_low, point.extreme_high
+        if high is not None and value > high:
             return "HIGH"
-        if point.low is not None and (value < point.low):
+        if low is not None and value < low:
             return "LOW"
         return "NORMAL"
 
@@ -135,6 +137,7 @@ class Engine:
             effective,
             mono,
             source_seq,
+            is_extreme(value, self.points[point_id]) if quality == "GOOD" else False,
         )
         state = self.states[point_id]
         state.latest = sample
@@ -180,16 +183,8 @@ class Engine:
             state.frontier, state.seen_mono = sample, mono
             state.available = quality == "GOOD"
             state.state = assessment if state.available else "UNKNOWN"
-            if state.available:
-                state.usable = sample
-                state.holds.append(sample)
-                while len(state.holds) > self.config.limits.ring_samples:
-                    state.holds.popleft()
-            else:
-                state.holds.clear()
         elif quality != "GOOD" and previous is not None and effective == previous.effective_time:
             state.available, state.state = False, "UNKNOWN"
-            state.holds.clear()
         if future:
             self.note_loss(point_id, "FUTURE_SOURCE_TIME", wall, wall, 1)
         window = math.floor(effective)
@@ -241,7 +236,6 @@ class Engine:
                 self.faults[point.id].interrupt()
                 self.states[point.id].available = False
                 self.states[point.id].state = "UNKNOWN"
-                self.states[point.id].holds.clear()
         self.health[source_id] = "DISCONNECTED"
 
     def tick(self, wall, mono):
@@ -257,14 +251,12 @@ class Engine:
             self.latest_frame = None
             for state in self.states.values():
                 state.ring.clear()
-                state.holds.clear()
-                state.available, state.usable, state.frontier = False, None, None
+                state.available, state.frontier = False, None
             self.health["clock_discontinuity"] = wall
         self.last_wall, self.last_mono = wall, mono
         for point_id, state in self.states.items():
             if mono - state.seen_mono > self.points[point_id].stale_after:
                 state.available, state.state = False, "UNKNOWN"
-                state.holds.clear()
         # Bound catch-up work after scheduler stalls, with explicit missing coverage.
         if wall - self.window > 10:
             self.gap("SCHEDULER_GAP", self.window, math.floor(wall) - 1)
@@ -299,64 +291,34 @@ class Engine:
         buckets = self.windows.pop(start, {})
         facts = self.window_facts.pop(start, {})
         values = {}
-        for point_id, point in self.points.items():
+        for point_id in self.points:
             raw = buckets.get(point_id, [])
-            good = [s for s in raw if s.quality == "GOOD"]
-            state = self.states[point_id]
             entry = {
                 "value": None,
                 "quality": "UNAVAILABLE",
+                "reason": "MISSING_SAMPLE",
                 "basis": "UNAVAILABLE",
                 "basis_time": None,
                 "first_time": None,
                 "last_time": None,
                 "high_occurred": "HIGH" in facts.get(point_id, ()),
                 "low_occurred": "LOW" in facts.get(point_id, ()),
-                "sample_ids": [],
+                "sample_ids": [sample.id for sample in raw],
             }
-            if good:
-                numbers = [s.value for s in good]
-                last = max(good, key=lambda s: (s.effective_time, s.seq))
-                match point.aggregation:
-                    case "Mean":
-                        try:
-                            value = statistics.fmean(numbers)
-                        except OverflowError:
-                            value = math.nan
-                    case "Median":
-                        value = statistics.median(numbers)
-                    case "RMS":
-                        value = math.hypot(*numbers) / math.sqrt(len(numbers))
-                    case "Last":
-                        value = last.value
-                    case "Peak":
-                        value = max(numbers)
-                    case "MaxAbs":
-                        value = max(reversed(numbers), key=abs)
+            if len(raw) > 1 or start in self.window_overflow:
+                entry.update(quality="PARTIAL", reason="MULTIPLE_SAMPLES")
+            elif raw:
+                sample = raw[0]
                 entry.update(
-                    value=value if math.isfinite(value) else None,
-                    quality="GOOD",
+                    value=sample.value if sample.quality == "GOOD" else None,
+                    quality=sample.quality,
+                    reason=None if sample.quality == "GOOD" else "INVALID_SAMPLE",
                     basis="WINDOW_VALUE",
-                    basis_time=last.effective_time,
-                    first_time=min(s.effective_time for s in good),
-                    last_time=last.effective_time,
-                    sample_ids=[s.id for s in good],
+                    basis_time=sample.effective_time,
+                    first_time=sample.effective_time,
+                    last_time=sample.effective_time,
+                    extreme=sample.extreme,
                 )
-                if len(good) != len(raw) or start in self.window_overflow or not math.isfinite(value):
-                    entry["quality"] = "PARTIAL"
-            elif state.available and state.holds:
-                old = next((s for s in reversed(state.holds) if s.effective_time < start + 1), None)
-                age = start + 1 - old.effective_time if old else float("inf")
-                if old and 0 <= age <= point.max_age:
-                    entry.update(
-                        value=old.value,
-                        quality="GOOD",
-                        basis="HELD_VALUE",
-                        basis_time=old.effective_time,
-                        sample_ids=[old.id],
-                    )
-            while len(state.holds) > 1 and state.holds[1].effective_time < start + 1:
-                state.holds.popleft()
             values[point_id] = entry
         self.window_overflow.discard(start)
         frame = {

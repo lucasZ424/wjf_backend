@@ -20,6 +20,7 @@ from pydantic import BaseModel, ConfigDict
 
 from .config import load_settings
 from .research_config import estimate_budget, validate_research
+from .timing import every_second
 
 
 def signal_value(signal, seed, step, interval):
@@ -244,12 +245,11 @@ class FieldSimulator:
 
     async def run(self):
         try:
-            while True:
+            async for _ in every_second(immediate=False):
                 self.generate(time.time())
                 await self.reconcile_servers()
                 if self.opcua:
                     await self.write_opcua()
-                await asyncio.sleep(self.sim.interval)
         except asyncio.CancelledError:
             raise
         except Exception as error:

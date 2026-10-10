@@ -12,7 +12,7 @@ def put(e, p, v, t, **kwargs):
     return e.receive(p, v, 1000 + t, t, **kwargs)
 
 
-def test_spike_is_detected_before_mean_and_both_directions_survive(settings):
+def test_multiple_samples_are_flagged_without_averaging_and_keep_raw_directions(settings):
     e, records = engine(settings)
     put(e, "x", 2, 0.1)
     put(e, "x", 10, 0.2)
@@ -22,7 +22,7 @@ def test_spike_is_detected_before_mean_and_both_directions_survive(settings):
     put(e, "x", 2, 0.4)
     e.tick(1001.3, 1.3)
     value = e.latest_frame["values"]["x"]
-    assert value["value"] == 3
+    assert value["value"] is None and value["reason"] == "MULTIPLE_SAMPLES"
     assert value["high_occurred"] and value["low_occurred"]
     assert any(k == "raw" and p["sample"]["value"] == 10 for k, p, _ in records)
 
@@ -42,22 +42,22 @@ def test_fault_recovery_allows_a_new_confirmation_without_post_capture(settings)
     e, records = engine(settings)
     for t in range(6):
         put(e, "x", 10, t)
-        e.tick(1000+t, t)
+        e.tick(1000 + t, t)
     put(e, "x", 2, 6)
     for t in range(7, 13):
         put(e, "x", 12, t)
-        e.tick(1000+t, t)
+        e.tick(1000 + t, t)
     faults = [p for k, p, _ in records if k == "fault"]
     assert [f["time"] for f in faults] == [1005, 1012]
     assert not any(k in ("event", "capture_plan", "trigger") for k, _, _ in records)
 
 
-def test_hold_uses_window_end_and_disconnect_cannot_resurrect_cached_value(settings):
+def test_missing_second_stays_unavailable_without_holding_last_value(settings):
     e, _ = engine(settings)
     put(e, "x", 2, 0.8)
     e.tick(1001.3, 1.3)
     e.tick(1002.3, 2.3)
-    assert e.latest_frame["values"]["x"]["basis"] == "HELD_VALUE"
+    assert e.latest_frame["values"]["x"]["basis"] == "UNAVAILABLE"
     e.disconnected("s", 1002.4, 2.4)
     e.tick(1003.3, 3.3)
     assert e.latest_frame["values"]["x"]["value"] is None
@@ -114,18 +114,14 @@ def test_clock_rollback_changes_identity_and_breaks_hold(settings):
     assert e.latest_frame["values"]["x"]["value"] is None
 
 
-@pytest.mark.parametrize(
-    "aggregation,expected",
-    [("Mean", 2), ("Median", 3), ("Last", -5), ("RMS", (98 / 3) ** 0.5), ("Peak", 8), ("MaxAbs", 8)],
-)
-def test_aggregation_definitions(settings, aggregation, expected):
-    point = settings.points[0].model_copy(update={"aggregation": aggregation})
-    settings = settings.model_copy(update={"points": (point, settings.points[1])})
+@pytest.mark.parametrize("value", [-5, 0, 3, 1e308])
+def test_one_hertz_sample_passes_through_without_numerical_aggregation(settings, value):
     e, _ = engine(settings)
-    for t, v in [(0.1, 3), (0.2, 8), (0.3, -5)]:
-        put(e, "x", v, t)
-    e.tick(1001.3, 1.3)
-    assert e.latest_frame["values"]["x"]["value"] == pytest.approx(expected)
+    sample = put(e, "x", value, 0.1)
+    e.tick(1001, 1)
+    result = e.latest_frame["values"]["x"]
+    assert result["value"] == value and result["quality"] == "GOOD"
+    assert result["sample_ids"] == [sample.id]
 
 
 def test_sample_budget_cannot_hide_observed_abnormal_directions(settings):
@@ -153,7 +149,7 @@ def test_old_calculation_cannot_attach_to_event_after_clock_rollback(settings):
     assert e.latest_frame is None
 
 
-def test_finite_input_arithmetic_overflow_is_visible_without_stopping_engine(settings):
+def test_excess_samples_do_not_create_an_aggregate_even_with_large_values(settings):
     e, _ = engine(settings)
     put(e, "x", 1e308, 0.1)
     put(e, "x", 1e308, 0.2)

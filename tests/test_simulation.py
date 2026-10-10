@@ -51,7 +51,7 @@ def small_config():
     data["sources"][0]["port"] = free_port()
     data["sources"][1]["endpoint"] = f"opc.tcp://127.0.0.1:{free_port()}/htsg/"
     data["simulation"]["control_port"] = free_port()
-    data["simulation"]["interval"] = 0.05
+    data["simulation"]["interval"] = 1
     data["simulation"]["ledger_limit"] = 3
     return Settings.model_validate(data)
 
@@ -59,18 +59,20 @@ def small_config():
 def test_research_configuration_has_bounded_full_duration_capture():
     config = load_settings("config/research-sim.json")
     budget = estimate_budget(config)
-    assert len(config.points) == 31 and len(config.ui.stations) == 8
+    assert len(config.points) == 208 and len(config.ui.stations) == 8
+    assert len([p for p in config.points if p.source == "ua_field"]) == 200
+    assert len(config.derived) == 209
     assert len([p for p in config.points if p.source == "mb_field"]) == 8
     assert all(p.unit == "mV/V" for p in config.points if p.source == "mb_field")
     assert budget["capture_bytes_estimate"] < config.limits.capture_budget_bytes
-    assert budget["validation_bytes_estimate"] < 256 * 1024**2
+    assert budget["validation_bytes_estimate"] < 2 * 1024**3
     assert not config.profiles, "fault confirmation must not require a capture profile"
 
 
 def test_simulation_refuses_invalid_references_nonlocal_servers_and_overbudget():
     original = json.loads(Path("config/research-sim.json").read_text(encoding="utf-8"))
     # Exercise refusal with a small test quota; the live lab now deliberately allows 10 GiB.
-    original["storage"]["development_budget_bytes"] = 256 * 1024**2
+    original["storage"]["development_budget_bytes"] = 2 * 1024**3
     for mutate in (
         lambda d: d["sources"][0].update(host="0.0.0.0"),
         lambda d: d["simulation"]["signals"].pop(),
@@ -126,8 +128,10 @@ def test_freeze_preserves_source_timestamp_not_receipt_status():
     ],
 )
 def test_modbus_wire_encoding_against_independent_ieee754_fixture(word, byte, expected):
-    point = small_config().points[0].model_copy(
-        update={"word_order": word, "byte_order": byte, "scale": 0.5, "offset": 10}
+    point = (
+        small_config()
+        .points[0]
+        .model_copy(update={"word_order": word, "byte_order": byte, "scale": 0.5, "offset": 10})
     )
     # Engineering 60 with scale .5/offset 10 is raw 100 == IEEE754 42c80000.
     assert encode_registers(60, point) == expected
@@ -198,7 +202,10 @@ async def test_backend_active_reads_both_real_protocols_and_source_restart(kind,
         assert values["temp_inner_01"] == 125
         field.set_scenario(scenario)
         deadline = time.monotonic() + 8
-        while not any(x[0] == source_id for x in errors) and time.monotonic() < deadline:
+        # The client can detect socket closure before the simulated server finishes shutdown.
+        while (
+            not any(x[0] == source_id for x in errors) or getattr(field, kind) is not None
+        ) and time.monotonic() < deadline:
             await asyncio.sleep(0.05)
         assert getattr(field, kind) is None
         assert getattr(field, "opcua" if kind == "modbus" else "modbus") is not None
@@ -226,3 +233,44 @@ def test_control_requires_secret_and_rejects_unknown_scenario(monkeypatch):
     response = client.post("/scenario", json={"scenario": "step"}, headers=headers)
     assert response.status_code == 200 and response.json()["scenario"] == "step"
     assert "test-simulator-control-secret" not in response.text
+
+
+async def test_full_owner_capacity_has_eight_bridge_and_two_hundred_opcua_inputs():
+    data = load_settings("config/research-sim.json").model_dump()
+    data["sources"][0]["port"] = free_port()
+    data["sources"][1]["endpoint"] = f"opc.tcp://127.0.0.1:{free_port()}/full-capacity/"
+    data["simulation"]["control_port"] = free_port()
+    config = Settings.model_validate(data)
+    field = FieldSimulator(config)
+    counts = {}
+    errors = []
+
+    def submit(point, value, quality, stamp, seq):
+        assert value is not None and quality == "GOOD"
+        counts[point] = counts.get(point, 0) + 1
+
+    tasks = []
+    try:
+        await field.start()
+        tasks = [
+            asyncio.create_task(
+                adapter(
+                    source,
+                    [p for p in config.points if p.source == source.id],
+                    submit,
+                    lambda *args: errors.append(args),
+                )
+            )
+            for source in config.sources
+        ]
+        async with asyncio.timeout(12):
+            while len(counts) != 208 or min(counts.values(), default=0) < 2:
+                await asyncio.sleep(0.05)
+        assert len(field.nodes) == 200
+        assert set(counts) == {p.id for p in config.points}
+        assert not errors
+    finally:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        await field.stop()

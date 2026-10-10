@@ -51,7 +51,7 @@ def test_opcua_deployment_configuration_rejects_more_than_two_hundred_channels(s
             "id": f"ua_{i:03d}",
             "source": "ua",
             "unit": "test",
-            "aggregation": "Last",
+            "aggregation": "Direct",
             "node_id": f"ns=2;s=ua_{i:03d}",
         }
         for i in range(201)

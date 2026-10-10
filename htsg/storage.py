@@ -939,7 +939,7 @@ class Router:
                     "batch_saturated": any(n >= self.config.limits.cleanup_batch for n in result.values()),
                 }
                 metrics = self.health.get(name + "_metrics", {})
-                if time.time() - metrics.get("measured_at", 0) > 60:
+                if time.time() - metrics.get("measured_at", 0) >= 1:
                     self.health[name + "_metrics"] = store.metrics(self.config.points)
                 self.health[name] = "OK"
             except psycopg.errors.QueryCanceled:

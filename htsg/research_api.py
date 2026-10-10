@@ -80,6 +80,7 @@ def register_research_routes(app, runtime, user, admin):
                         if sample and (state.available or sample.quality != "GOOD")
                         else "UNAVAILABLE",
                         "raw_quality": sample.quality if sample else None,
+                        "extreme": sample.extreme if sample else False,
                         "available": state.available,
                         "source_time": sample.source_time if sample else None,
                         "received_at": sample.received_at if sample else None,

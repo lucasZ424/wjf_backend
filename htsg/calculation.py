@@ -3,6 +3,7 @@
 import math
 import statistics
 
+from htsg.extremes import is_extreme
 from htsg.thermal import estimate_thermal
 
 
@@ -21,6 +22,8 @@ def calculate(config, frame, previous):
         result = {"value": None, "status": "NOT_AVAILABLE", "reason": "INPUT_UNAVAILABLE"}
         if rule.operation == "unconfigured":
             result["reason"] = "MODEL_NOT_CONFIGURED"
+        elif any(x and x.get("extreme", False) for x in inputs):
+            result["reason"] = "EXTREME_INPUT"
         elif all(
             x
             and x.get("value") is not None
@@ -46,11 +49,13 @@ def calculate(config, frame, previous):
                         value = math.fsum(ns)
                     case "mean":
                         value = statistics.fmean(ns)
+                    case "maximum":
+                        value = max(ns)
                     case "difference":
                         value = ns[0] - ns[1]
                     case "ratio":
                         value = ns[0] / ns[1]
-                    case "derivative":
+                    case "derivative" | "change":
                         prev = previous
                         if not prev or prev["run_id"] != frame["run_id"] or prev["window_end"] != start:
                             raise ValueError("NONCONTIGUOUS")
@@ -59,10 +64,13 @@ def calculate(config, frame, previous):
                             old is None
                             or old["value"] is None
                             or old.get("quality", old.get("status")) not in ("GOOD", "OK")
+                            or old.get("extreme", False)
                             or not 0 <= input_age(old, prev["window_end"]) <= rule.max_age
                         ):
                             raise ValueError("PREVIOUS_UNAVAILABLE")
-                        value = (ns[0] - old["value"]) / (start - prev["window_start"])
+                        value = ns[0] - old["value"]
+                        if rule.operation == "derivative":
+                            value /= start - prev["window_start"]
                 value = value * rule.scale + rule.offset
                 if not math.isfinite(value):
                     raise ValueError("NONFINITE")
@@ -71,6 +79,7 @@ def calculate(config, frame, previous):
                     "status": "OK",
                     "reason": None,
                     "max_input_age": max(input_age(x, start + 1) for x in inputs),
+                    "extreme": is_extreme(value, rule),
                     **metadata,
                 }
             except (ValueError, OverflowError, ZeroDivisionError) as error:

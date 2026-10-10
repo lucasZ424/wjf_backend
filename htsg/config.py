@@ -22,7 +22,7 @@ class Source(StrictModel):
     host: str = ""
     port: int = Field(502, ge=1, le=65535)
     endpoint: str = ""
-    interval: float = Field(0.2, ge=0.02, le=3600)
+    interval: Literal[1] = 1
     timeout: float = Field(3, gt=0, le=60)
     username_env: str = ""
     password_env: str = ""
@@ -33,11 +33,12 @@ class Point(StrictModel):
     id: str
     source: str
     unit: str
-    aggregation: Literal["Mean", "Median", "Last", "RMS", "Peak", "MaxAbs"]
+    aggregation: Literal["Direct"] = "Direct"
     low: float | None = None
     high: float | None = None
+    extreme_low: float | None = None
+    extreme_high: float | None = None
     inclusive: bool = False
-    max_age: float = Field(2, ge=0)
     stale_after: float = Field(5, gt=0)
     address: int | None = Field(None, ge=0, le=65535)
     device_id: int = Field(1, ge=0, le=255)
@@ -56,6 +57,12 @@ class Point(StrictModel):
     def limits(self):
         if self.low is not None and self.high is not None and self.low >= self.high:
             raise ValueError("low must be less than high")
+        if (
+            self.extreme_low is not None
+            and self.extreme_high is not None
+            and self.extreme_low >= self.extreme_high
+        ):
+            raise ValueError("extreme_low must be less than extreme_high")
         return self
 
 
@@ -68,12 +75,16 @@ class Derived(StrictModel):
         "ratio",
         "mean",
         "derivative",
+        "change",
+        "maximum",
         "unconfigured",
         "bridge_strain",
         "thermal_stress",
     ]
     model_id: str | None = None
     unit: str
+    extreme_low: float | None = None
+    extreme_high: float | None = None
     scale: float = 1
     offset: float = 0
     max_age: float = Field(2, ge=0)
@@ -92,7 +103,7 @@ class Profile(StrictModel):
 class Limits(StrictModel):
     capture_budget_bytes: int = Field(64 * 1024**2, ge=1024, le=512 * 1024**2)
     write_batch_records: int = Field(128, ge=1, le=1024)
-    maintenance_interval: float = Field(1, ge=0.1, le=60)
+    maintenance_interval: Literal[1] = 1
     maintenance_budget: float = Field(0.2, ge=0.01, le=3)
     cleanup_batch: int = Field(1024, ge=1, le=10000)
     ingress: int = Field(4096, ge=1, le=100000)
@@ -100,7 +111,7 @@ class Limits(StrictModel):
     event_queue: int = Field(2048, ge=1, le=100000)
     ring_samples: int = Field(10000, ge=1, le=1000000)
     samples_per_window: int = Field(10000, ge=1, le=1000000)
-    window_wait: float = Field(0.2, ge=0, le=5)
+    window_wait: Literal[0] = 0
     clock_jump: float = Field(2, gt=0)
     historical_age: float = Field(3600, gt=0)
     max_capture: float = Field(86400, gt=0)
@@ -157,7 +168,7 @@ class Settings(StrictModel):
             raise ValueError("dev_admin_login is only allowed in development mode")
         if (
             len(self.points) > 256
-            or len(self.derived) > 128
+            or len(self.derived) > 256
             or len(self.profiles) > 64
             or len(self.sources) > 64
         ):
@@ -193,6 +204,12 @@ class Settings(StrictModel):
         if sum(sources[x.source].kind == "opcua" for x in self.points) > 200:
             raise ValueError("OPC UA channel capacity is 200")
         for derived in self.derived:
+            if (
+                derived.extreme_low is not None
+                and derived.extreme_high is not None
+                and derived.extreme_low >= derived.extreme_high
+            ):
+                raise ValueError("extreme_low must be less than extreme_high")
             if derived.operation == "bridge_strain":
                 if (
                     len(derived.inputs) != 1
@@ -224,10 +241,14 @@ class Settings(StrictModel):
                 raise ValueError("derived inputs must be topologically ordered and exist")
             if derived.operation in ("difference", "ratio") and len(derived.inputs) != 2:
                 raise ValueError("operation needs two inputs")
-            if derived.operation == "derivative" and len(derived.inputs) != 1:
-                raise ValueError("derivative needs one input")
+            if derived.operation in ("derivative", "change") and len(derived.inputs) != 1:
+                raise ValueError("derivative/change needs one input")
+            if derived.operation in ("change", "maximum") and any(
+                units.get(x) != derived.unit for x in derived.inputs
+            ):
+                raise ValueError("change/maximum requires matching input and output units")
             if (
-                derived.operation in ("sum", "mean", "difference")
+                derived.operation in ("sum", "mean", "difference", "maximum")
                 and len({units[x] for x in derived.inputs}) > 1
             ):
                 raise ValueError("additive calculation requires consistent input units")

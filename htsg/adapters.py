@@ -7,6 +7,7 @@ import struct
 import time
 
 from .config import Point, Source
+from .timing import every_second
 
 
 class OpcUaSubscriptionHandler:
@@ -64,7 +65,7 @@ async def adapter(source: Source, points: list[Point], submit, report):
         try:
             if source.kind == "simulator":
                 phase = 0
-                while True:
+                async for _ in every_second():
                     now = time.time()
                     for p in points:
                         submit(
@@ -75,7 +76,6 @@ async def adapter(source: Source, points: list[Point], submit, report):
                             None,
                         )
                     phase += source.interval
-                    await asyncio.sleep(source.interval)
             elif source.kind == "modbus":
                 from pymodbus.client import AsyncModbusTcpClient
 
@@ -85,7 +85,7 @@ async def adapter(source: Source, points: list[Point], submit, report):
                 try:
                     if not await client.connect():
                         raise ConnectionError("Modbus connection failed")
-                    while True:
+                    async for _ in every_second():
                         for p in points:
                             count = {
                                 "uint16": 1,
@@ -107,7 +107,6 @@ async def adapter(source: Source, points: list[Point], submit, report):
                                 value, quality = decode_registers(response.registers, p)
                                 submit(p.id, value, quality, None, None)
                         backoff = 1
-                        await asyncio.sleep(source.interval)
                 finally:
                     client.close()
             else:
@@ -132,14 +131,13 @@ async def adapter(source: Source, points: list[Point], submit, report):
                     await asyncio.wait_for(
                         handler.ready.wait(), max(source.timeout, source.interval * 3)
                     )
-                    while True:
+                    async for _ in every_second():
                         await client.check_connection()
                         if handler.status is not None and not handler.status.is_good():
                             handler.status.check()
                         for point_id, (value, quality, stamp) in tuple(handler.values.items()):
                             submit(point_id, value, quality, stamp, None)
                         backoff = 1
-                        await asyncio.sleep(source.interval)
         except asyncio.CancelledError:
             raise
         except Exception as error:
