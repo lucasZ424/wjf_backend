@@ -20,7 +20,7 @@ htsg = "htsg.cli:main"
 include = ["htsg*"]
 
 [tool.setuptools.package-data]
-htsg = ["schema.sql", "static/*.html", "static/*.css", "static/*.js"]
+htsg = ["schema.sql", "archive_schema.sql", "static/*.html", "static/*.css", "static/*.js"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

@@ -76,3 +76,35 @@ def databases(settings):
             assert name.startswith("htsg_test_") and len(name) == 42
             with psycopg.connect(admin, autocommit=True) as conn:
                 conn.execute(sql.SQL("DROP DATABASE {} WITH (FORCE)").format(sql.Identifier(name)))
+
+
+@pytest.fixture
+def archive_db_factory():
+    """Throw-away databases on the development clusters; every one is dropped at teardown.
+
+    Never touches the existing development or research databases.
+    """
+    from htsg.archive import ArchiveStore
+
+    credentials = json.loads(Path(".local/database.json").read_text())
+    created, stores = [], []
+
+    def make(instance="primary", name=None):
+        name = name or "htsg_test_" + uuid4().hex
+        admin = make_conninfo(credentials[instance], dbname="postgres")
+        with psycopg.connect(admin, autocommit=True) as conn:
+            conn.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
+        created.append((admin, name))
+        store = ArchiveStore(make_conninfo(credentials[instance], dbname=name))
+        stores.append(store)
+        return store
+
+    try:
+        yield make
+    finally:
+        for store in stores:
+            store.close()
+        for admin, name in created:
+            assert name.startswith("htsg_test_") and len(name) == 42
+            with psycopg.connect(admin, autocommit=True) as conn:
+                conn.execute(sql.SQL("DROP DATABASE {} WITH (FORCE)").format(sql.Identifier(name)))

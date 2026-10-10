@@ -15,6 +15,38 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, allow_inf_nan=False)
 
 
+def check_fault_band(item):
+    """普通越限阈值与回差：回差只配在有阈值的一侧，且复归区间不能为空。"""
+    if item.low is not None and item.high is not None and item.low >= item.high:
+        raise ValueError("low must be less than high")
+    if item.hysteresis_low is not None and item.low is None:
+        raise ValueError("hysteresis_low needs low")
+    if item.hysteresis_high is not None and item.high is None:
+        raise ValueError("hysteresis_high needs high")
+    if item.low is not None and item.high is not None:
+        if item.high - (item.hysteresis_high or 0) <= item.low + (item.hysteresis_low or 0):
+            raise ValueError("hysteresis leaves no reset band between low and high")
+    # Valid values never leave the extreme band, so a reset line outside it could never be reached.
+    if item.high is not None and item.extreme_low is not None:
+        if item.high - (item.hysteresis_high or 0) <= item.extreme_low:
+            raise ValueError("high-side reset line lies below extreme_low and is unreachable")
+    if item.low is not None and item.extreme_high is not None:
+        if item.low + (item.hysteresis_low or 0) >= item.extreme_high:
+            raise ValueError("low-side reset line lies above extreme_high and is unreachable")
+
+
+def fault_rule(item):
+    """普通故障规则（与极值界限无关）；没有任何阈值则为 None。"""
+    if item.low is None and item.high is None:
+        return None
+    return {
+        "low": item.low,
+        "high": item.high,
+        "hysteresis_low": item.hysteresis_low or 0.0,
+        "hysteresis_high": item.hysteresis_high or 0.0,
+    }
+
+
 class Source(StrictModel):
     id: str
     kind: Literal["simulator", "modbus", "opcua"]
@@ -36,6 +68,8 @@ class Point(StrictModel):
     aggregation: Literal["Direct"] = "Direct"
     low: float | None = None
     high: float | None = None
+    hysteresis_low: float | None = Field(None, ge=0)
+    hysteresis_high: float | None = Field(None, ge=0)
     extreme_low: float | None = None
     extreme_high: float | None = None
     inclusive: bool = False
@@ -55,8 +89,7 @@ class Point(StrictModel):
 
     @model_validator(mode="after")
     def limits(self):
-        if self.low is not None and self.high is not None and self.low >= self.high:
-            raise ValueError("low must be less than high")
+        check_fault_band(self)
         if (
             self.extreme_low is not None
             and self.extreme_high is not None
@@ -83,11 +116,20 @@ class Derived(StrictModel):
     ]
     model_id: str | None = None
     unit: str
+    low: float | None = None
+    high: float | None = None
+    hysteresis_low: float | None = Field(None, ge=0)
+    hysteresis_high: float | None = Field(None, ge=0)
     extreme_low: float | None = None
     extreme_high: float | None = None
     scale: float = 1
     offset: float = 0
     max_age: float = Field(2, ge=0)
+
+    @model_validator(mode="after")
+    def band(self):
+        check_fault_band(self)
+        return self
 
 
 class Profile(StrictModel):
@@ -119,6 +161,79 @@ class Limits(StrictModel):
     ws_queue: int = Field(64, ge=2, le=1000)
     max_clients: int = Field(16, ge=1, le=128)
     calculation_timeout: float = Field(0.2, gt=0, le=5)
+
+
+class Timing(StrictModel):
+    """终版 §11 参数表。这里是请求值，不是生效值：服务端修订订阅参数后必须用
+    `check_negotiated` 对最终值重新核对。"""
+
+    acquisition_period: Literal[1] = 1
+    modbus_connect_timeout: float = Field(0.8, gt=0, lt=1)
+    modbus_request_timeout: float = Field(0.8, gt=0, lt=1)
+    modbus_retries: Literal[0] = 0
+    modbus_reconnect_timeouts: int = Field(3, ge=1)
+    modbus_alarm_seconds: float = Field(10, gt=0)
+    ua_publish_interval: float = Field(1, gt=0)
+    ua_sampling_interval: float = Field(1, gt=0)
+    ua_queue_size: int = Field(10, ge=1)
+    ua_keepalive_count: int = Field(2, ge=1)
+    ua_lifetime_count: int = Field(60, ge=1)
+    ua_session_timeout: float = Field(60, gt=0)
+    ua_request_timeout: float = Field(5, gt=0)
+    ua_data_validity: float = Field(3, gt=0)
+    ua_alarm_seconds: float = Field(6, gt=0)
+    # 终版 §11 要求"静默间隔加调度/传输裕量小于数据有效期"，但未给裕量数值；0.5 秒为实现取值。
+    ua_silence_margin: float = Field(0.5, ge=0)
+    backoff_initial: float = Field(1, gt=0)
+    backoff_max: float = Field(30, gt=0)
+    backoff_stable_seconds: float = Field(60, gt=0)
+    resync_persistent_after: int = Field(5, ge=1)
+    clock_jump: float = Field(2, gt=0)
+    db_connect_timeout: float = Field(3, gt=0)
+    db_statement_timeout: float = Field(3, gt=0)
+    db_lock_timeout: float = Field(1, gt=0)
+    watermark_interval: float = Field(10, gt=0)
+    stats_interval: float = Field(60, gt=0)
+    status_interval: float = Field(1, gt=0)
+    push_coalesce: float = Field(0.1, gt=0)
+    push_heartbeat: float = Field(1, gt=0)
+    client_send_timeout: float = Field(5, gt=0)
+    ui_stall_notice: float = Field(3, gt=0)
+    fault_confirm_seconds: float = Field(5, gt=0)
+    fault_buffer_limit: int = Field(1000, ge=1)
+
+    def problems(self, publish_interval, keepalive_count, lifetime_count):
+        """违反 §11 约束的条目；入参为请求值或服务端修订后的最终值。"""
+        silence = publish_interval * keepalive_count
+        found = []
+        if silence + self.ua_silence_margin >= self.ua_data_validity:
+            found.append("keepalive silence plus margin must be below the data validity")
+        if self.ua_alarm_seconds <= self.ua_data_validity:
+            found.append("alarm threshold must exceed the data validity")
+        if self.ua_alarm_seconds < 3 * silence:
+            found.append("alarm threshold must be at least 3x the keepalive silence")
+        if lifetime_count < 3 * keepalive_count:
+            found.append("lifetime count must be at least 3x the keepalive count")
+        return found
+
+    def check_negotiated(self, publish_interval, keepalive_count, lifetime_count):
+        return self.problems(publish_interval, keepalive_count, lifetime_count)
+
+    @staticmethod
+    def queue_capability(revised_size):
+        """队列被修订为 1 时照常运行，但中间覆盖不可检测。"""
+        return "OVERWRITE_UNDETECTABLE" if revised_size <= 1 else "OVERFLOW_DETECTABLE"
+
+    @model_validator(mode="after")
+    def relations(self):
+        found = self.problems(self.ua_publish_interval, self.ua_keepalive_count, self.ua_lifetime_count)
+        if self.ui_stall_notice <= 2 * self.push_heartbeat:
+            found.append("UI stall notice must exceed two heartbeat intervals")
+        if self.backoff_initial > self.backoff_max:
+            found.append("backoff_initial must not exceed backoff_max")
+        if found:
+            raise ValueError("; ".join(found))
+        return self
 
 
 class Storage(StrictModel):
@@ -155,6 +270,7 @@ class Settings(StrictModel):
     derived: tuple[Derived, ...] = ()
     profiles: tuple[Profile, ...] = ()
     limits: Limits = Limits()
+    timing: Timing = Timing()
     storage: Storage = Storage()
     allowed_origins: tuple[str, ...] = ()
     project: Project = Project()
@@ -279,7 +395,9 @@ class Settings(StrictModel):
 
     @property
     def config_id(self):
-        return hashlib.sha256(self.model_dump_json().encode()).hexdigest()
+        # Canonical form: a stored JSONB snapshot does not keep key order, and must hash identically.
+        canonical = json.dumps(self.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(canonical.encode()).hexdigest()
 
 
 def load_settings(path: str | Path) -> Settings:
