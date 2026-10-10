@@ -18,9 +18,11 @@ CREATE TABLE IF NOT EXISTS run (
 
 -- One row per archive segment.  A connection generation may hold several segments: an archive
 -- gap, a clock jump or a same-generation recovery cuts the valid interval without a reconnect.
+-- A segment's start and end may be committed into different databases after a route switch, so each
+-- database can hold a partial row; queries merge the rows of one (run, source, seg).
 CREATE TABLE IF NOT EXISTS segment (
-    run_id text NOT NULL, source_id text NOT NULL, seg integer NOT NULL, conn_gen integer NOT NULL,
-    start_wall double precision NOT NULL, start_reason text NOT NULL,
+    run_id text NOT NULL, source_id text NOT NULL, seg integer NOT NULL, conn_gen integer,
+    start_wall double precision, start_reason text,
     end_wall double precision, end_reason text,
     PRIMARY KEY (run_id, source_id, seg)
 );

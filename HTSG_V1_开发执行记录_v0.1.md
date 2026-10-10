@@ -101,6 +101,34 @@ C｜同上｜`tests/live_support.py`、`tests/test_capstone_c.py`｜`pytest test
 
 **重要发现（需现场核验）：** asyncua 2.0.1 测试服务器在"保活计数 > MaxKeepAliveCount"时才发保活，实际静默间隔比协商值多一个发布周期（请求保活 2、发布 1 秒时实测约 3–4 秒），恰好落在 3 秒有效期上，导致空闲时每隔数秒就产生一次 3–6 秒"失效—恢复"。这与终版第 11 节"保活静默加裕量须小于有效期"的约束一致：**协商值满足约束不等于网关实际满足**。测试中对该服务器使用保活计数 1（实际静默约 2 秒）。真实 UA 网关的保活节奏必须在联调时实测，列入 D48 的"需现场验证"清单。
 
+### D19–D20 整组写入与整组路由
+
+D19–D20｜dev 分支工作区｜`htsg/archive.py`（`write_group`、`WriteOutcome`、段/水位/缺口/运行/故障摘要落表）、新增 `htsg/archive_router.py`、`tests/test_archive_write.py`、`tests/test_archive_router.py`｜`pytest tests/test_archive_write.py tests/test_archive_router.py`｜7 + 6 通过 / 0 失败 / 0 跳过｜真实 PostgreSQL：原始/派生/状态/故障同一事务；外键违反→FAILED 且无任何残留行；重复整组→ALREADY、重交同一故障 ID 不产生第二行；提交答复丢失→UNKNOWN，按稳定 ID 在**同一库**核实（已落库→COMMITTED，未落库→保持 UNKNOWN 并同目标重试，不写别的库）；会话参数 3/3/1 秒（SHOW 值核对、新会话重连后仍生效；`pg_sleep(8)` 在约 3 秒被取消；持锁方存在时 1 秒后 `LockNotAvailable`）；超预算整组 REFUSED、400 条的组一次原子写入；应急路由保留派生结果；一组只落一个库｜无
+
+### D21 有序组队列与提交确认
+
+D21｜同上｜新增 `htsg/commitq.py`、`tests/test_commit_queue.py`｜`pytest tests/test_commit_queue.py`｜6 通过｜单一 FIFO，队首失败时后面的水位组不会越过；满队列 `offer` 返回 False 且原内容不被覆盖；数据库阻塞期间 59 轮接纳每轮 <50 ms、全部实时发布、`on_committed` 零次调用，放行后按序确认；REFUSED 组被丢弃并报告而不堵死后续；UNKNOWN 重试同一组；真实库中确认回调触发时该组已可查｜无
+
+### D22 运行/连接/归档段生命周期
+
+D22｜同上｜`htsg/owner.py`（`start`/`shutdown`、`_clock_jump`、段滚动）、`archive.py`（`reconcile_unfinished_runs`）、`tests/test_run_segments.py`｜`pytest tests/test_run_segments.py`｜10 通过｜启动登记；正常停止在已接纳记录处理完后写 `RUN_END` 并关闭所有段；异常退出按**已落库证据**（水位/观测/状态的最大时间）截断，不推测崩溃时刻，重复调用幂等，当前运行不被关闭；墙钟−单调钟增量绝对值 >2 秒才开段（边界 2.0 不开，2.01 开，回拨 20 秒开，回拨 0.5 秒不开）；回拨后旧新两段按 (seg,batch_seq) 排序而不靠墙钟；旧库被 `REFUSED` 且不被读写｜无
+
+### D23 10 秒水位与提交屏障
+
+D23｜同上｜`owner.py`（`_watermarks`、`confirmed_watermark`、`history_status`）、`tests/test_watermark.py`｜`pytest tests/test_watermark.py`｜5 通过｜从未响应的源不产生水位；水位 = 最后一次**被证明的通信**时刻，不是 now，且静默后停止推进；队首数据组连续失败时其后的水位组不落库、落库的水位之前的所有组都已落库；存储停写 60 秒时只声明**已确认**水位，尾段不确定区间 >50 秒（不承诺 10 秒）；无水位时只呈现实存点｜无
+
+### D24–D25 缺口、可靠基线与原子恢复
+
+D24–D25｜同上｜`owner.py`（归档状态机 OK/LOST/RECOVERING、`_archive_lost`、`_try_archive_recovery`、`_segment_group`、`committed`/`refused`/`is_void`）、`commitq.py`（`is_void` 过滤）、`tests/test_archive_gap.py`、`tests/test_archive_recovery.py`｜`pytest tests/test_archive_gap.py tests/test_archive_recovery.py`｜6 + 6 通过｜队列满→LOST，缺口期内该源不再入队但实时发布不受影响；恢复单元=GAP+SEG_END(缺口起点)+SEG_START(ARCHIVE_GAP)+保留基线(原观测 ID/时间不变，另记重申时间)+首个水位，一个组；缺口内算出的派生值基线标 `basis_incomplete`、缺口前算出的不标；采集入口失步(RESYNC)时不拿旧缓存当基线，等新代次有数据后再截取；重申不计算 change、change 链在缺口处被切断；恢复期间排队有界(`pending_limit`)，再次溢出重新截取基线；恢复组被拒时回到 LOST、不宣告恢复；恢复确认后按序放行等待的组；缺口内同代次恢复把 GAP+基线+恢复批次放进同一单元；队首被拒组后面已入队的同源组被 `is_void` 作废(`voided`)，水位不会跨过缺口；真实库中恢复单元的观测/状态/段/缺口/水位同一 `group_id`、同一事务｜无
+
+### D26 路由恢复、预算与维护节拍
+
+D26｜同上｜`archive_router.py`（`route`、`maintain`、开发预算、`validate_external_binding`）、`archive.py`（`routing_mode`、`external_selected`、`metrics`）、`tests/test_storage_routing.py`｜`pytest tests/test_storage_routing.py`｜20 通过（约 14 秒）｜95% 切到移动库且旧数据不搬迁/不复制(两库行数核对)；选定后主库回落不切回；重启后恢复选择；移动库不可读→应急，回到移动库需 ≤70%+探测，永不回主库；无移动库时应急退出需 ≤70%+探测，探测失败保持应急；绑定失败(与主库同库)不写不探测；生产模式：量不再受 10 GiB 约束，仍执行 100 GiB 应急余量(REFUSED:EMERGENCY_RESERVE)、整组预算、卷校验(实际卷≠配置卷→ExternalBindingError)，`dev_admin_login` 在生产被拒；开发：预算 1024 字节→整组 REFUSED、卷余量<1 GiB→REFUSED、占用未知→REFUSED 且已知值被缓存；重统计 60 秒/轻状态 1 秒的边界(0/0.5/1/59.9/60/60.5/120)；`maintain` 不含任何删除，旧于一年的记录在 `cleanup_enabled` 真/假下都保留；`development_budget_bytes` 拒绝 0/-1/1023/超 10 GiB/None/2^63，接受 1024/5 GiB/10 GiB｜`validate_external_binding` 的"卷"校验在开发机上只能用同盘不同库验证，真实独立卷仍待现场
+
+### Capstone D 持久化与恢复闭环
+
+D｜同上｜`tests/crash_worker.py`、`tests/test_capstone_d.py`｜`pytest tests/test_capstone_d.py`｜4 通过 / 0 失败 / 0 跳过｜三个隔离库：正常/移动/应急均保存完整组(每个库内每个组的成员行数=组记录数)；切换前后记录 ID 核对旧观测未搬迁或复制、跨库直接 SQL 联合可见两段历史且无重复 ID；300 条的组原子写入；**真实子进程在事务前/事务中(INSERT 已发出、COMMIT 未发)/提交后确认前被 `os._exit(9)` 强杀**：库中无半组、无孤儿行、提交后强杀的那组存在且仅一次；重启后新运行把未结束的旧运行按证据截断(`ABNORMAL_EXIT`/`EXIT_TRUNCATED`)，旧段结束时刻早于新运行起点，无重复 ID｜磁盘水位全部为注入，没有填充真实磁盘；真实移动盘/独立卷未验证
+
 ## 2. 偏离、风险与未验收
 
 - 无偏离设计。方案"位置"列写的是改造旧文件；本次以新模块并存，D45 再删旧（见第 0 节）。
@@ -108,4 +136,4 @@ C｜同上｜`tests/live_support.py`、`tests/test_capstone_c.py`｜`pytest test
 
 ## 3. 下一步
 
-模块 D：D19（Store 写完整提交组）→ D20 → D21 → D22 → D23 → D24 → D25 → D26 → Capstone D。
+模块 E：D27（故障按单调时钟推进）→ D28 → D29 → D30 → D31 → Capstone E。

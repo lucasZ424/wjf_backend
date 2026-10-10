@@ -9,7 +9,7 @@ ordered CommitGroups (durable), `publish` receives PublishGroups (realtime).
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from uuid import uuid4
 
 from . import records as rec
@@ -53,6 +53,17 @@ class SourceState:
     alarm: bool = False
     last_outcome: str | None = None
     resync_reason: str | None = None
+    # archive health of this source (§5 C2): OK -> LOST (refused / queue full) -> RECOVERING (recovery
+    # group queued, not yet confirmed) -> OK.  While LOST nothing of this source is queued.
+    archive: str = "OK"
+    lost_since_wall: float | None = None
+    lost_reason: str | None = None
+    lost_from_batch_seq: int | None = None
+    void_after_order: int | None = None  # groups queued after the first lost one are void until recovery
+    recovery_order: int | None = None
+    pending: list = field(default_factory=list)  # groups held, bounded, while RECOVERING
+    watermark_mono: float | None = None
+    watermark_wall: float = 0.0
 
 
 @dataclass(slots=True)
@@ -77,11 +88,20 @@ def _sink_none(_):
     return None
 
 
+RUN_SOURCE = "_run"  # carrier "source" of run-level groups (start / end)
+PENDING_LIMIT = 256  # groups held per source while a recovery group is not yet confirmed
+
+
 class Owner:
     def __init__(self, config: Settings, wall: float, mono: float, *, commit=None, publish=None, run_id=None):
         self.config = config
         self.run_id = run_id or uuid4().hex
         self.commit, self.publish = commit or _sink_none, publish or _sink_none
+        self.pending_limit = PENDING_LIMIT
+        self.confirmed_watermark: dict[str, float] = {}  # per source: the watermark that is really durable
+        self.run_events = 0
+        self.last_tick_wall, self.last_tick_mono = wall, mono
+        self.stopped = False
         self.on_rebuild = None  # called (source_id, reason) when a new generation must be built
         self.started_wall, self.started_mono = wall, mono
         self.topology = Topology(config)
@@ -116,6 +136,10 @@ class Owner:
             "resyncs": 0,
             "expiries": 0,
             "recoveries": 0,
+            "archive_lost_groups": 0,
+            "archive_recoveries": 0,
+            "pending_overflows": 0,
+            "clock_jumps": 0,
         }
 
     # ------------------------------------------------------------------ plumbing
@@ -126,15 +150,13 @@ class Owner:
             rec.state_id(self.run_id, s.id, s.event_no), self.run_id, s.id, s.seg, kind, wall, mono, detail
         )
 
-    def _emit(self, kind, s: SourceState, wall, observations=(), results=(), states=(), faults=()):
-        if not (observations or results or states or faults):
-            return None
+    def _build(self, kind, source_id, wall, observations=(), results=(), states=(), faults=()):
         self.order += 1
-        group = rec.CommitGroup(
+        return rec.CommitGroup(
             rec.group_id(self.run_id, self.order),
             self.order,
             self.run_id,
-            s.id,
+            source_id,
             kind,
             wall,
             tuple(observations),
@@ -142,21 +164,171 @@ class Owner:
             tuple(states),
             tuple(faults),
         )
-        self.commit(group)
+
+    def _publish(self, group: rec.CommitGroup):
         self.pub_seq += 1
         self.publish(
             rec.PublishGroup(
                 self.pub_seq,
-                self.order,
-                s.id,
-                wall,
+                group.order,
+                group.source_id,
+                group.built_wall,
                 group.observations,
                 group.results,
                 group.states,
                 group.faults,
             )
         )
+
+    def _emit(self, kind, s: SourceState, wall, observations=(), results=(), states=(), faults=()):
+        """Realtime delivery is immediate and unconditional; durability goes through the archive state."""
+        if not (observations or results or states or faults):
+            return None
+        group = self._build(kind, s.id, wall, observations, results, states, faults)
+        self._publish(group)
+        self._submit(s, group)
         return group
+
+    # ------------------------------------------------------------- archive state (C2)
+
+    def _submit(self, s: SourceState, group: rec.CommitGroup):
+        if s.archive == "OK":
+            if self.commit(group) is False:  # None (a plain sink) means accepted
+                self._archive_lost(s, group, "QUEUE_FULL")
+        elif s.archive == "LOST":
+            self.health["archive_lost_groups"] += 1  # nothing is queued across a gap
+        elif len(s.pending) < self.pending_limit:  # RECOVERING: bounded wait for the recovery group
+            s.pending.append(group)
+        else:
+            s.pending.clear()
+            self.health["pending_overflows"] += 1
+            self._archive_lost(s, group, "PENDING_OVERFLOW")  # re-take the baseline, never grow without limit
+
+    def _archive_lost(self, s: SourceState, group: rec.CommitGroup, reason: str):
+        """Archive loss for this source: a gap starts; recovery takes a fresh baseline at a batch boundary."""
+        self.health["archive_lost_groups"] += 1
+        if s.archive != "LOST":
+            s.archive, s.lost_reason = "LOST", reason
+            s.lost_since_wall = min(s.lost_since_wall or group.built_wall, group.built_wall)
+            s.lost_from_batch_seq = s.batch_seq
+            if s.void_after_order is None or group.order < s.void_after_order:
+                s.void_after_order = group.order
+            s.pending.clear()
+            for rule in self.topology.rules:  # change chains must not span the gap
+                if self.result_source[rule.id] == s.id:
+                    self.baselines.pop(rule.id, None)
+
+    def committed(self, group: rec.CommitGroup, result=None):
+        """The writer confirmed `group` durable.  Only now may history be called recovered."""
+        s = self.sources.get(group.source_id)
+        for st in group.states:
+            if st.kind == "WATERMARK":
+                covered = st.detail["covered_wall"]
+                self.confirmed_watermark[st.source_id] = max(self.confirmed_watermark.get(st.source_id, 0.0), covered)
+        if s is not None and s.archive == "RECOVERING" and group.order == s.recovery_order:
+            s.archive, s.recovery_order, s.lost_since_wall, s.lost_reason = "OK", None, None, None
+            s.void_after_order, s.lost_from_batch_seq = None, None
+            self.health["archive_recoveries"] += 1
+            held, s.pending = s.pending, []
+            for later in held:  # groups that waited behind the recovery group, in order
+                self._submit(s, later)
+
+    def history_status(self, source_id: str) -> dict:
+        """What may be claimed about stored history: only up to the CONFIRMED watermark, and only if no gap
+        is open.  No watermark means the stored points are all there is; nothing is implied beyond them."""
+        s = self.sources[source_id]
+        mark = self.confirmed_watermark.get(source_id)
+        return {
+            "archive": s.archive,
+            "confirmed_watermark": mark,
+            "coverage": "OBSERVATIONS_ONLY" if mark is None else "WATERMARK",
+            "gap_since": s.lost_since_wall,
+        }
+
+    def refused(self, group: rec.CommitGroup, reason: str):
+        """A policy refused the whole group (budget, reserve, capacity): it becomes, or extends, a gap."""
+        s = self.sources.get(group.source_id)
+        if s is None:
+            return
+        if s.archive == "RECOVERING" and group.order == s.recovery_order:
+            s.archive, s.recovery_order = "LOST", None  # recovery unit refused: stays unrecovered
+            s.pending.clear()
+        else:
+            self._archive_lost(s, group, "REFUSED:" + reason)
+
+    def _try_archive_recovery(self, s: SourceState, wall: float, mono: float):
+        """At a batch boundary: gap + new segment + retained baseline + first watermark as ONE unit (§5)."""
+        if s.archive != "LOST" or s.state in (RESYNC, EXPIRED):
+            return  # an unsynchronised intake must be fixed by C1 first; the stale cache is no baseline
+        states = [self._gap_state(s, wall, mono)]
+        group = self._segment_group(s, "ARCHIVE_GAP", wall, mono, lead=states, close_old_at=s.lost_since_wall)
+        self._submit_recovery(s, group)  # archive-only: realtime clients saw these values long ago
+
+    def _submit_recovery(self, s: SourceState, group: rec.CommitGroup):
+        s.pending.clear()
+        s.recovery_order = group.order
+        if self.commit(group) is False:
+            s.recovery_order = None  # no room yet: stay LOST, try again at the next tick
+            return
+        s.archive = "RECOVERING"
+
+    def is_void(self, group: rec.CommitGroup) -> bool:
+        """A group queued behind a lost one must not commit: it would hide the gap and a watermark
+        above it would certify history that is missing.  Only the recovery group may pass."""
+        s = self.sources.get(group.source_id)
+        return bool(
+            s is not None
+            and s.archive != "OK"
+            and s.void_after_order is not None
+            and group.order > s.void_after_order
+            and group.order != s.recovery_order
+        )
+
+    def _gap_state(self, s: SourceState, wall: float, mono: float) -> rec.StateRecord:
+        return self._state(
+            s, "GAP", wall, mono, start_wall=s.lost_since_wall, end_wall=wall, reason=s.lost_reason
+        )
+
+    def _watermark_state(self, s: SourceState, wall: float, mono: float):
+        """History is certain only as far as communication was proven; never 'now' (§5)."""
+        if s.last_comm_wall is None or not s.open_segment:
+            return None
+        return self._state(s, "WATERMARK", wall, mono, seg=s.seg, covered_wall=min(s.last_comm_wall, wall))
+
+    def _segment_group(
+        self, s: SourceState, reason: str, wall: float, mono: float, *, lead=(), close_old_at=None, batch=None
+    ) -> rec.CommitGroup:
+        """Cut the valid interval and start a new segment: [lead] + SEG_END + SEG_START + retained baseline
+        (+ the recovery batch and its results) + the first watermark, as one unit."""
+        states = list(lead)
+        if s.open_segment:
+            end = wall if close_old_at is None else close_old_at
+            states.append(self._state(s, "SEG_END", wall, mono, reason=reason, end_wall=end))
+        s.seg, s.open_segment = s.seg + 1, True
+        states.append(self._state(s, "SEG_START", wall, mono, conn_gen=s.conn_gen, reason=reason))
+        base_obs, base_results = self._baseline(s, wall, mono)
+        observations, results = [], []
+        if batch is not None:
+            if batch.items:
+                s.batch_seq += 1
+                observations, _ = self._ingest(s, batch)
+            results = self._recompute(s, batch, list(s.point_ids))  # validity returned: revisit dependents
+        mark = self._watermark_state(s, wall, mono)
+        s.watermark_wall, s.watermark_mono = (mark.detail["covered_wall"] if mark else 0.0), mono
+        if mark is not None:
+            states.append(mark)
+        return self._build(
+            rec.GROUP_RECOVERY,
+            s.id,
+            wall,
+            [*base_obs, *observations],
+            [*base_results, *results],
+            states,
+            self._buffered_faults(s),
+        )
+
+    def _buffered_faults(self, s: SourceState) -> list:
+        return []
 
     def _input(self, name: str) -> Input:
         if name in self.points:
@@ -189,9 +361,16 @@ class Owner:
 
     def tick(self, wall: float, mono: float):
         """Once per second from the monotonic schedule.  Communication is judged before anything else."""
+        delta = (wall - self.last_tick_wall) - (mono - self.last_tick_mono)
+        if abs(delta) > self.config.timing.clock_jump:  # exactly 2 s does not open a segment
+            self._clock_jump(wall, mono, delta)
         for s in self.sources.values():
             if s.enabled:  # a source switched off by configuration never accumulates a communication alarm
                 self._check_source(s, wall, mono)
+                if s.archive == "LOST":
+                    self._try_archive_recovery(s, wall, mono)
+        self._watermarks(wall, mono)
+        self.last_tick_wall, self.last_tick_mono = wall, mono
 
     def _check_source(self, s: SourceState, wall: float, mono: float):
         t = self.config.timing
@@ -307,6 +486,7 @@ class Owner:
             states.append(self._state(s, "SEG_END", wall, mono, reason="NEW_GENERATION"))
         s.conn_gen, s.seg, s.open_segment = gen, s.seg + 1, True
         s.state, s.last_tick, s.wait_mono, s.resync_reason = WAITING, None, mono, None
+        s.watermark_wall, s.watermark_mono = 0.0, None
         for pid in s.point_ids:
             self.points[pid] = PointState()
         for rule in self.topology.rules:
@@ -479,6 +659,12 @@ class Owner:
             if self.result_source[rule.id] != s.id or state.emitted is None:
                 continue
             last = state.emitted
+            # a derived value computed inside an archive gap has lost the inputs that justified it (§10.5)
+            incomplete = last.basis_incomplete or (
+                s.archive == "LOST"
+                and s.lost_from_batch_seq is not None
+                and last.batch_seq >= s.lost_from_batch_seq
+            )
             asserted = replace(
                 last,
                 id=rec.result_assertion_id(self.run_id, s.id, s.seg, rule.id),
@@ -486,6 +672,7 @@ class Owner:
                 origin=rec.ORIGIN_ASSERTION,
                 orig_id=last.id,
                 asserted_wall=wall,
+                basis_incomplete=incomplete,
             )
             state.emitted = asserted
             results.append(asserted)
@@ -496,25 +683,92 @@ class Owner:
 
         New segment + baseline of the retained cache + the recovery batch + updated derived results
         are ONE commit group and ONE publish group: the old cache is never certified as current alone.
+        If the archive was also lost meanwhile, the gap rides in the same unit.
         """
-        s.seg, s.open_segment, s.state = s.seg + 1, True, VALID
+        s.state = VALID
         self.health["recoveries"] += 1
-        states = [*states, self._state(s, "SEG_START", batch.wall, batch.mono, conn_gen=s.conn_gen, reason="RECOVERY")]
-        base_obs, base_results = self._baseline(s, batch.wall, batch.mono)
-        observations = []
-        if batch.items:
-            s.batch_seq += 1
-            observations, _ = self._ingest(s, batch)
-        results = self._recompute(s, batch, list(s.point_ids))  # validity returned: revisit every dependent
-        self._emit(
-            rec.GROUP_RECOVERY,
-            s,
-            batch.wall,
-            [*base_obs, *observations],
-            [*base_results, *results],
-            states,
-        )
+        lead = list(states)
+        lost = s.archive == "LOST"
+        if lost:
+            lead.append(self._gap_state(s, batch.wall, batch.mono))
+        group = self._segment_group(s, "RECOVERY", batch.wall, batch.mono, lead=lead, batch=batch)
+        self._publish(group)
+        if lost:
+            self._submit_recovery(s, group)
+        else:
+            self._submit(s, group)
         return True
+
+    # ------------------------------------------------------------- run lifecycle
+
+    def _run_group(self, wall: float, mono: float, kind: str, extra_states=(), **detail):
+        self.run_events += 1
+        record = rec.StateRecord(
+            rec.state_id(self.run_id, RUN_SOURCE, self.run_events), self.run_id, RUN_SOURCE, 0, kind, wall, mono, detail
+        )
+        group = self._build(rec.GROUP_STATE, RUN_SOURCE, wall, states=[record, *extra_states])
+        if self.commit(group) is False:  # run-level facts are tiny; the writer queue drains them first
+            self.health["run_group_rejected"] = self.health.get("run_group_rejected", 0) + 1
+        return group
+
+    def start(self, wall: float, mono: float):
+        """Register this run before any data: the process, its configuration and start time."""
+        self._run_group(wall, mono, "RUN_START", config_id=self.config.config_id, started_wall=self.started_wall)
+
+    def shutdown(self, wall: float, mono: float):
+        """Normal stop, called after everything accepted has been processed: close segments, end the run."""
+        if self.stopped:
+            return
+        self.stopped = True
+        for s in self.sources.values():
+            if s.open_segment:
+                s.open_segment = False
+                self._emit(
+                    rec.GROUP_STATE,
+                    s,
+                    wall,
+                    states=[self._state(s, "SEG_END", wall, mono, reason="SHUTDOWN", end_wall=wall)],
+                )
+        self._run_group(wall, mono, "RUN_END", reason="NORMAL", ended_wall=wall)
+
+    def _clock_jump(self, wall: float, mono: float, delta: float):
+        """Wall clock and monotonic clock disagree by more than 2 s: open a new segment per source (§11).
+
+        The monotonic clock keeps measuring durations; the wall label may repeat or run backwards, so order
+        within history is carried by (segment, batch) identity, never by wall time alone.
+        """
+        self.health["clock_jumps"] += 1
+        for s in self.sources.values():
+            if not s.enabled:
+                continue
+            marker = self._state(
+                s, "CLOCK_JUMP", wall, mono, delta=delta, wall_before=self.last_tick_wall, wall_after=wall
+            )
+            if s.open_segment and s.archive == "OK":
+                group = self._segment_group(
+                    s, "CLOCK_JUMP", wall, mono, lead=[marker], close_old_at=self.last_tick_wall
+                )
+                self._publish(group)
+                self._submit(s, group)
+            else:
+                self._emit(rec.GROUP_STATE, s, wall, states=[marker])
+
+    def _watermarks(self, wall: float, mono: float):
+        """Every 10 s per source: history is certain up to the last PROVEN communication (§5, §11)."""
+        interval = self.config.timing.watermark_interval
+        for s in self.sources.values():
+            if not s.enabled or s.archive != "OK":
+                continue
+            if s.watermark_mono is None:
+                s.watermark_mono = mono
+                continue
+            if mono - s.watermark_mono < interval:
+                continue
+            s.watermark_mono = mono
+            mark = self._watermark_state(s, wall, mono)
+            if mark is not None and mark.detail["covered_wall"] > s.watermark_wall:
+                s.watermark_wall = mark.detail["covered_wall"]
+                self._submit(s, self._build(rec.GROUP_WATERMARK, s.id, wall, states=[mark]))
 
     # --------------------------------------------------------------- derived
 
