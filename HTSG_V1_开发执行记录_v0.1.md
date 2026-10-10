@@ -173,6 +173,16 @@ F｜dev 分支工作区｜新增 `tests/test_capstone_f.py`；改 `htsg/owner.py
 3. **历史读取真实缺陷（已修）**：段的开头在一个库、结尾（无起点的占位行）在另一个库时，`read_store` 对每个库各自按窗口过滤，窗口落在段结束之后时占位行被滤掉，合并只看到另一库里仍"开着"的段，回放把已结束的段当成仍在保持。修法：`query` 在各库读完后让每个可读库补查它缺少的段行；`assemble` 丢弃合并后确认已在窗口前结束的段中早于窗口的保持值行；补查失败按该库不可读计入 `partial`。回归：`test_history_merge.py::test_a_segment_whose_end_sits_in_another_database_is_not_open_for_a_window_after_that_end`（修前失败）。窗口取宽（980–1080）时合并本来就对，所以 D34 的用例没发现。
 4. **预期写错（测试侧，两处）**：(a) t=129 的那一轮在同一秒、`tick` 之前到达，来源仍是 `LOST`，设计上丢失期间不入队，它只作为恢复单元的基线重申入史（`STATE_ASSERTION`），不是 `RECEIVED`；用例现断言它以重申形式存在。(b) "安静窗口"原取 1043±3，但 t=137 的 +10 秒使 wall 1037–1046 不属于任何段，该窗口本就应什么都不声称；现改取段内的 1033±2 验证保持值，另加空洞窗口断言"无段、不声称"。
 
+### D36 版本快照、组推送及心跳
+
+D36｜dev 分支工作区｜新增 `htsg/publisher.py`（`Publisher`、`encode_group`）、`tests/test_publisher.py`、`tests/client_model.py`（参考客户端，D38 的 JS 照它实现）；改 `htsg/owner.py`（新增 `channel_views`、`status`、`snapshot`；`_advance_faults` 对缓冲拒绝的确认发 `FAULT_REFUSED` 状态组）｜`pytest tests/test_publisher.py`｜10 通过 / 0 失败 / 0 跳过；全套 513 通过 / 0 失败 / 0 跳过（296.21 秒），`ruff check .` 通过｜**线上消息（实现取值）**：`snapshot`{run_id,pub_seq,channels,status,wall}；`groups`{first,last,groups[{seq,order,source,wall,channels,states,faults}],status,wall}；`heartbeat`{seq,status,wall}。组内不带原始 Observation/Result 记录（那是归档用的），带"通道视图"——该组改变了的通道的完整当前状态（值、质量、时间、来源有效性与原因、故障待确认/已确认/方向）。视图由 `Owner.channel_views()` 唯一定义，快照与增量共用，前端不必从生命周期记录里推断有效性。**100 ms**：从第一个等待的组到达起算，到点把等待的组整批按序发出，多组同消息、不删不合（用例：同一通道 480→481→482 三组，消息里三组的该通道值各为 480/481/482）。**快照**：`subscribe` 先把等待中的组发给已连接客户端，再取 `owner.snapshot()`，其 `pub_seq` 必须等于发布器收到的最后组号（否则报错），此后该客户端只收更高序号的组。**心跳**：自上次任何广播起满 1 秒无发送才发，不含通道和组，`seq` 为最近组号（客户端据此发现漏组）；空的 UA 保活批不产生组，所以静默订阅只有心跳。**性质测试**：34 步故事（Modbus 轮缺失/超时、UA 良好/Bad/极值、故障待确认→确认→复归、3 秒失效、同代次恢复、6 秒重建、新代次、归档拒绝与恢复、墙钟跳变、断连），每一步前加入一个新客户端（共 34 个），每步后断言"各组累计的视图 == owner 当前视图"（证明没有未发布的状态变化），结束时每个客户端的状态 == owner；并断言故事确实走到了 PENDING/CONFIRMED/NORMAL、POLL_MISSING/POLL_TIMEOUT、QUALITY、EXTREME、SOURCE_WAITING/EXPIRED/RESYNC（防空转）。变异试验：去掉 `subscribe` 的先刷新、或丢掉打包消息的中间组，各有 5 项用例变红（试验后已还原）｜见下
+
+**暴露的缺陷（已修）：** 缓冲满额后确认的故障只改了追踪器状态，不产生任何组，客户端永远不知道该通道已进入"已确认"（D44 要求此时显示归档不完整及计数）。现对被缓冲拒绝的确认发一个 `FAULT_REFUSED` 状态组（先例：`APP_LOSS`——损失一律成为存储状态；它也进归档，是状态行不是故障行，不冒充已找回的单条故障）。**实测：** 满量(417 路)一组 Modbus 轮的变化只带 24 个通道；发布器每组开销 0.23 ms；而 `Owner.accept` 处理一轮 Modbus 在满量配置下约 29 ms（不挂发布器也如此，非 D36 引入）——D46 的满量测量需覆盖，必要时优化。**D45 接线补充：** `Publisher(owner)`，`owner.publish = publisher.offer`，事件循环里常驻 `publisher.run()`。
+
+**同时修正上一次提交的笔误：** Capstone F 条目之后的 `## 2. 偏离、风险与未验收` 标题被我替换时误删，现已补回。
+
+## 2. 偏离、风险与未验收
+
 - 无偏离设计。方案"位置"列写的是改造旧文件；本次以新模块并存，D45 再删旧（见第 0 节）。
 - **实现取值（非设计明文，需用户知晓）：** ① `Timing.ua_silence_margin=0.5` 秒（终版要求"静默+裕量<有效期"但未给数）；② 从未有过有效值的派生量首次算出 NA 时不写记录；③ 水位只约束开放段最后一条记录的尾部；④ Modbus 每轮原始观测逐轮存储，派生结果仅变化时存；⑤ `config_id` 改为键排序规范化哈希。
 - **已知但未修、未用例验证（按代码推断）：** `lost_seg` 只修了"丢失开始时该段开着、恢复尝试被拒"这条路径。下列情形仍可能让缺口前落库的段 `end_wall` 为 NULL：① 丢失期间来源又 EXPIRED/RESYNC（`SEG_END` 因 LOST 未入队，恢复单元看到 `open_segment=False` 不再补）；② 引发丢失的正是含 `SEG_START` 的组被拒（新段从未落库，旧段的结束也在被拒的同组里）；③ `RECOVERING→LOST` 后恢复单元又被策略拒绝（`lost_seg` 已被改记成恢复单元的新段）。这几种情形下回放仍受缺口行与水位约束，但段本身显示为开着；要修需在丢失期间把"已落库段的收尾事实"记下来、恢复时补发，D45 接线前后择机做。
@@ -181,7 +191,7 @@ F｜dev 分支工作区｜新增 `tests/test_capstone_f.py`；改 `htsg/owner.py
 
 ## 3. 交接（新会话从这里开始）
 
-**完成：** D01–D35（模块 A–E 全部，Capstone A–E，模块 F 全部：D32–D35 与 Capstone F）。Capstone F 提交时全套 **503 通过 / 0 失败 / 0 跳过，284.33 秒**，ruff 与 `git diff --check` 通过（Capstone F 暴露并修复了 owner 与历史读取各一处缺陷，见上）。**未做：** 模块 G（D36–D44、Capstone G）、模块 H（D45–D48、H0、最终 Capstone）。下一步是 D36（见方案模块 G）。**接手前注意：** 第 2 节"已知但未修"一条（丢失期间已落库段可能不被收尾）与 D45 接线相关；`ruff format --check` 在旧文件上本就不通过，项目只要求 `ruff check` 与 `git diff --check`。
+**完成：** D01–D36（模块 A–F 全部，Capstone A–F，模块 G 的 D36）。D36 提交时全套 **513 通过 / 0 失败 / 0 跳过，296.21 秒**，`ruff check .` 通过。**未做：** 模块 G 的 D37–D44 与 Capstone G、模块 H（D45–D48、H0、最终 Capstone）。下一步是 D37（慢客户端丢失即断开）。**接手前注意：** 第 2 节"已知但未修"一条（丢失期间已落库段可能不被收尾）与 D45 接线相关；`ruff format --check` 在旧文件上本就不通过，项目只要求 `ruff check` 与 `git diff --check`。
 
 **进入新会话的第一步：**
 ```powershell
@@ -195,6 +205,6 @@ git log --oneline -8; git status --short
 
 **D45 接线清单（Runtime 现仍是旧帧链路）：** `router.initialize(run_id)`+`bind_run` → `owner.start` → 每个启用源建 `ModbusAcquirer`/`UaAcquirer`，`hub=Ingress`，`owner.on_rebuild=uaa.request_rebuild`（多源需分派）→ `CommitQueue(on_committed=owner.committed, on_refused=owner.refused, is_void=owner.is_void)`，`owner.commit=queue.offer` → 事件循环里每秒 `owner.tick(time.time(), time.monotonic())`，`ingress.drain()` 由唤醒驱动 → 停止顺序：停采集、排空 ingress、`owner.shutdown`、`queue.stop`。要删的旧模块：`engine.py`、`runtime.py` 旧部分、`calculation.py`、`faults.py`、`adapters.py`（`decode_registers` 先搬进 `modbus.py`）、`storage.py`、`schema.sql`、`capture.py`；旧测试按第 1 节 D01 映射处理；`config.py` 中 `profiles/stale_after/max_age/derivative/aggregation/Source.timeout` 等旧字段随之删除。
 
-**模块 G 备忘：** `Owner` 还没有 `snapshot()`（需要含当前各通道值与有效性、来源状态、`pub_seq`、故障当前态、`fault_status()`）；`PublishGroup` 已是"完整发布组"，100 ms 打包、慢客户端丢增量即断开、重连先快照在 D36–D37 做。前端 `htsg/static/app.js` 仍是旧页（209 行），浏览器验证脚本在 `scripts/validate_*.py`，须用真实浏览器交互。
+**模块 G 备忘：** D36 已有 `Owner.snapshot()/channel_views()/status()` 与 `publisher.py`（见 D36 条目：消息格式、`tests/client_model.py` 是前端必须照做的校验与应用规则——整条先校验再整组应用，校验不过则断开重连取快照）；慢客户端丢增量即断开、5 秒发送超时在 D37 做。前端 `htsg/static/app.js` 仍是旧页（209 行），浏览器验证脚本在 `scripts/validate_*.py`，须用真实浏览器交互。
 
 **工具坑：** Bash 工具里超过约 8–10 KB 的 heredoc 会被截断（报 `unexpected EOF`）——大补丁用 Write 写到 scratchpad 再 `python` 执行；`Edit` 前必须先 `Read`；工具保持文件 CRLF。pytest 输出在连接失败时会带凭据。

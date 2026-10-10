@@ -857,13 +857,19 @@ class Owner:
 
     def _advance_faults(self, wall: float, mono: float):
         confirmed: dict[str, list[rec.FaultRecord]] = {}
+        refused: dict[str, list[str]] = {}
         for pid, direction in self.tracker.advance(mono):
             source_id = self.point_source.get(pid) or self.result_source[pid]
             record = self._fault_record(pid, direction, self.sources[source_id], wall, mono)
             if record is not None:
                 confirmed.setdefault(source_id, []).append(record)
-        for source_id, faults in confirmed.items():
-            self._emit(rec.GROUP_FAULT, self.sources[source_id], wall, faults=faults)
+            else:  # the channel IS confirmed: clients must hear it even though no record could be kept
+                refused.setdefault(source_id, []).append(pid)
+        for source_id in dict.fromkeys((*confirmed, *refused)):
+            s, states = self.sources[source_id], []
+            if source_id in refused:
+                states.append(self._state(s, "FAULT_REFUSED", wall, mono, points=refused[source_id]))
+            self._emit(rec.GROUP_FAULT, s, wall, states=states, faults=confirmed.get(source_id, ()))
 
     def _fault_record(self, pid: str, direction: str, s: SourceState, wall: float, mono: float):
         if pid in self.points:
@@ -917,6 +923,83 @@ class Owner:
             "archive_incomplete": bool(self.fault_loss) or self.fault_rejected_total > 0,
             "loss": {k: {**v, "points": sorted(v["points"])} for k, v in self.fault_loss.items()},
             "durability": "IN_MEMORY_UNTIL_COMMITTED; lost if the process exits",
+        }
+
+    # ------------------------------------------------------------ realtime view
+
+    def channel_views(self) -> dict[str, dict]:
+        """How every channel stands now, as a client must show it.
+
+        The snapshot and the per-group changes both come from this one definition, so a client that applies
+        groups on top of a snapshot cannot drift from the owner.  Validity is decided here, never guessed by
+        the client from lifecycle records.
+        """
+        views = {}
+        for pid, ps in self.points.items():
+            source, obs = self.sources[self.point_source[pid]], ps.obs
+            usable = source.state == VALID
+            valid = bool(usable and ps.good)
+            views[pid] = {
+                "kind": "input",
+                "value": obs.value if obs else None,
+                "quality": obs.quality if obs else None,
+                "status_code": obs.status_code if obs else None,
+                "time": obs.received_wall if obs else None,  # the observation time, also for a restatement
+                "origin": obs.origin if obs else None,
+                "asserted_wall": obs.asserted_wall if obs else None,
+                "extreme": bool(obs and obs.extreme),
+                "valid": valid,
+                "reason": None if valid else ps.reason if usable else "SOURCE_" + source.state,
+                **self._fault_view(pid),
+            }
+        for pid, state in self.results.items():
+            out, last = state.current, state.emitted
+            known = out is not None
+            views[pid] = {
+                "kind": "derived",
+                "value": out.value if known else None,
+                "status": out.status if known else rec.RESULT_NA,
+                "reason": out.reason if known else "UNKNOWN",
+                "extreme": bool(known and out.extreme),
+                "estimate": out.estimate if known else None,
+                "time": last.at_wall if last else None,  # the batch of the last CHANGE; equal results are not re-sent
+                "valid": bool(known and out.status == rec.RESULT_OK and not out.extreme),
+                **self._fault_view(pid),
+            }
+        return views
+
+    def _fault_view(self, pid: str) -> dict:
+        if pid not in self.rules:
+            return {}
+        st = self.tracker.state[pid]
+        return {"fault": self.tracker.status(pid), "fault_direction": st.confirmed or st.pending}
+
+    def status(self) -> dict:
+        """Health that is not a sample: per-source state and what the current page must say about fault records."""
+        return {
+            "sources": {
+                s.id: {
+                    "kind": s.kind,
+                    "enabled": s.enabled,
+                    "state": s.state,
+                    "conn_gen": s.conn_gen,
+                    "seg": s.seg,
+                    "alarm": s.alarm,
+                    "archive": s.archive,
+                    "last_comm_wall": s.last_comm_wall,
+                }
+                for s in self.sources.values()
+            },
+            "faults": self.fault_status(),
+        }
+
+    def snapshot(self) -> dict:
+        """The whole realtime state at the version `pub_seq`; groups with a higher number continue from it."""
+        return {
+            "run_id": self.run_id,
+            "pub_seq": self.pub_seq,
+            "channels": self.channel_views(),
+            "status": self.status(),
         }
 
     # --------------------------------------------------------------- derived
