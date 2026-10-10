@@ -69,6 +69,18 @@ A｜同上｜`tests/test_capstone_a.py`｜`pytest tests/test_capstone_a.py`＋�
 
 D07｜同上｜`htsg/timing.py`、`tests/test_tick_numbers.py`｜`pytest tests/test_tick_numbers.py tests/test_frequency.py`｜13 通过（含旧 frequency 4 项）｜跳两拍后编号 2→5；无突发补发；调度只读单调钟｜无
 
+### D08–D11 批次接纳、有效性、批末算子、change 基线
+
+D08–D11｜dev 分支 `d40d8dd`｜新增 `htsg/owner.py`、`htsg/derive.py`、`htsg/ingress.py`、`tests/owner_support.py`、`tests/test_owner_batches.py`｜`pytest tests/test_owner_batches.py`｜23 通过 / 0 失败 / 0 跳过｜见用例：跨整秒不拆组、旧代次不覆盖、同时间按批内序号、入口满按序上报丢失；Bad/Uncertain 载荷与完整状态码保留、无值不补零、等于极值边界不触发（800.0/-50.0）、严格越界才触发；手算 118 με 与 57.375 MPa；缺输入不借上一轮；峰值取有符号最大且要求全部有效；所有者模块经 AST 检查无 asyncio/psycopg/time 导入、无 await；失败/跳拍/重连/丢失轮后首轮只建基线｜"静止点不按末次变化过期"依赖 tick（D17），在那里补验
+
+实现取值（非设计明文，已在代码注释/此处标明）：
+- 从未产生过有效值的派生量，首次计算为 NA 时**不写记录**（"未知保持未知"）；有值之后变 NA 才写。依据：终版 §5 "没有水位时只保留实存点"、§4 "缺失测点继续未知"。若验收希望记录首次 NA 的原因，需改此策略。
+- Modbus 每轮的原始观测逐轮存储（change 的"连续两轮"依据需要），派生结果仅在值/状态/原因变化时存储。
+
+### Capstone B 无帧计算闭环
+
+B｜`d40d8dd`｜`tests/test_capstone_b.py`｜`pytest tests/test_capstone_b.py`｜3 通过 / 0 失败 / 0 跳过｜208 路输入（200 路 UA 单批初值突发）+209 路派生；跨整秒、两批相隔 5 ms、质量单独变化后恢复、合法过零、超时轮与跳拍轮；每个批次后用独立 oracle（仅依据所有者自己的原始观测重算）逐项核对；输出类型无 `window_start/window_end/stale_after`，把全部点 `stale_after` 改成 0.001 结果不变｜不评价真实协议与落库
+
 ## 2. 偏离、风险与未验收
 
 - 无偏离设计。方案"位置"列写的是改造旧文件；本次以新模块并存，D45 再删旧（见第 0 节）。
@@ -76,4 +88,4 @@ D07｜同上｜`htsg/timing.py`、`tests/test_tick_numbers.py`｜`pytest tests/t
 
 ## 3. 下一步
 
-D08（`owner.py` 接纳完整批次）→ D09 → D10（`derive.py` 已就绪）→ D11 → Capstone B。
+模块 C：D12（Modbus 连续寄存器读取计划）→ D13 → D14（应用管理 UA 客户端）→ D15 → D16 → D17 → D18 → Capstone C。
