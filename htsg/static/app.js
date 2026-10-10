@@ -1,5 +1,6 @@
 "use strict";
 import {apply, newLive, Rejected} from "/static/stream.js";
+import {buildCsv, channelRows, ENDS, gapMark, ORIGINS, reasonText, rowState} from "/static/replay.js";
 
 const $ = id => document.getElementById(id);
 const esc = value => String(value ?? "—").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
@@ -21,14 +22,6 @@ function notice(message) {
   $("notice").textContent = message;
   $("notice").hidden = !message;
 }
-const REASONS = {
-  SOURCE_WAITING: "等待首次数据", SOURCE_EXPIRED: "数据已失效", SOURCE_RESYNC: "重新同步中",
-  QUALITY: "质量不良", EXTREME: "超出物理极值", NO_VALUE: "无数值", UNKNOWN: "尚无数据",
-  POLL_MISSING: "本轮未应答", POLL_TIMEOUT: "本轮超时", POLL_EXCEPTION: "本轮协议异常", POLL_CONNECTION: "本轮连接失败",
-  SOURCE_INVALID: "来源数据无效", INPUT_UNAVAILABLE: "输入不可用", BASELINE_ONLY: "等待连续两轮",
-  NOT_A_PLANNED_ROUND: "非计划轮次", EXTREME_INPUT: "输入超出物理极值", NONFINITE: "结果非有限数",
-};
-const reasonText = code => REASONS[code] || code || "无效";
 const badge = (text, kind = "") => `<span class="badge ${kind}">${esc(text)}</span>`;
 function table(head, rows) {
   const body = rows.length ? rows.map(row => `<tr>${row.map(x => `<td>${x}</td>`).join("")}</tr>`).join("")
@@ -257,7 +250,7 @@ async function runReplay() {
   view.controller?.abort();
   const controller = view.controller = new AbortController();
   const epoch = ++view.epoch;
-  const request = {center: replay.center, seconds: replay.seconds, points: [...replay.points], chart: replay.chart};
+  const request = {center: replay.center, seconds: replay.seconds, points: [...replay.points], chart: replay.chart, fault: replay.fault};
   Object.assign(view, {loading: true, error: "", result: null});
   drawReplay();
   try {
@@ -272,10 +265,6 @@ async function runReplay() {
   }
 }
 
-const ORIGINS = {RECEIVED: "实收", STATE_ASSERTION: "状态重申"};
-const ENDS = {NEXT_CHANGE: "至下一次变化", WATERMARK: "至已确认水位", SEGMENT_END: "至有效段结束", GAP: "至归档缺口起点"};
-const channelRows = channel => channel.segments.flatMap(s => s.rows.map(row => ({...row, run: s.run_id, seg: s.seg})));
-const rowState = row => row.kind === "raw" ? `${row.quality}${row.status_code ? ` 0x${(row.status_code >>> 0).toString(16).toUpperCase()}` : ""}${row.extreme ? " 极值" : ""}` : `${row.status}${row.reason ? ` · ${reasonText(row.reason)}` : ""}${row.extreme ? " 极值" : ""}`;
 const lastOf = rows => rows.length ? rows[rows.length - 1] : null;
 
 function startBasis(rows, result, unit) {
@@ -307,19 +296,33 @@ function drawReplay() {
   box.innerHTML = `<p id="replay-meta">查询时刻 ${stamp(result.query_time)} · 窗口 ${stamp(result.start)} → ${stamp(result.end)}（中心 ${stamp(result.center)}，${fmt(result.seconds, 0)} 秒）· ${coverage}</p>
     ${notes.map(n => `<div class="note" role="alert">${n}</div>`).join("")}
     <div id="replay-summary">${table(["通道", "单位", "窗口起点依据", "窗口内记录", "窗口内最后一条", "状态"], summary)}</div>
-    <div class="controls"><label>图表与记录通道<select id="replay-focus">${request.points.map(id => option(id, id === focus)).join("")}</select></label></div>
+    <div class="controls"><label>图表与记录通道<select id="replay-focus">${request.points.map(id => option(id, id === focus)).join("")}</select></label><button id="replay-export">导出 CSV</button></div>
     <canvas id="replay-chart" class="chart" aria-label="回溯图表"></canvas>
     <p class="chart-caption">阶梯线表示该值在生效期间一直有效；虚线起点为窗口起点的保持值（保留原观测时间）；红色表示无效或极值；阴影为归档缺口，竖虚线为有效段起点。不插值、不补点。</p>
-    <div id="replay-records" class="scroll">${recordsTable(rows)}</div>`;
+    <div id="replay-records" class="scroll">${recordsTable(rows, focusData, result)}</div>`;
   $("replay-focus").onchange = event => { replay.chart = event.target.value; runReplay(); };
+  $("replay-export").onclick = exportCsv;
   plotReplay($("replay-chart"), focusData, result);
 }
 
-function recordsTable(rows) {
-  const head = ["生效时间", "原观测时间", "批内序号", "值", "质量 / 状态", "来源", "种类", "有效段", "说明"];
+function recordsTable(rows, channel, result) {
+  const head = ["生效时间", "原观测时间", "批内序号", "值", "质量 / 状态", "来源", "种类", "有效段", "说明", "缺口标记"];
   if (!rows.length) return table(head, []);
   return `<div class="table-wide"><table><thead><tr>${head.map(h => `<th>${h}</th>`).join("")}</tr></thead><tbody>${rows.map(r =>
-    `<tr class="${r.valid ? "" : "bad"} ${r.held ? "held" : ""}"><td>${stampMs(r.time)}</td><td>${stampMs(r.observed_at)}</td><td>${r.batch_seq}${r.item_seq != null ? `·${r.item_seq}` : ""}</td><td>${r.valid ? fmt(r.value) : "—"}</td><td>${esc(rowState(r))}</td><td>${ORIGINS[r.origin] || esc(r.origin)}</td><td>${r.kind === "raw" ? "原始" : "派生"}</td><td>${esc(r.run)}/${r.seg}</td><td>${r.held ? "窗口起点的保持值；" : ""}${r.until == null ? "其后未知" : `${ENDS[r.ended_by] || ""} ${stamp(r.until)}`}</td></tr>`).join("")}</tbody></table></div>`;
+    `<tr class="${r.valid ? "" : "bad"} ${r.held ? "held" : ""}"><td>${stampMs(r.time)}</td><td>${stampMs(r.observed_at)}</td><td>${r.batch_seq}${r.item_seq != null ? `·${r.item_seq}` : ""}</td><td>${r.valid ? fmt(r.value) : "—"}</td><td>${esc(rowState(r))}</td><td>${ORIGINS[r.origin] || esc(r.origin)}</td><td>${r.kind === "raw" ? "原始" : "派生"}</td><td>${esc(r.run)}/${r.seg}</td><td>${r.held ? "窗口起点的保持值；" : ""}${r.until == null ? "其后未知" : `${ENDS[r.ended_by] || ""} ${stamp(r.until)}`}</td><td>${gapMark(r, channel, result)}</td></tr>`).join("")}</tbody></table></div>`;
+}
+
+// The file is made from the result on screen - no new query - and carries the byte-order mark spreadsheets need.
+function exportCsv() {
+  if (!view.result) return;
+  const {result, request} = view, focus = request.chart;
+  const text = buildCsv({result, request, fault: request.fault, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, label, unit: id => definition(id).unit || ""});
+  const url = URL.createObjectURL(new Blob(["\ufeff", text], {type: "text/csv;charset=utf-8"}));
+  const link = Object.assign(document.createElement("a"), {href: url, download: `htsg-replay-${focus}-${Math.round(result.center)}.csv`});
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
 function plotReplay(canvas, channel, result) {
