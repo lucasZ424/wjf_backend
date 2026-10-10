@@ -1,4 +1,4 @@
-"""Single-owner state engine (终版 §5-§8, §10).
+"""Single-owner state engine (终版 §5-§8, §10, §11).
 
 Everything here is synchronous: no await, no database access, no clock reads.  Callers pass the
 wall (UTC, labels only) and monotonic (durations) time of every event, so the engine is driven
@@ -9,7 +9,7 @@ ordered CommitGroups (durable), `publish` receives PublishGroups (realtime).
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from uuid import uuid4
 
 from . import records as rec
@@ -18,6 +18,10 @@ from .derive import Input, Outcome, Topology, evaluate, unavailable
 from .extremes import is_extreme
 
 # Source data states.  Only VALID sources contribute usable values.
+#   WAITING  new connection / subscription generation, nothing received yet
+#   VALID    data usable
+#   EXPIRED  OPC UA quiet for the data validity (3 s): data unusable, same generation may recover
+#   RESYNC   definite loss or long silence: a new generation must be built (C1), no Republish
 WAITING, VALID, EXPIRED, RESYNC = "WAITING", "VALID", "EXPIRED", "RESYNC"
 
 
@@ -41,6 +45,14 @@ class SourceState:
     state: str = WAITING
     open_segment: bool = False
     last_tick: int | None = None  # last Modbus planned tick that produced an outcome
+    # communication evidence (§11): the alarm baseline and the per-subscription wait baseline are separate
+    enabled_mono: float = 0.0
+    last_comm_wall: float | None = None
+    last_comm_mono: float | None = None
+    wait_mono: float | None = None
+    alarm: bool = False
+    last_outcome: str | None = None
+    resync_reason: str | None = None
 
 
 @dataclass(slots=True)
@@ -70,13 +82,18 @@ class Owner:
         self.config = config
         self.run_id = run_id or uuid4().hex
         self.commit, self.publish = commit or _sink_none, publish or _sink_none
+        self.on_rebuild = None  # called (source_id, reason) when a new generation must be built
         self.started_wall, self.started_mono = wall, mono
         self.topology = Topology(config)
         self.defs = {p.id: p for p in config.points}
         self.point_source = {p.id: p.source for p in config.points}
         self.sources = {
             s.id: SourceState(
-                s.id, s.kind, s.enabled, tuple(p.id for p in config.points if p.source == s.id)
+                s.id,
+                s.kind,
+                s.enabled,
+                tuple(p.id for p in config.points if p.source == s.id),
+                enabled_mono=mono,
             )
             for s in config.sources
         }
@@ -96,6 +113,9 @@ class Owner:
             "rejected_items": 0,
             "app_loss": 0,
             "dropped_while_resync": 0,
+            "resyncs": 0,
+            "expiries": 0,
+            "recoveries": 0,
         }
 
     # ------------------------------------------------------------------ plumbing
@@ -153,6 +173,107 @@ class Owner:
             return Input(None, False)
         return Input(out.value, out.status == rec.RESULT_OK, out.extreme)
 
+    # ------------------------------------------------------------ communication
+
+    def _comm(self, s: SourceState, wall: float, mono: float) -> list[rec.StateRecord]:
+        """A valid response arrived: only this advances the communication time (never a reconnect attempt)."""
+        s.last_comm_wall, s.last_comm_mono = wall, mono
+        if s.alarm:
+            s.alarm = False
+            return [self._state(s, "COMM_RESTORED", wall, mono)]
+        return []
+
+    def _alarm_limit(self, s: SourceState) -> float:
+        t = self.config.timing
+        return t.modbus_alarm_seconds if s.kind == "modbus" else t.ua_alarm_seconds
+
+    def tick(self, wall: float, mono: float):
+        """Once per second from the monotonic schedule.  Communication is judged before anything else."""
+        for s in self.sources.values():
+            if s.enabled:  # a source switched off by configuration never accumulates a communication alarm
+                self._check_source(s, wall, mono)
+
+    def _check_source(self, s: SourceState, wall: float, mono: float):
+        t = self.config.timing
+        baseline = s.last_comm_mono if s.last_comm_mono is not None else s.enabled_mono
+        if not s.alarm and mono - baseline >= self._alarm_limit(s):
+            s.alarm = True
+            self._emit(
+                rec.GROUP_STATE,
+                s,
+                wall,
+                states=[
+                    self._state(
+                        s,
+                        "COMM_ALARM",
+                        wall,
+                        mono,
+                        silent_seconds=mono - baseline,
+                        never_responded=s.last_comm_mono is None,
+                        last_outcome=s.last_outcome,
+                    )
+                ],
+            )
+        if s.kind == "modbus" or s.state == RESYNC:
+            return
+        # OPC UA: silence is measured from the later of the last response and this subscription's own start
+        latest = max(
+            s.last_comm_mono if s.last_comm_mono is not None else -math.inf,
+            s.wait_mono if s.wait_mono is not None else -math.inf,
+        )
+        quiet = mono - latest
+        if s.state == VALID and quiet >= t.ua_data_validity:
+            self._expire(s, wall, mono)
+        if quiet >= t.ua_alarm_seconds:
+            self._start_resync(s, "SILENCE", wall, mono)
+
+    def _invalidate(self, s: SourceState):
+        """Cached values stay but stop counting: change chains break and derived results are unavailable."""
+        for rule in self.topology.rules:
+            if self.result_source[rule.id] == s.id:
+                self.baselines.pop(rule.id, None)
+                self.results[rule.id].current = unavailable("SOURCE_INVALID")
+
+    def _expire(self, s: SourceState, wall: float, mono: float):
+        """3 s without a valid response: data unusable, segment cut, no rebuild (§11)."""
+        end = min(wall, (s.last_comm_wall or wall) + self.config.timing.ua_data_validity)
+        s.state = EXPIRED
+        self.health["expiries"] += 1
+        states = []
+        if s.open_segment:
+            s.open_segment = False
+            states.append(self._state(s, "SEG_END", wall, mono, reason="EXPIRED", end_wall=end))
+        self._invalidate(s)
+        self._emit(rec.GROUP_STATE, s, wall, states=states)
+
+    def _start_resync(self, s: SourceState, reason: str, wall: float, mono: float):
+        """C1: stop using the old state and ask for a new generation.  No Republish, no back-fill."""
+        if s.state == RESYNC:
+            return
+        states = []
+        if s.open_segment:
+            s.open_segment = False
+            states.append(self._state(s, "SEG_END", wall, mono, reason=reason, end_wall=wall))
+        s.state, s.resync_reason = RESYNC, reason
+        self.health["resyncs"] += 1
+        self._invalidate(s)
+        states.append(self._state(s, "RESYNC", wall, mono, reason=reason))
+        self._emit(rec.GROUP_STATE, s, wall, states=states)
+        if self.on_rebuild is not None:
+            self.on_rebuild(s.id, reason)
+
+    def source_down(self, source_id: str, conn_gen: int, reason: str, wall: float, mono: float):
+        """A definite disconnect: the data is invalid at once, without waiting for any timer."""
+        s = self.sources[source_id]
+        if conn_gen == s.conn_gen:
+            self._start_resync(s, "DOWN:" + reason, wall, mono)
+
+    def lost(self, source_id: str, conn_gen: int, reason: str, wall: float, mono: float):
+        """Definite evidence of lost notifications (gap, overflow, callback failure): start C1."""
+        s = self.sources[source_id]
+        if conn_gen == s.conn_gen:
+            self._start_resync(s, reason, wall, mono)
+
     # ----------------------------------------------------------------- loss
 
     def report_loss(
@@ -171,6 +292,8 @@ class Owner:
                 self.baselines.pop(rule.id, None)
         record = self._state(s, "APP_LOSS", wall, mono, reason=reason, tick=tick, count=count)
         self._emit(rec.GROUP_STATE, s, wall, states=[record])
+        if s.kind == "opcua":  # notifications went missing: the OPC UA state can no longer be trusted
+            self._start_resync(s, "APP_LOSS:" + reason, wall, mono)
 
     # ------------------------------------------------------------ generations
 
@@ -183,7 +306,7 @@ class Owner:
         if s.open_segment:
             states.append(self._state(s, "SEG_END", wall, mono, reason="NEW_GENERATION"))
         s.conn_gen, s.seg, s.open_segment = gen, s.seg + 1, True
-        s.state, s.last_tick = WAITING, None
+        s.state, s.last_tick, s.wait_mono, s.resync_reason = WAITING, None, mono, None
         for pid in s.point_ids:
             self.points[pid] = PointState()
         for rule in self.topology.rules:
@@ -206,10 +329,9 @@ class Owner:
         if s.state == RESYNC:
             self.health["dropped_while_resync"] += 1
             return False
-        s.batch_seq += 1
         if batch.kind == rec.KIND_MODBUS_POLL:
             return self._accept_poll(s, batch)
-        return self._accept_items(s, batch)
+        return self._accept_notification(s, batch)
 
     def _observe(self, s, batch, item: rec.Item, item_seq: int) -> rec.Observation | None:
         point = self.defs.get(item.point_id)
@@ -256,9 +378,7 @@ class Owner:
             else "NO_VALUE"
         )
 
-    def _accept_items(self, s: SourceState, batch) -> bool:
-        if s.state == WAITING:
-            s.state = VALID
+    def _ingest(self, s: SourceState, batch) -> tuple[list[rec.Observation], list[str]]:
         observations, touched = [], []
         for item in batch.items:
             obs = self._observe(s, batch, item, len(observations))
@@ -267,27 +387,39 @@ class Owner:
             self._apply(obs)
             observations.append(obs)
             touched.append(obs.point_id)
+        return observations, touched
+
+    def _accept_notification(self, s: SourceState, batch) -> bool:
+        states = self._comm(s, batch.wall, batch.mono)
+        if s.state == EXPIRED:
+            return self._recover(s, batch, states)
+        if s.state == WAITING:
+            s.state = VALID
+        if not batch.items:  # keep-alive: proves communication, is not an observation
+            self._emit(rec.GROUP_STATE, s, batch.wall, states=states)
+            return True
+        s.batch_seq += 1
+        observations, touched = self._ingest(s, batch)
         results = self._recompute(s, batch, touched)
-        self._emit(rec.GROUP_BATCH, s, batch.wall, observations, results)
+        self._emit(rec.GROUP_BATCH, s, batch.wall, observations, results, states)
         return True
 
     def _accept_poll(self, s: SourceState, batch) -> bool:
+        s.last_outcome = batch.outcome
+        states = self._comm(s, batch.wall, batch.mono) if batch.outcome in ("OK", "EXCEPTION") else []
+        s.batch_seq += 1
+        if s.state == WAITING:
+            s.state = VALID
         if batch.outcome != "OK":
-            return self._poll_failed(s, batch)
+            return self._poll_failed(s, batch, states)
         for pid in s.point_ids:  # only this round's responses count; nothing is borrowed
             ps = self.points[pid]
             ps.good, ps.reason = False, "POLL_MISSING"
-        s.state, s.last_tick = VALID, batch.tick
-        observations, touched = [], list(s.point_ids)
-        for item in batch.items:
-            obs = self._observe(s, batch, item, len(observations))
-            if obs is None:
-                continue
-            self._apply(obs)
-            observations.append(obs)
-        results = self._recompute(s, batch, touched)
+        s.last_tick = batch.tick
+        observations, _ = self._ingest(s, batch)
+        results = self._recompute(s, batch, list(s.point_ids))
         poll = self._state(s, "POLL", batch.wall, batch.mono, **self._poll_detail(s, batch, observations))
-        self._emit(rec.GROUP_BATCH, s, batch.wall, observations, results, [poll])
+        self._emit(rec.GROUP_BATCH, s, batch.wall, observations, results, [*states, poll])
         return True
 
     def _poll_detail(self, s, batch, observations):
@@ -306,14 +438,82 @@ class Owner:
             "responses": responses,
         }
 
-    def _poll_failed(self, s: SourceState, batch) -> bool:
+    def _poll_failed(self, s: SourceState, batch, states) -> bool:
         for pid in s.point_ids:
             ps = self.points[pid]
             ps.good, ps.reason = False, "POLL_" + batch.outcome
         s.last_tick = batch.tick
         results = self._recompute(s, batch, list(s.point_ids))
         poll = self._state(s, "POLL", batch.wall, batch.mono, **self._poll_detail(s, batch, ()))
-        self._emit(rec.GROUP_BATCH, s, batch.wall, (), results, [poll])
+        self._emit(rec.GROUP_BATCH, s, batch.wall, (), results, [*states, poll])
+        return True
+
+    # -------------------------------------------------------------- recovery
+
+    def _baseline(self, s: SourceState, wall: float, mono: float):
+        """Re-state the retained cache of one source in the CURRENT segment (§5 C2, §11).
+
+        Original observation identity, value and quality are kept; the assertion time is recorded
+        separately.  A re-statement is not a new sample and never starts a change or a fault timer.
+        """
+        observations, results = [], []
+        for pid in s.point_ids:
+            obs = self.points[pid].obs
+            if obs is None:
+                continue
+            observations.append(
+                replace(
+                    obs,
+                    id=rec.assertion_id(self.run_id, s.id, s.seg, pid),
+                    seg=s.seg,
+                    batch_seq=s.batch_seq,
+                    item_seq=-1,
+                    origin=rec.ORIGIN_ASSERTION,
+                    orig_id=obs.id,
+                    asserted_wall=wall,
+                    asserted_mono=mono,
+                )
+            )
+        for rule in self.topology.rules:
+            state = self.results[rule.id]
+            if self.result_source[rule.id] != s.id or state.emitted is None:
+                continue
+            last = state.emitted
+            asserted = replace(
+                last,
+                id=rec.result_assertion_id(self.run_id, s.id, s.seg, rule.id),
+                seg=s.seg,
+                origin=rec.ORIGIN_ASSERTION,
+                orig_id=last.id,
+                asserted_wall=wall,
+            )
+            state.emitted = asserted
+            results.append(asserted)
+        return observations, results
+
+    def _recover(self, s: SourceState, batch, states) -> bool:
+        """Same subscription publishes again inside the 3-6 s window: new segment, no rebuild (§11).
+
+        New segment + baseline of the retained cache + the recovery batch + updated derived results
+        are ONE commit group and ONE publish group: the old cache is never certified as current alone.
+        """
+        s.seg, s.open_segment, s.state = s.seg + 1, True, VALID
+        self.health["recoveries"] += 1
+        states = [*states, self._state(s, "SEG_START", batch.wall, batch.mono, conn_gen=s.conn_gen, reason="RECOVERY")]
+        base_obs, base_results = self._baseline(s, batch.wall, batch.mono)
+        observations = []
+        if batch.items:
+            s.batch_seq += 1
+            observations, _ = self._ingest(s, batch)
+        results = self._recompute(s, batch, list(s.point_ids))  # validity returned: revisit every dependent
+        self._emit(
+            rec.GROUP_RECOVERY,
+            s,
+            batch.wall,
+            [*base_obs, *observations],
+            [*base_results, *results],
+            states,
+        )
         return True
 
     # --------------------------------------------------------------- derived

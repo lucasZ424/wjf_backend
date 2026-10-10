@@ -81,6 +81,26 @@ D08–D11｜dev 分支 `d40d8dd`｜新增 `htsg/owner.py`、`htsg/derive.py`、`
 
 B｜`d40d8dd`｜`tests/test_capstone_b.py`｜`pytest tests/test_capstone_b.py`｜3 通过 / 0 失败 / 0 跳过｜208 路输入（200 路 UA 单批初值突发）+209 路派生；跨整秒、两批相隔 5 ms、质量单独变化后恢复、合法过零、超时轮与跳拍轮；每个批次后用独立 oracle（仅依据所有者自己的原始观测重算）逐项核对；输出类型无 `window_start/window_end/stale_after`，把全部点 `stale_after` 改成 0.001 结果不变｜不评价真实协议与落库
 
+### D12–D13 Modbus 读取计划、轮次与故障分类
+
+D12–D13｜dev 分支工作区（待提交，见下一条提交）｜新增 `htsg/modbus.py`、`htsg/recovery.py`、`tests/protocol_support.py`、`tests/test_modbus_acquisition.py`｜`pytest tests/test_modbus_acquisition.py`（连跑三次）｜11 通过 / 0 失败 / 0 跳过，各 3.5 秒｜真实 pymodbus 本地服务器：8 路 Bridge 合并为单次 `(0,16)` 读取；多请求同 `poll_id`、响应各有 `response_id` 与自己的收到时间；字节/字序解码；不跨设备/寄存器类型/空洞/125 上限；客户端 `timeout=0.8, retries=0, reconnect_delay=0`（库不自行重连）；慢设备一次超时约 0.8 秒且只发 1 个请求；单次超时保连接、连续 3 轮超时重连；设备异常与极值不当作断连；服务器断开→立即 RESYNC→恢复后换新代次；10 秒告警从最后一次响应算起，不被重连尝试清零｜无
+
+实测发现：pymodbus 3.15 超时抛 `ModbusIOException` 且连接保留；设备异常是 `ExceptionResponse(isError)`；服务端关闭后抛 `ConnectionException`；库默认会自动重连，必须传 `reconnect_delay=0`。
+
+### D14–D16 OPC UA 客户端、订阅协商、通知连续性
+
+D14–D16｜同上｜新增 `htsg/ua.py`、`tests/test_ua_client.py`（真实 asyncua 服务器）、`tests/test_ua_channel.py`（库边界注入）｜`pytest tests/test_ua_client.py tests/test_ua_channel.py`｜7 + 15 通过 / 0 失败 / 0 跳过｜`ManagedClient` 覆盖 `_connection_supervisor`/`_stale_watchdog_loop`：对照实验证明 stock 客户端 1 秒内探测 server_state ≥2 次，而受管客户端 0 次，Publish 与通道续期照常；暂停代理 2.5 秒库不 `recreate()`；服务器断开后应用经 `check_connection()` 发现，库不再回调 `connection_lost_callback`、不推 BadShutdown；订阅用显式参数（寿命 60、保活 2，不是库默认 10000），保存服务端返回的修订值，修订后重核约束；队列修订为 1 标"覆盖不可检测"但不拒绝；创建失败（节点不存在）后服务端订阅数为 0；空保活不消耗序号、重复去重、32 位回绕、缺号/Overflow/未知句柄/回调异常/订阅状态变化/入口满均触发 C1｜库内私有方法依赖：asyncua 2.0.1 已锁定于 pyproject
+
+### D17–D18 来源有效性、告警、重建与同代次恢复
+
+D17–D18｜同上｜`htsg/owner.py`（来源状态机 WAITING/VALID/EXPIRED/RESYNC，`tick()`、`source_down`、`lost`、`_recover`）、`htsg/ingress.py`（有序事件入口）、`tests/test_source_validity.py`｜`pytest tests/test_source_validity.py`｜17 通过 / 0 失败 / 0 跳过（假时钟，边界 2.9/3.0/5.9/6.0 秒逐点验证）｜3 秒只失效不重建；保活维持有效；明确断开立即失效；6 秒静默同时告警与重建；首次无响应以"启用时刻"为告警基准、数据保持未知；重建尝试不重置告警基准，只有有效响应才更新通信时间；显式禁用源不告警；退避 1,2,4,8,16,30,30、稳定 60 秒才复位、5 次后标记持续失步但仍每 30 秒自动恢复；3–6 秒恢复=新段+缓存重申+恢复批次+派生更新，**一个提交组、一个发布组**，不回填失效区间；旧代次迟到响应被丢弃；新订阅等待基准（3/6 秒）与源告警基准互不混淆｜无
+
+### Capstone C 协议到状态闭环
+
+C｜同上｜`tests/live_support.py`、`tests/test_capstone_c.py`｜`pytest tests/test_capstone_c.py`（连跑三次）+ 模块 C 全部用例｜4 通过 / 0 失败 / 0 跳过（约 33 秒）；模块 C 合计 54 通过（连跑两次各约 49 秒）｜真实 pymodbus + asyncua 同时运行，8 路 Bridge + 200 个 monitored item（**一个订阅**）；静止 4.5 秒内 OPC UA 观测数不增（不逐秒重报）；变化只产生 1 条观测；Modbus 慢响应→TIMEOUT→恢复且不换代次；暂停代理造成静默：3 秒失效、3–6 秒内恢复同代次（恢复组含 200 条重申）、6 秒以上触发 SILENCE 重建到第 2 代；服务器断开只触发 1 次重建（`resyncs==1`、历史 1 条）、服务端订阅数为 1（旧订阅未泄漏）、`auto_reconnect=False`｜**未覆盖**：真实 Acheron、真实 UA 网关；持久化为内存接收桩
+
+**重要发现（需现场核验）：** asyncua 2.0.1 测试服务器在"保活计数 > MaxKeepAliveCount"时才发保活，实际静默间隔比协商值多一个发布周期（请求保活 2、发布 1 秒时实测约 3–4 秒），恰好落在 3 秒有效期上，导致空闲时每隔数秒就产生一次 3–6 秒"失效—恢复"。这与终版第 11 节"保活静默加裕量须小于有效期"的约束一致：**协商值满足约束不等于网关实际满足**。测试中对该服务器使用保活计数 1（实际静默约 2 秒）。真实 UA 网关的保活节奏必须在联调时实测，列入 D48 的"需现场验证"清单。
+
 ## 2. 偏离、风险与未验收
 
 - 无偏离设计。方案"位置"列写的是改造旧文件；本次以新模块并存，D45 再删旧（见第 0 节）。
@@ -88,4 +108,4 @@ B｜`d40d8dd`｜`tests/test_capstone_b.py`｜`pytest tests/test_capstone_b.py`�
 
 ## 3. 下一步
 
-模块 C：D12（Modbus 连续寄存器读取计划）→ D13 → D14（应用管理 UA 客户端）→ D15 → D16 → D17 → D18 → Capstone C。
+模块 D：D19（Store 写完整提交组）→ D20 → D21 → D22 → D23 → D24 → D25 → D26 → Capstone D。

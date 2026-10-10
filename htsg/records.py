@@ -37,6 +37,10 @@ def result_id(run_id: str, source_id: str, batch_seq: int, point_id: str) -> str
     return f"{run_id}/{source_id}/b{batch_seq}/r/{point_id}"
 
 
+def result_assertion_id(run_id: str, source_id: str, seg: int, point_id: str) -> str:
+    return f"{run_id}/{source_id}/a{seg}/r/{point_id}"
+
+
 def state_id(run_id: str, source_id: str, event_no: int) -> str:
     return f"{run_id}/{source_id}/e{event_no}"
 

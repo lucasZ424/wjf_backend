@@ -1,4 +1,9 @@
-"""Bounded entry between protocol callbacks and the single owner (终版 §4: 入口丢失按失步处理)."""
+"""Bounded, ordered entry between protocol tasks and the single owner (终版 §4: 入口丢失按失步处理).
+
+Batches and lifecycle events (new generation, disconnect, definite loss) share one queue, so the owner
+sees them in the order they happened.  Only batches count against the capacity; lifecycle events are
+small, rare and must never be refused.
+"""
 
 from __future__ import annotations
 
@@ -8,45 +13,70 @@ from .owner import Owner
 from .records import InputBatch
 
 
-class _Loss:
-    """In-order marker: batches were refused here, after everything queued before it."""
+class _Event:
+    __slots__ = ("method", "args", "count")
 
-    __slots__ = ("source_id", "conn_gen", "wall", "mono", "tick", "count")
-
-    def __init__(self, batch: InputBatch):
-        self.source_id, self.conn_gen = batch.source_id, batch.conn_gen
-        self.wall, self.mono, self.tick, self.count = batch.wall, batch.mono, batch.tick, 1
+    def __init__(self, method: str, *args):
+        self.method, self.args, self.count = method, args, 1
 
 
 class Ingress:
     def __init__(self, owner: Owner, capacity: int):
         self.owner, self.capacity = owner, capacity
-        self.queue: deque[InputBatch | _Loss] = deque()
-        self.pending = 0  # batches only; loss markers do not count against the capacity
+        self.queue: deque[InputBatch | _Event] = deque()
+        self.pending = 0  # batches only
         self.dropped = 0
+        self.wakeup = None  # optional callable invoked after anything is queued (runtime sets it)
+
+    def _push(self, item):
+        self.queue.append(item)
+        if self.wakeup is not None:
+            self.wakeup()
+
+    # -- lifecycle events, in order with the batches -------------------------------------------------
+
+    def begin_generation(self, source_id, gen, wall, mono, reason="CONNECT"):
+        self._push(_Event("begin_generation", source_id, gen, wall, mono, reason))
+
+    def source_down(self, source_id, gen, reason, wall, mono):
+        self._push(_Event("source_down", source_id, gen, reason, wall, mono))
+
+    def lost(self, source_id, gen, reason, wall, mono):
+        self._push(_Event("lost", source_id, gen, reason, wall, mono))
+
+    # -- batches --------------------------------------------------------------------------------------
 
     def offer(self, batch: InputBatch) -> bool:
         """Never blocks.  A full queue becomes an ordered loss report to the owner, not a log line."""
         if self.pending >= self.capacity:
             self.dropped += 1
             last = self.queue[-1] if self.queue else None
-            if isinstance(last, _Loss) and (last.source_id, last.conn_gen) == (batch.source_id, batch.conn_gen):
-                last.count, last.tick = last.count + 1, batch.tick
+            if (
+                isinstance(last, _Event)
+                and last.method == "report_loss"
+                and last.args[:2] == (batch.source_id, batch.conn_gen)
+            ):
+                last.count += 1
+                last.args = (*last.args[:5], batch.tick)
             else:
-                self.queue.append(_Loss(batch))
+                self._push(
+                    _Event("report_loss", batch.source_id, batch.conn_gen, "INGRESS_FULL", batch.wall, batch.mono, batch.tick)
+                )
             return False
-        self.queue.append(batch)
         self.pending += 1
+        self._push(batch)
         return True
 
     def drain(self, limit: int | None = None) -> int:
         n = 0
         while self.queue and (limit is None or n < limit):
             item = self.queue.popleft()
-            if isinstance(item, _Loss):
-                self.owner.report_loss(
-                    item.source_id, item.conn_gen, "INGRESS_FULL", item.wall, item.mono, tick=item.tick, count=item.count
-                )
+            if isinstance(item, _Event):
+                if item.method == "report_loss":
+                    source_id, gen, reason, wall, mono, tick = item.args
+                    self.owner.report_loss(source_id, gen, reason, wall, mono, tick=tick, count=item.count)
+                else:
+                    getattr(self.owner, item.method)(*item.args)
             else:
                 self.pending -= 1
                 self.owner.accept(item)
