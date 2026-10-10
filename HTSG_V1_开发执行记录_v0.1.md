@@ -181,6 +181,10 @@ D36｜dev 分支工作区｜新增 `htsg/publisher.py`（`Publisher`、`encode_g
 
 **同时修正上一次提交的笔误：** Capstone F 条目之后的 `## 2. 偏离、风险与未验收` 标题被我替换时误删，现已补回。
 
+### D37 慢客户端丢失即断开
+
+D37｜dev 分支工作区｜新增 `htsg/stream_api.py`（`serve`、`build_stream_router`）、`tests/test_stream.py`；改 `htsg/publisher.py`（`Client`、`Publisher.connect/disconnect`，`_send` 摘除掉队的客户端）｜`pytest tests/test_stream.py tests/test_publisher.py`｜20 通过 / 0 失败 / 0 跳过（D37 的 10 项约 1 秒）；`ruff check .` 通过；**全套未重跑**（只新增文件和发布器的新增类，未改既有行为；上次全套 513 通过，Capstone G 重跑）｜每个客户端一个有界发件箱（`limits.ws_queue`，默认 64，最小 2；快照占第一个位置）；放不下新消息即清空发件箱、标记丢失、发布器不再向它投递，`next()` 返回 None，端点以 1013 关闭——此前排队的消息不会在洞之后再发出；等待快照期间再次溢出同样断开（用例：连上后不读，两轮都被断开）；重连得到的是最新快照，其后的组无洞（参考客户端核对）。**5 秒发送超时**（`timing.client_send_timeout`）→ 1013；认证 5 秒（`AUTH_WAIT`）；凭据错/来源不符 → 1008（来源不符在 accept 之前）；账号停用：每条消息发送前询问 `account_ok`（由心跳触发），之后不再发送任何消息；`max_clients` 超限 → `RuntimeError("CLIENT_LIMIT")`。**其他客户端与归档**：6 条消息间一个客户端被断开，另一个客户端的状态 == owner，归档收到 1..order 的全部组且顺序不乱。**真实 WebSocket**（Starlette TestClient 的协议栈，事件循环线程里改 owner）：快照先到、组随后、重连得到更新的快照。变异试验：溢出时静默丢最新而不断开 → 4 项变红；去掉发送超时 → 1 项变红（均已还原）｜旧 `api.stream` 仍在；D45 挂 `build_stream_router(publisher, verify, account_ok, config)` 并删旧，`account_ok` 对应旧代码的 `accounts.uncertain or not users[...]["active"]`。**未测：** 16 个客户端同时 × 每秒 10 条消息的序列化开销（每个客户端各自 `send_json`），D46 覆盖；浏览器端真实慢连接由 Capstone G 验证
+
 ## 2. 偏离、风险与未验收
 
 - 无偏离设计。方案"位置"列写的是改造旧文件；本次以新模块并存，D45 再删旧（见第 0 节）。
@@ -191,7 +195,7 @@ D36｜dev 分支工作区｜新增 `htsg/publisher.py`（`Publisher`、`encode_g
 
 ## 3. 交接（新会话从这里开始）
 
-**完成：** D01–D36（模块 A–F 全部，Capstone A–F，模块 G 的 D36）。D36 提交时全套 **513 通过 / 0 失败 / 0 跳过，296.21 秒**，`ruff check .` 通过。**未做：** 模块 G 的 D37–D44 与 Capstone G、模块 H（D45–D48、H0、最终 Capstone）。下一步是 D37（慢客户端丢失即断开）。**接手前注意：** 第 2 节"已知但未修"一条（丢失期间已落库段可能不被收尾）与 D45 接线相关；`ruff format --check` 在旧文件上本就不通过，项目只要求 `ruff check` 与 `git diff --check`。
+**完成：** D01–D37（模块 A–F 全部，Capstone A–F，模块 G 的 D36–D37，即后端推送部分）。D36 提交时全套 **513 通过 / 0 失败 / 0 跳过，296.21 秒**；D37 另加 10 项（见上，全套未重跑），`ruff check .` 通过。**未做：** 模块 G 的 D38–D44（全是前端）与 Capstone G、模块 H（D45–D48、H0、最终 Capstone）。下一步是 D38（前端摆脱 frame、整组应用）。**接手前注意：** 第 2 节"已知但未修"一条（丢失期间已落库段可能不被收尾）与 D45 接线相关；`ruff format --check` 在旧文件上本就不通过，项目只要求 `ruff check` 与 `git diff --check`。
 
 **进入新会话的第一步：**
 ```powershell
@@ -205,6 +209,6 @@ git log --oneline -8; git status --short
 
 **D45 接线清单（Runtime 现仍是旧帧链路）：** `router.initialize(run_id)`+`bind_run` → `owner.start` → 每个启用源建 `ModbusAcquirer`/`UaAcquirer`，`hub=Ingress`，`owner.on_rebuild=uaa.request_rebuild`（多源需分派）→ `CommitQueue(on_committed=owner.committed, on_refused=owner.refused, is_void=owner.is_void)`，`owner.commit=queue.offer` → 事件循环里每秒 `owner.tick(time.time(), time.monotonic())`，`ingress.drain()` 由唤醒驱动 → 停止顺序：停采集、排空 ingress、`owner.shutdown`、`queue.stop`。要删的旧模块：`engine.py`、`runtime.py` 旧部分、`calculation.py`、`faults.py`、`adapters.py`（`decode_registers` 先搬进 `modbus.py`）、`storage.py`、`schema.sql`、`capture.py`；旧测试按第 1 节 D01 映射处理；`config.py` 中 `profiles/stale_after/max_age/derivative/aggregation/Source.timeout` 等旧字段随之删除。
 
-**模块 G 备忘：** D36 已有 `Owner.snapshot()/channel_views()/status()` 与 `publisher.py`（见 D36 条目：消息格式、`tests/client_model.py` 是前端必须照做的校验与应用规则——整条先校验再整组应用，校验不过则断开重连取快照）；慢客户端丢增量即断开、5 秒发送超时在 D37 做。前端 `htsg/static/app.js` 仍是旧页（209 行），浏览器验证脚本在 `scripts/validate_*.py`，须用真实浏览器交互。
+**模块 G 备忘：** D36 已有 `Owner.snapshot()/channel_views()/status()` 与 `publisher.py`（见 D36 条目：消息格式、`tests/client_model.py` 是前端必须照做的校验与应用规则——整条先校验再整组应用，校验不过则断开重连取快照）；慢客户端丢增量即断开、5 秒发送超时已在 D37 做（`stream_api.py`）。D38–D44 是前端，须用真实浏览器交互验证。前端 `htsg/static/app.js` 仍是旧页（209 行），浏览器验证脚本在 `scripts/validate_*.py`，须用真实浏览器交互。
 
 **工具坑：** Bash 工具里超过约 8–10 KB 的 heredoc 会被截断（报 `unexpected EOF`）——大补丁用 Write 写到 scratchpad 再 `python` 执行；`Edit` 前必须先 `Read`；工具保持文件 CRLF。pytest 输出在连接失败时会带凭据。

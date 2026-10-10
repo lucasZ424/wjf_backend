@@ -5,6 +5,7 @@ whole, into messages that leave at most `push_coalesce` (100 ms) after the first
 groups share a message but none is dropped or merged into a final state.  A client that joins gets the
 owner's whole state at version N first and every group after N next, so nothing is missed or applied twice.
 When nothing was sent for `push_heartbeat` (1 s) a heartbeat leaves; it carries no sample and no channel.
+Each connected client has its own bounded outbox (`Client`); one that falls behind is cut off, see there.
 
 Everything is synchronous except `run()`, which only decides WHEN `pump()` is called; the clocks are passed
 in, so tests drive time exactly.  A message is shared by all clients and must not be changed once sent.
@@ -14,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections import deque
 from dataclasses import asdict
 
 from . import records as rec
@@ -34,6 +36,33 @@ def encode_group(group: rec.PublishGroup, changed: dict) -> dict:
         ],
         "faults": [asdict(f) for f in group.faults],
     }
+
+
+class Client:
+    """One connected client's outbox.  It is bounded and any loss ends it: increments applied after a hole would
+    put wrong numbers on a screen that looks healthy, so the client must reconnect and take a new snapshot
+    (终版 §6).  Nothing queued before the hole is sent afterwards, and nobody else waits for this client."""
+
+    def __init__(self, limit: int):
+        self.limit, self.queue, self.lost, self.ready = limit, deque(), False, asyncio.Event()
+
+    def push(self, message: dict) -> bool:
+        """The publisher's `deliver`; False tells it to stop offering messages to this client."""
+        if not self.lost:
+            if len(self.queue) < self.limit:
+                self.queue.append(message)
+            else:
+                self.queue.clear()
+                self.lost = True
+        self.ready.set()
+        return not self.lost
+
+    async def next(self) -> dict | None:
+        """The next message in order; None once increments were lost."""
+        while not self.queue and not self.lost:
+            self.ready.clear()
+            await self.ready.wait()
+        return None if self.lost else self.queue.popleft()
 
 
 class Publisher:
@@ -78,6 +107,18 @@ class Publisher:
         if deliver in self.subscribers:
             self.subscribers.remove(deliver)
 
+    def connect(self) -> Client:
+        """A new client with its own bounded outbox; its first message is the snapshot."""
+        limits = self.owner.config.limits
+        if len(self.subscribers) >= limits.max_clients:
+            raise RuntimeError("CLIENT_LIMIT")
+        client = Client(limits.ws_queue)
+        self.subscribe(client.push)
+        return client
+
+    def disconnect(self, client: Client):
+        self.unsubscribe(client.push)
+
     def pump(self):
         """Send what is due: the packed groups once the oldest has waited the coalescing time, otherwise a
         heartbeat when nothing has left for a heartbeat interval."""
@@ -97,8 +138,7 @@ class Publisher:
     def _send(self, message: dict):
         message["wall"], message["status"] = self.wall(), self.owner.status()
         self.last_sent = self.mono()
-        for deliver in list(self.subscribers):
-            deliver(message)
+        self.subscribers = [deliver for deliver in self.subscribers if deliver(message) is not False]
 
     async def run(self):
         """Call `pump()` when the oldest pending group is due or the heartbeat is."""
