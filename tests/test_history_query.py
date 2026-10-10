@@ -1,0 +1,164 @@
+"""D32: history inside valid segments (终版 §5, §14).
+
+Why it matters: the replay page must say what was in effect, for how long, and when it is NOT known.
+A value must not be stretched across a gap, a disconnect or a segment boundary, nor invented between samples.
+"""
+
+import time
+
+from test_run_segments import CONFIG, WALL0, at, data, owner_and_groups, stored
+
+from htsg import history as h
+from htsg import records as r
+
+CHANNELS = {"ti": "ua"}
+
+
+def keepalives(owner, start, stop):
+    for second in range(start, stop):
+        wall, mono = at(float(second))
+        owner.accept(r.InputBatch("ua", 1, r.KIND_UA_NOTIFY, wall, mono))
+        owner.tick(wall, mono)
+
+
+def ask(store, start, end, channels=None, **kw):
+    return h.query([("primary", store)], channels or CHANNELS, at(start)[0], at(end)[0], **kw)
+
+
+def spans(result, pid="ti"):
+    return result["channels"][pid]["segments"]
+
+
+def test_a_window_without_any_change_still_reports_the_value_in_effect_with_its_original_time(archive_db_factory):
+    owner, rec = owner_and_groups()
+    data(owner, 101.0)
+    keepalives(owner, 102, 250)  # healthy and silent about values for 150 s
+    store = stored(archive_db_factory, rec)
+    result = ask(store, 200, 230)
+    (span,) = spans(result)
+    (row,) = [x for x in span["rows"] if x["kind"] == "raw"]
+    assert row["value"] == 500.0 and row["held"] is True
+    assert row["time"] == at(101.0)[0], "its own time, not the window start"
+    assert row["ended_by"] == "WATERMARK" and row["until"] >= at(230.0)[0] - 10, "valid up to the proven watermark"
+    assert span["covered_until"] is not None
+
+
+def test_the_value_ends_at_the_earliest_of_next_change_segment_end_gap_and_watermark(archive_db_factory):
+    owner, rec = owner_and_groups()
+    data(owner, 101.0)
+    keepalives(owner, 102, 120)
+    data(owner, 120.5, items=(("ti", 510.0),), seq=2)  # (a) next change
+    keepalives(owner, 121, 135)
+    owner.source_down("ua", 1, "CONNECTION", *at(135.5))  # (b) the segment ends
+    store = stored(archive_db_factory, rec)
+    rows = [x for x in spans(ask(store, 100, 140))[0]["rows"] if x["kind"] == "raw"]
+    first, second = rows
+    assert (first["ended_by"], first["until"]) == ("NEXT_CHANGE", second["time"])
+    assert second["ended_by"] == "SEGMENT_END" and second["until"] == at(135.5)[0]
+
+
+def test_an_open_segment_without_a_watermark_has_an_unknown_tail(archive_db_factory):
+    owner, rec = owner_and_groups()
+    data(owner, 101.0)
+    store = stored(archive_db_factory, rec)
+    (row,) = [x for x in spans(ask(store, 100, 110))[0]["rows"] if x["kind"] == "raw"]
+    assert row["until"] is None and row["ended_by"] is None, "no watermark: only the stored point is presented"
+
+
+def test_an_archive_gap_stops_the_hold_at_the_start_of_the_gap(archive_db_factory):
+    from test_archive_gap import Sink
+
+    sink = Sink()
+    owner, rec = owner_and_groups()
+    owner.commit = sink
+    data(owner, 101.0)
+    sink.accept = False
+    data(owner, 105.0, items=(("ti", 520.0),), seq=2)  # lost
+    sink.accept = True
+    owner.tick(*at(110.0))
+    data(owner, 111.0, items=(("ti", 530.0),), seq=3)
+    store = archive_db_factory()
+    store.initialize(CONFIG)
+    store.bind_run("run", CONFIG.config_id, WALL0)
+    for group in [rec.commits[0], *sink.groups]:
+        store.write_group(group)
+    result = ask(store, 100, 120)
+    flat = [(x["value"], x["origin"], x["until"], x["ended_by"]) for s in spans(result) for x in s["rows"] if x["kind"] == "raw"]
+    first = flat[0]
+    assert first[0] == 500.0 and first[2] == at(105.0)[0], "500 is not carried across the gap that began at 105"
+    assert first[3] in ("GAP", "SEGMENT_END")
+    assert result["gaps"] and result["gaps"][0]["start_wall"] == at(105.0)[0]
+    assert (520.0, r.ORIGIN_RECEIVED) not in [(v, o) for v, o, _, _ in flat], "the lost sample is not invented"
+
+
+def test_nothing_crosses_a_segment_and_a_window_in_a_gap_between_segments_shows_nothing(archive_db_factory):
+    owner, rec = owner_and_groups()
+    data(owner, 101.0)
+    keepalives(owner, 102, 106)
+    owner.source_down("ua", 1, "CONNECTION", *at(106.5))  # first segment ends at 106.5
+    owner.begin_generation("ua", 2, *at(120.0))  # second segment begins at 120
+    data(owner, 121.0, items=(("ti", 540.0), ("to", 450.0)), gen=2, seq=1)
+    store = stored(archive_db_factory, rec)
+    result = ask(store, 110, 118)  # entirely between the segments
+    assert all(not s["rows"] for s in spans(result)), "no value is stretched across the silence"
+    both = ask(store, 100, 130)
+    segs = spans(both)
+    assert len(segs) == 2 and segs[0]["seg"] == 1 and segs[1]["seg"] == 2
+    first_ids = {x["id"] for x in segs[0]["rows"]}
+    assert not first_ids & {x["id"] for x in segs[1]["rows"]}
+    assert segs[0]["rows"][-1]["until"] == at(106.5)[0]
+
+
+def test_a_restated_value_keeps_its_original_time_and_counts_from_the_restatement(archive_db_factory):
+    owner, rec = owner_and_groups()
+    data(owner, 101.0)
+    owner.tick(*at(104.0))  # expire (3 s)
+    wall, mono = at(104.5)
+    owner.accept(r.InputBatch("ua", 1, r.KIND_UA_NOTIFY, wall, mono))  # recovery inside the window
+    store = stored(archive_db_factory, rec)
+    rows = [x for s in spans(ask(store, 100, 110)) for x in s["rows"] if x["kind"] == "raw"]
+    original = next(x for x in rows if x["origin"] == r.ORIGIN_RECEIVED)
+    restated = next(x for x in rows if x["origin"] == r.ORIGIN_ASSERTION)
+    assert restated["orig_id"] == original["id"] and restated["observed_at"] == original["observed_at"]
+    assert restated["time"] == at(104.5)[0], "counts from the restatement; the gap 104.0-104.5 is not back-filled"
+
+
+def test_duplicate_times_inside_one_batch_all_stay(archive_db_factory):
+    owner, rec = owner_and_groups()
+    data(owner, 101.0, items=(("ti", 1.0), ("ti", 2.0), ("ti", 3.0), ("to", 4.0)))
+    store = stored(archive_db_factory, rec)
+    rows = [x for x in spans(ask(store, 100, 110))[0]["rows"] if x["kind"] == "raw"]
+    assert [(x["value"], x["item_seq"]) for x in rows] == [(1.0, 0), (2.0, 1), (3.0, 2)]
+    assert len({x["time"] for x in rows}) == 1, "one instant, three records, ordered by batch position"
+    assert [x["ended_by"] for x in rows[:2]] == ["NEXT_CHANGE", "NEXT_CHANGE"]
+
+
+def test_reaching_the_row_limit_is_reported(archive_db_factory):
+    owner, rec = owner_and_groups()
+    for n in range(12):
+        data(owner, 101.0 + n * 0.01, items=(("ti", 500.0 + n),), seq=n + 1)
+    store = stored(archive_db_factory, rec)
+    result = h.query([("primary", store)], CHANNELS, at(100)[0], at(110)[0], limit=5)
+    assert result["truncated"] and result["channels"]["ti"]["truncated"]
+    assert sum(1 for x in spans(result)[0]["rows"] if x["kind"] == "raw") == 5
+
+
+def test_a_long_series_is_answered_quickly_from_the_point_time_index(archive_db_factory):
+    store = archive_db_factory()
+    store.initialize(CONFIG)
+    with store.session() as conn:
+        conn.execute(
+            "INSERT INTO segment(run_id,source_id,seg,conn_gen,start_wall,start_reason) VALUES('run','ua',1,1,0,'CONNECT')"
+        )
+        conn.execute(
+            "INSERT INTO observation(id,group_id,run_id,source_id,conn_gen,seg,batch_seq,item_seq,point_id,value,quality,"
+            "status_code,received_wall,received_mono,origin) "
+            "SELECT 'o'||n,'g','run','ua',1,1,n,0,'ti',n::float8,'GOOD',0,n,n,'RECEIVED' FROM generate_series(1,60000) n"
+        )
+        conn.execute("ANALYZE observation")
+    started = time.perf_counter()
+    result = h.query([("primary", store)], CHANNELS, 30000.0, 30100.0)
+    elapsed = time.perf_counter() - started
+    rows = spans(result)[0]["rows"]
+    assert rows[0]["held"] and rows[0]["value"] == 29999.0 and len(rows) == 102
+    assert elapsed < 1.5, f"{elapsed:.2f}s for a 100 s window in a 60000-row series"

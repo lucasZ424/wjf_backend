@@ -145,11 +145,45 @@ D31｜同上｜`owner.py`（`fault_buffer`、`fault_loss`、`fault_status`、`co
 
 E｜同上｜`tests/test_capstone_e.py`｜`pytest tests/test_capstone_e.py`｜2 通过 / 0 失败 / 0 跳过｜满量配置（208/209）、确定性时间、真实有序写库线程（可阻塞）：恒定越限仅一个样本也在 5 秒确认；4 秒断连（3–6 秒窗口）后同代次恢复，原先 116.0 起算的计时被丢弃、到 127.0 才确认；批内两个版本使派生计时在该批重置；回差复归后向相反方向越限得到第二条记录（HIGH 后 LOW，各一条）；数据库阻塞 23 秒期间 7 路温度 + 7 路温差共 14 条故障确认——当前页状态为已确认，而历史列表（`fault_record` 表）只含真实已提交的；存储恢复后恢复单元携带缓冲中的故障，最终每条已确认的故障恰好落库一次，缓冲清空，缺口表有记录；1000 条故障 + 全源基线恢复单元在预算内｜无
 
+### D32 有效段内历史查询
+
+D32｜dev 分支工作区｜新增 `htsg/history.py`（`read_store`、`assemble`、`query`）、`tests/test_history_query.py`｜`pytest tests/test_history_query.py`｜9 通过｜窗口内无变化也返回窗口起点所在**同段**的依据值，保留其原时间（`held=true`），不改成窗口起点；终点取下一次变化/段结束/缺口起点/水位中最早者（四种逐一验证）；无水位的开放段尾部为未知（`until=null`）；缺口前的值不跨缺口延伸、丢失的样本不被虚构；两段之间的窗口什么也不显示、值不跨段；重申值的 `time` 为重申时刻、`observed_at` 为原观测时间、`orig_id` 指向原记录，失效区间不回填；同一批内同点同时间的多条全部保留并按批内序号排列；每通道行数上限可配置（默认 10000），达到上限在结果中标 `truncated`；6 万行单通道、窗口 100 秒的查询 <1.5 秒（用点+时间索引）｜无
+
+修复（实现中暴露）：水位早于某条记录时间时，保持值的终点曾被算成水位（早于起点）。现规定：水位只约束开放段的**最后一条**记录的尾部，且只有 `水位 ≥ 该记录时间` 才采用；后面还有同段记录时由下一条记录终止。回归用例在 D34 的跨库合并用例里。
+
+### D33 输入依据与重申查询
+
+D33｜同上｜`htsg/history.py`（`input_basis`）、`tests/test_input_basis.py`｜`pytest tests/test_input_basis.py`｜7 通过｜Modbus 只返回本轮响应，某输入本轮缺失时 `missing=[该点]`、`complete=false`，**不借上一轮**；`strain_change` 同时给出当前与前一计划轮次（批次号、节拍号连续）；OPC UA 按批末状态还原：同批内全部版本按批内序号返回，`batch_end` 指向最后一版，批外输入取同段内截至该批的最新状态；数值不变而质量 Good→Bad→Good 得到 3 条可区分的派生结果（OK/NOT_AVAILABLE/OK），各自指向不同的观测记录，Bad 区间不借前一条 Good；缺口内算出的重申结果标"依据不完整"（`INPUTS_LOST_IN_ARCHIVE_GAP`/`RESTATED_RESULT`/`ORIGINAL_OBSERVATION_LOST`），原始输入真丢了就如实缺失；配置版本找不到时明确报告｜跨源输入只给"最近值，仅供参考"，不承诺跨源正确性（终版 §2.1）
+
+### D34 跨库合并与部分可用
+
+D34｜同上｜`htsg/history.py`（`channel_sources`、`coverage_end`、`list_faults`、游标）、`tests/test_history_merge.py`｜`pytest tests/test_history_merge.py`｜7 通过｜同一段拆在两个库时合成一个 span、同 ID 记录只出现一份（含人为重复写入的副本），保持值能跨库衔接；库不可读→`partial=true`+`unavailable`，覆盖终点全部置 None，不把孤立的较晚样本当完整水位；`external_enabled=false` 后移动库不再被写入但已有历史仍可查；故障列表三库分页共 25 条（含同一时间戳并列、跨库重复投递），每页 7 条，不重不漏、(时间 desc, id desc) 稳定；游标绑定查询条件，换条件即拒绝；库不可读时列表仍可用并标 `pagination_incomplete`｜无
+
 ## 2. 偏离、风险与未验收
 
 - 无偏离设计。方案"位置"列写的是改造旧文件；本次以新模块并存，D45 再删旧（见第 0 节）。
-- 现场项（真实 Acheron、UA 网关、实际卷、一年容量实测）均未验收，随 D46–D48 单列。
+- **实现取值（非设计明文，需用户知晓）：** ① `Timing.ua_silence_margin=0.5` 秒（终版要求"静默+裕量<有效期"但未给数）；② 从未有过有效值的派生量首次算出 NA 时不写记录；③ 水位只约束开放段最后一条记录的尾部；④ Modbus 每轮原始观测逐轮存储，派生结果仅变化时存；⑤ `config_id` 改为键排序规范化哈希。
+- **现场必须核验：** asyncua 测试服务器的保活比协商值晚一个发布周期（见 Capstone C 记录）；真实 Acheron、UA 网关、独立卷、一年容量均未验。
+- 会话预算：用户"用尽 session limit"指 5 小时会话额度，不是 CLAUDE.md 里的 30,000 token 条款；后者用户**没有**明确豁免。本会话我默认它被覆盖却没有说明，已实际远超该条款（约 90 万 token）。新会话开始时先向用户确认该条款是否仍适用，再决定每个会话做多少。
 
-## 3. 下一步
+## 3. 交接（新会话从这里开始）
 
-模块 F：D32（有效段内历史查询）→ D33 → D34 → D35 → Capstone F。
+**完成：** D01–D34（模块 A–E 全部，Capstone A–E，模块 F 的 D32–D34）。D34 提交时全套 **473 通过 / 0 失败 / 0 跳过，245.81 秒**，ruff 通过，`git diff --check` 通过。**未做：** D35、Capstone F，模块 G（D36–D44、Capstone G）、模块 H（D45–D48、H0、最终 Capstone）。
+
+**进入新会话的第一步：**
+```powershell
+.venv/Scripts/python.exe scripts/bootstrap_db.py start      # 开发库集群默认不启动；不启动则所有 DB 用例 130 秒后 ConnectionTimeout
+.venv/Scripts/python.exe -m pytest -q                        # 全套约 4 分钟；输出里的连接串含凭据，落盘前用 sed 脱敏
+git log --oneline -8; git status --short
+```
+
+**新链路代码地图（均已就绪、已测，但 Runtime 尚未接线，D45 才切）：**
+`records.py`（记录与确定性 ID）→ `owner.py`（单所有者：批次接纳、有效性、派生、change 基线、来源状态机 WAITING/VALID/EXPIRED/RESYNC、告警、同代次恢复、段/时钟跳变/水位、归档状态 OK/LOST/RECOVERING、故障接入与缓冲）；`derive.py`（算子）；`fault_tracker.py`（5 秒计时/回差）；`ingress.py`（有序入口：批次+代次/断连/失步事件）；`modbus.py`、`ua.py`、`recovery.py`（采集与退避）；`commitq.py`（有序队列）→ `archive_router.py`（整组路由）→ `archive.py`（`ArchiveStore.write_group`）+ `archive_schema.sql`；`history.py`（读取、依据、故障列表）。测试支撑：`tests/owner_support.py`、`protocol_support.py`、`live_support.py`、`fault_support.py`、`conftest.py::archive_db_factory`。
+
+**D35 已想好的设计（照做即可）：** 新文件 `htsg/history_api.py`，`build_history_router(router, user_dep, config)` 返回 FastAPI `APIRouter`，不改旧 `api.py`（旧 `/api/history|events|replay|faults` 随 D45 替换）。端点：`GET /api/faults`（过滤 point/direction/source/start/end，游标分页，调 `history.list_faults(router.stores,…)`）；`GET /api/replay`（`center` 接受 UTC 秒或带偏移的 ISO，`seconds`>0 且 ≤366 天，`points` 逗号分隔且必须在 `history.channel_sources(config)` 内，`limit`≤10000；调 `history.query`，返回里补上 `query_time/coverage_end/gaps/sources/truncated/partial`）；`GET /api/replay/basis/{result_id}`（调 `input_basis`）。须有：无凭据 401、viewer 与 admin 都可读、**没有任何新增/删除/修改通道的路由**（用 OpenAPI 断言）、不查旧表、数据库调用走线程。验收对照方案 D35 与 Capstone F（417 路逐项核对、静止点有依据、跨段不连、跨库离线显式不完整、批内重复时间不丢行、达上限提示、Good→Bad→Good 可追溯、时区转换不改 UTC 窗口）。
+
+**D45 接线清单（Runtime 现仍是旧帧链路）：** `router.initialize(run_id)`+`bind_run` → `owner.start` → 每个启用源建 `ModbusAcquirer`/`UaAcquirer`，`hub=Ingress`，`owner.on_rebuild=uaa.request_rebuild`（多源需分派）→ `CommitQueue(on_committed=owner.committed, on_refused=owner.refused, is_void=owner.is_void)`，`owner.commit=queue.offer` → 事件循环里每秒 `owner.tick(time.time(), time.monotonic())`，`ingress.drain()` 由唤醒驱动 → 停止顺序：停采集、排空 ingress、`owner.shutdown`、`queue.stop`。要删的旧模块：`engine.py`、`runtime.py` 旧部分、`calculation.py`、`faults.py`、`adapters.py`（`decode_registers` 先搬进 `modbus.py`）、`storage.py`、`schema.sql`、`capture.py`；旧测试按第 1 节 D01 映射处理；`config.py` 中 `profiles/stale_after/max_age/derivative/aggregation/Source.timeout` 等旧字段随之删除。
+
+**模块 G 备忘：** `Owner` 还没有 `snapshot()`（需要含当前各通道值与有效性、来源状态、`pub_seq`、故障当前态、`fault_status()`）；`PublishGroup` 已是"完整发布组"，100 ms 打包、慢客户端丢增量即断开、重连先快照在 D36–D37 做。前端 `htsg/static/app.js` 仍是旧页（209 行），浏览器验证脚本在 `scripts/validate_*.py`，须用真实浏览器交互。
+
+**工具坑：** Bash 工具里超过约 8–10 KB 的 heredoc 会被截断（报 `unexpected EOF`）——大补丁用 Write 写到 scratchpad 再 `python` 执行；`Edit` 前必须先 `Read`；工具保持文件 CRLF。pytest 输出在连接失败时会带凭据。
