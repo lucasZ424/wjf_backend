@@ -44,7 +44,7 @@ async def serve(ws: WebSocket, publisher, verify, account_ok, config):
     except (WebSocketDisconnect, TimeoutError, ValueError, RuntimeError):
         try:
             await ws.close(TRY_AGAIN)
-        except RuntimeError:
+        except (RuntimeError, WebSocketDisconnect):  # the peer is already gone: nothing is left to tell it
             pass
     finally:
         if client:

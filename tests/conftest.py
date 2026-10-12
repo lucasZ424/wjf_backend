@@ -155,8 +155,9 @@ def replay_rig(tmp_path_factory):
 def page(browser):
     context = browser.new_context(viewport={"width": 1440, "height": 1000}, locale="zh-CN", timezone_id="Asia/Shanghai")
     page = context.new_page()
-    page.errors = []
-    page.on("pageerror", lambda error: page.errors.append(str(error)))
+    page.errors, page.console_log = [], []
+    page.on("pageerror", lambda error: (page.errors.append(str(error)), page.console_log.append(f"pageerror: {error}")))
+    page.on("console", lambda m: page.console_log.append(f"{m.type}: {m.text}"))
     page.on("console", lambda m: page.errors.append(m.text) if m.type == "error" else None)
     yield page
     context.close()

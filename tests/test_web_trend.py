@@ -111,6 +111,8 @@ def test_an_invalid_period_and_a_lost_connection_are_not_joined_by_a_line(page, 
         rig.ua(list(nominal().items()))
     rig.call(start_over)
     page.wait_for_function("!document.querySelector('#trend-latest').textContent.includes('重新同步中')")
+    recovered = time.time()
+    time.sleep(2.5)  # the page then hears from the server at least once more: the cut-off marker carries THAT wall time
     got = plot(page)
     for index in range(3):
         points = got["panels"][index]["points"]
@@ -134,6 +136,7 @@ def test_an_invalid_period_and_a_lost_connection_are_not_joined_by_a_line(page, 
     for index in range(3):
         points = plot(page)["panels"][index]["points"]
         cut = [i for i, p in enumerate(points) if not p["valid"]][-1]
+        assert points[cut]["t"] > recovered, "the mark is the cut-off's own, not the earlier invalid period's"
         assert points[cut + 1]["valid"] and points[cut + 1]["t"] - points[cut]["t"] > 4, "the unknown stretch is real"
         inside = cyan_and_red(page, index, points[cut]["t"], points[cut + 1]["t"])
         assert inside["cyan"] == 0 and inside["red"] > 0, f"panel {index}: no line across the cut-off: {inside}"

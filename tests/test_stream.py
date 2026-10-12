@@ -15,6 +15,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from fault_support import fault_config
 from owner_support import notify
+from starlette.websockets import WebSocketDisconnect
 from test_publisher import Rig
 
 from htsg import stream_api
@@ -161,6 +162,21 @@ async def test_a_send_that_takes_longer_than_the_send_timeout_closes_the_connect
     assert ws.closed == stream_api.TRY_AGAIN and ws.sent == []
     assert 0.2 <= time.monotonic() - started < 1.0
     assert len(rig.publisher.subscribers) == 1
+
+
+async def test_a_timed_out_client_whose_connection_is_already_gone_ends_quietly():
+    """Found by Capstone G on a real socket: closing a dead connection raises, and that must not leave `serve`."""
+    rig = Rig(config(timing={"client_send_timeout": 0.2}))
+
+    class Gone(FakeWs):
+        async def close(self, code):
+            raise WebSocketDisconnect(1006)
+
+    ws = Gone()
+    ws.gate = asyncio.Event()  # the browser is not reading
+    task, _ = start(rig, ws)
+    await asyncio.wait_for(task, 3)  # an exception out of `serve` would be raised here
+    assert len(rig.publisher.subscribers) == 1, "the cut-off client is no longer offered anything"
 
 
 async def test_a_client_that_stops_reading_is_closed_when_the_next_increment_finds_no_place():
