@@ -5,13 +5,13 @@ Real PostgreSQL, new throw-away databases only.
 
 import psycopg
 import pytest
+from legacy_support import make_legacy
 
 from htsg import records as r
 from htsg.archive import SCHEMA_GENERATION, LegacyDatabaseError, SchemaError
 from htsg.config import Settings
-from htsg.storage import Store
 
-CONFIG = Settings.model_validate({"sources": [{"id": "s", "kind": "simulator"}]})
+CONFIG = Settings.model_validate({"sources": [{"id": "s", "kind": "modbus"}]})
 
 
 @pytest.fixture
@@ -141,9 +141,7 @@ def test_initialisation_is_idempotent(store):
 
 def test_a_legacy_frame_database_is_recognised_and_left_untouched(archive_db_factory):
     legacy = archive_db_factory()
-    old = Store(legacy.dsn)
-    old.initialize(CONFIG)  # the frame-based generation
-    old.close()
+    make_legacy(legacy, CONFIG)  # the frame-based generation
     before = snapshot(legacy)
     with pytest.raises(LegacyDatabaseError):
         legacy.initialize(CONFIG)
@@ -161,10 +159,7 @@ def test_a_foreign_schema_generation_is_refused(store):
 
 def test_new_database_gets_accounts_through_the_normal_flow_not_by_migration(archive_db_factory):
     legacy = archive_db_factory()
-    old = Store(legacy.dsn)
-    old.initialize(CONFIG)
-    old.sync_accounts({"olduser": {"role": "admin", "salt": "s", "digest": "d", "active": True}})
-    old.close()
+    make_legacy(legacy, CONFIG, {"olduser": {"role": "admin", "salt": "s", "digest": "d", "active": True}})
     fresh = archive_db_factory()
     fresh.initialize(CONFIG)
     assert fresh.read_accounts() == {}, "legacy accounts are not copied into a new database"

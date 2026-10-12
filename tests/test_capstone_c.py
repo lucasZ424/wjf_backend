@@ -61,7 +61,7 @@ async def test_modbus_timeout_static_values_and_recovery_at_full_scale():
         assert rig.owner.results["strain_change_01"].current.value == 0.0
         rig.mb.delay = 1.5
         await rig.until(lambda: "TIMEOUT" in rig.mba.outcomes, timeout=10, why="timeout")
-        assert rig.owner.results["strain_01"].current.reason == "INPUT_UNAVAILABLE"
+        await rig.until(lambda: rig.owner.results["strain_01"].current.reason == "INPUT_UNAVAILABLE", timeout=5, why="the failed round reaches the owner")
         rig.mb.delay = 0.0
         await rig.until(lambda: rig.mba.outcomes[-2:] == ["OK", "OK"], timeout=10, why="recovered")
         assert rig.owner.results["strain_change_01"].current.value in (0.0,) or \

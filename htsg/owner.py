@@ -97,6 +97,7 @@ PENDING_LIMIT = 256  # groups held per source while a recovery group is not yet 
 class Owner:
     def __init__(self, config: Settings, wall: float, mono: float, *, commit=None, publish=None, run_id=None):
         self.config = config
+        self.config_id = config.config_id  # a hash of the whole configuration: taken once, not once per result
         self.run_id = run_id or uuid4().hex
         self.commit, self.publish = commit or _sink_none, publish or _sink_none
         self.pending_limit = PENDING_LIMIT
@@ -780,7 +781,7 @@ class Owner:
 
     def start(self, wall: float, mono: float):
         """Register this run before any data: the process, its configuration and start time."""
-        self._run_group(wall, mono, "RUN_START", config_id=self.config.config_id, started_wall=self.started_wall)
+        self._run_group(wall, mono, "RUN_START", config_id=self.config_id, started_wall=self.started_wall)
 
     def shutdown(self, wall: float, mono: float):
         """Normal stop, called after everything accepted has been processed: close segments, end the run."""
@@ -898,7 +899,7 @@ class Owner:
             basis_id,
             basis_wall,
             value,
-            self.config.config_id,
+            self.config_id,
             dict(self.rules[pid]),  # the thresholds and hysteresis in force when it was confirmed
         )
         self.fault_buffer[record.id] = record
@@ -1067,7 +1068,7 @@ class Owner:
             value=outcome.value,
             status=outcome.status,
             reason=outcome.reason,
-            config_id=self.config.config_id,
+            config_id=self.config_id,
             at_wall=batch.wall,
             extreme=outcome.extreme,
             basis=outcome.basis,

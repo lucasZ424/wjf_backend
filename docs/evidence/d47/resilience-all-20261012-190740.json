@@ -1,0 +1,657 @@
+{
+  "started": "2026-10-12 19:01:42",
+  "crash": {
+    "kills": [
+      {
+        "mode": "during start-up",
+        "after_seconds": 0.67,
+        "primary": {
+          "schema": false,
+          "groups": 0,
+          "half_written_groups": 0,
+          "orphan_rows": 0,
+          "runs": [],
+          "open_segments_in_ended_runs": 0
+        },
+        "emergency": {
+          "schema": false,
+          "groups": 0,
+          "half_written_groups": 0,
+          "orphan_rows": 0,
+          "runs": [],
+          "open_segments_in_ended_runs": 0
+        }
+      },
+      {
+        "mode": "under load",
+        "after_seconds": 3.19,
+        "primary": {
+          "schema": true,
+          "groups": 7,
+          "half_written_groups": 0,
+          "orphan_rows": 0,
+          "runs": [
+            [
+              false,
+              null
+            ]
+          ],
+          "open_segments_in_ended_runs": 0
+        },
+        "emergency": {
+          "schema": true,
+          "groups": 0,
+          "half_written_groups": 0,
+          "orphan_rows": 0,
+          "runs": [],
+          "open_segments_in_ended_runs": 0
+        }
+      },
+      {
+        "mode": "under load",
+        "after_seconds": 1.91,
+        "primary": {
+          "schema": true,
+          "groups": 12,
+          "half_written_groups": 0,
+          "orphan_rows": 0,
+          "runs": [
+            [
+              true,
+              "ABNORMAL_EXIT"
+            ],
+            [
+              false,
+              null
+            ]
+          ],
+          "open_segments_in_ended_runs": 0
+        },
+        "emergency": {
+          "schema": true,
+          "groups": 0,
+          "half_written_groups": 0,
+          "orphan_rows": 0,
+          "runs": [],
+          "open_segments_in_ended_runs": 0
+        }
+      },
+      {
+        "mode": "under load",
+        "after_seconds": 4.33,
+        "primary": {
+          "schema": true,
+          "groups": 23,
+          "half_written_groups": 0,
+          "orphan_rows": 0,
+          "runs": [
+            [
+              true,
+              "ABNORMAL_EXIT"
+            ],
+            [
+              true,
+              "ABNORMAL_EXIT"
+            ],
+            [
+              false,
+              null
+            ]
+          ],
+          "open_segments_in_ended_runs": 0
+        },
+        "emergency": {
+          "schema": true,
+          "groups": 0,
+          "half_written_groups": 0,
+          "orphan_rows": 0,
+          "runs": [],
+          "open_segments_in_ended_runs": 0
+        }
+      },
+      {
+        "mode": "under load",
+        "after_seconds": 1.6,
+        "primary": {
+          "schema": true,
+          "groups": 28,
+          "half_written_groups": 0,
+          "orphan_rows": 0,
+          "runs": [
+            [
+              true,
+              "ABNORMAL_EXIT"
+            ],
+            [
+              true,
+              "ABNORMAL_EXIT"
+            ],
+            [
+              true,
+              "ABNORMAL_EXIT"
+            ],
+            [
+              false,
+              null
+            ]
+          ],
+          "open_segments_in_ended_runs": 0
+        },
+        "emergency": {
+          "schema": true,
+          "groups": 0,
+          "half_written_groups": 0,
+          "orphan_rows": 0,
+          "runs": [],
+          "open_segments_in_ended_runs": 0
+        }
+      },
+      {
+        "mode": "under load",
+        "after_seconds": 3.39,
+        "primary": {
+          "schema": true,
+          "groups": 37,
+          "half_written_groups": 0,
+          "orphan_rows": 0,
+          "runs": [
+            [
+              true,
+              "ABNORMAL_EXIT"
+            ],
+            [
+              true,
+              "ABNORMAL_EXIT"
+            ],
+            [
+              true,
+              "ABNORMAL_EXIT"
+            ],
+            [
+              true,
+              "ABNORMAL_EXIT"
+            ],
+            [
+              false,
+              null
+            ]
+          ],
+          "open_segments_in_ended_runs": 0
+        },
+        "emergency": {
+          "schema": true,
+          "groups": 0,
+          "half_written_groups": 0,
+          "orphan_rows": 0,
+          "runs": [],
+          "open_segments_in_ended_runs": 0
+        }
+      }
+    ],
+    "history_after_crashes": {
+      "channels": [
+        "bridge_mvv_01",
+        "temp_inner_01"
+      ],
+      "partial": false,
+      "gaps": 0,
+      "rows": {
+        "bridge_mvv_01": 16,
+        "temp_inner_01": 16
+      }
+    },
+    "graceful_stop": 3,
+    "after": {
+      "primary": {
+        "schema": true,
+        "groups": 53,
+        "half_written_groups": 0,
+        "orphan_rows": 0,
+        "runs": [
+          [
+            true,
+            "ABNORMAL_EXIT"
+          ],
+          [
+            true,
+            "ABNORMAL_EXIT"
+          ],
+          [
+            true,
+            "ABNORMAL_EXIT"
+          ],
+          [
+            true,
+            "ABNORMAL_EXIT"
+          ],
+          [
+            true,
+            "ABNORMAL_EXIT"
+          ],
+          [
+            true,
+            "NORMAL"
+          ]
+        ],
+        "open_segments_in_ended_runs": 0
+      },
+      "emergency": {
+        "schema": true,
+        "groups": 0,
+        "half_written_groups": 0,
+        "orphan_rows": 0,
+        "runs": [],
+        "open_segments_in_ended_runs": 0
+      }
+    },
+    "backend_logs": [
+      "backend-062984.log",
+      "backend-470c93.log",
+      "backend-48582b.log",
+      "backend-546717.log",
+      "backend-86da09.log",
+      "backend-96f934.log",
+      "backend-c95c17.log"
+    ]
+  },
+  "storage": {
+    "with_removable_disk": {
+      "steps": [
+        {
+          "step": "primary 40 %",
+          "route": "PRIMARY",
+          "expected": "PRIMARY",
+          "groups_landed": {
+            "primary": 12,
+            "emergency": 0,
+            "external": 0
+          },
+          "archive": {
+            "mb_field": "OK",
+            "ua_field": "OK"
+          }
+        },
+        {
+          "step": "primary 96 %",
+          "route": "EXTERNAL",
+          "expected": "EXTERNAL",
+          "groups_landed": {
+            "primary": 0,
+            "emergency": 0,
+            "external": 14
+          },
+          "archive": {
+            "mb_field": "OK",
+            "ua_field": "OK"
+          }
+        },
+        {
+          "step": "primary back to 40 %: no way back",
+          "route": "EXTERNAL",
+          "expected": "EXTERNAL",
+          "groups_landed": {
+            "primary": 0,
+            "emergency": 0,
+            "external": 12
+          },
+          "archive": {
+            "mb_field": "OK",
+            "ua_field": "OK"
+          }
+        },
+        {
+          "step": "removable disk 96 %",
+          "route": "EMERGENCY",
+          "expected": "EMERGENCY",
+          "groups_landed": {
+            "primary": 0,
+            "emergency": 14,
+            "external": 0
+          },
+          "archive": {
+            "mb_field": "OK",
+            "ua_field": "OK"
+          }
+        },
+        {
+          "step": "removable disk 80 %: still emergency",
+          "route": "EMERGENCY",
+          "expected": "EMERGENCY",
+          "groups_landed": {
+            "primary": 0,
+            "emergency": 13,
+            "external": 0
+          },
+          "archive": {
+            "mb_field": "OK",
+            "ua_field": "OK"
+          }
+        },
+        {
+          "step": "removable disk 69 %",
+          "route": "EXTERNAL",
+          "expected": "EXTERNAL",
+          "groups_landed": {
+            "primary": 0,
+            "emergency": 0,
+            "external": 15
+          },
+          "archive": {
+            "mb_field": "OK",
+            "ua_field": "OK"
+          }
+        }
+      ],
+      "whole_groups": {
+        "primary": {
+          "half_written_groups": 0,
+          "orphan_rows": 0
+        },
+        "emergency": {
+          "half_written_groups": 0,
+          "orphan_rows": 0
+        },
+        "external": {
+          "half_written_groups": 0,
+          "orphan_rows": 0
+        }
+      },
+      "group_ids": 89,
+      "group_ids_unique": true,
+      "history": {
+        "partial": false,
+        "raw_rows": 40,
+        "duplicates": 0,
+        "in_order": true
+      },
+      "owner_archive_lost_groups": 0
+    },
+    "without": {
+      "steps": [
+        {
+          "step": "primary 40 %",
+          "route": "PRIMARY",
+          "expected": "PRIMARY",
+          "groups_landed": {
+            "primary": 12,
+            "emergency": 0
+          },
+          "archive": {
+            "mb_field": "OK",
+            "ua_field": "OK"
+          }
+        },
+        {
+          "step": "primary 96 %",
+          "route": "EMERGENCY",
+          "expected": "EMERGENCY",
+          "groups_landed": {
+            "primary": 0,
+            "emergency": 14
+          },
+          "archive": {
+            "mb_field": "OK",
+            "ua_field": "OK"
+          }
+        },
+        {
+          "step": "primary 80 %: hysteresis holds",
+          "route": "EMERGENCY",
+          "expected": "EMERGENCY",
+          "groups_landed": {
+            "primary": 0,
+            "emergency": 12
+          },
+          "archive": {
+            "mb_field": "OK",
+            "ua_field": "OK"
+          }
+        },
+        {
+          "step": "primary 69 %",
+          "route": "PRIMARY",
+          "expected": "PRIMARY",
+          "groups_landed": {
+            "primary": 14,
+            "emergency": 0
+          },
+          "archive": {
+            "mb_field": "OK",
+            "ua_field": "OK"
+          }
+        }
+      ],
+      "whole_groups": {
+        "primary": {
+          "half_written_groups": 0,
+          "orphan_rows": 0
+        },
+        "emergency": {
+          "half_written_groups": 0,
+          "orphan_rows": 0
+        }
+      },
+      "group_ids": 61,
+      "group_ids_unique": true,
+      "history": {
+        "partial": false,
+        "raw_rows": 27,
+        "duplicates": 0,
+        "in_order": true
+      },
+      "owner_archive_lost_groups": 0
+    },
+    "real_disk_growth_bytes": 0
+  },
+  "capacity": {
+    "every_input_changes_every_second": {
+      "measured_seconds": 120.2,
+      "rows_per_second": 417.7,
+      "database_bytes_per_second": 333335,
+      "bytes_per_row": 798.0,
+      "tables": {
+        "result": {
+          "data": 20275200,
+          "indexes": 5668864,
+          "rows": 25815
+        },
+        "observation": {
+          "data": 7577600,
+          "indexes": 7643136,
+          "rows": 25792
+        },
+        "state_event": {
+          "data": 106496,
+          "indexes": 65536,
+          "rows": 149
+        },
+        "commit_group": {
+          "data": 73728,
+          "indexes": 90112,
+          "rows": 273
+        },
+        "config_version": {
+          "data": 73728,
+          "indexes": 16384,
+          "rows": 1
+        },
+        "segment": {
+          "data": 16384,
+          "indexes": 32768,
+          "rows": 2
+        },
+        "fault_record": {
+          "data": 8192,
+          "indexes": 32768,
+          "rows": 0
+        },
+        "htsg_meta": {
+          "data": 16384,
+          "indexes": 16384,
+          "rows": 1
+        },
+        "run": {
+          "data": 16384,
+          "indexes": 16384,
+          "rows": 1
+        },
+        "watermark": {
+          "data": 16384,
+          "indexes": 16384,
+          "rows": 2
+        },
+        "account": {
+          "data": 16384,
+          "indexes": 16384,
+          "rows": 1
+        },
+        "management_log": {
+          "data": 8192,
+          "indexes": 16384,
+          "rows": 0
+        },
+        "archive_gap": {
+          "data": 8192,
+          "indexes": 16384,
+          "rows": 0
+        },
+        "fault_loss": {
+          "data": 8192,
+          "indexes": 8192,
+          "rows": 0
+        },
+        "routing_state": {
+          "data": 8192,
+          "indexes": 8192,
+          "rows": 0
+        },
+        "write_probe": {
+          "data": 0,
+          "indexes": 8192,
+          "rows": 0
+        }
+      },
+      "tables_total_bytes": 41902080,
+      "database_size_bytes": 50525887,
+      "capacity": {
+        "bytes_per_day": 28800144000,
+        "bytes_per_year": 10512052560000,
+        "wal_peak_bytes": 134217728,
+        "maintenance_peak_bytes": 0,
+        "needed_bytes": 10512186777728,
+        "free_bytes": 1329973157888,
+        "reserve_bytes": 107374182400,
+        "margin_bytes": -9289587802240,
+        "verdict": "INSUFFICIENT: no one-year retention pass"
+      }
+    },
+    "no_input_changes": {
+      "measured_seconds": 120.2,
+      "rows_per_second": 32.2,
+      "database_bytes_per_second": 28431,
+      "bytes_per_row": 883.0,
+      "tables": {
+        "observation": {
+          "data": 933888,
+          "indexes": 1056768,
+          "rows": 2592
+        },
+        "result": {
+          "data": 1351680,
+          "indexes": 393216,
+          "rows": 1560
+        },
+        "state_event": {
+          "data": 106496,
+          "indexes": 90112,
+          "rows": 166
+        },
+        "commit_group": {
+          "data": 57344,
+          "indexes": 65536,
+          "rows": 161
+        },
+        "config_version": {
+          "data": 73728,
+          "indexes": 16384,
+          "rows": 1
+        },
+        "segment": {
+          "data": 16384,
+          "indexes": 32768,
+          "rows": 9
+        },
+        "fault_record": {
+          "data": 8192,
+          "indexes": 32768,
+          "rows": 0
+        },
+        "htsg_meta": {
+          "data": 16384,
+          "indexes": 16384,
+          "rows": 1
+        },
+        "run": {
+          "data": 16384,
+          "indexes": 16384,
+          "rows": 1
+        },
+        "watermark": {
+          "data": 16384,
+          "indexes": 16384,
+          "rows": 8
+        },
+        "account": {
+          "data": 16384,
+          "indexes": 16384,
+          "rows": 1
+        },
+        "management_log": {
+          "data": 8192,
+          "indexes": 16384,
+          "rows": 0
+        },
+        "archive_gap": {
+          "data": 8192,
+          "indexes": 16384,
+          "rows": 0
+        },
+        "fault_loss": {
+          "data": 8192,
+          "indexes": 8192,
+          "rows": 0
+        },
+        "routing_state": {
+          "data": 8192,
+          "indexes": 8192,
+          "rows": 0
+        },
+        "write_probe": {
+          "data": 0,
+          "indexes": 8192,
+          "rows": 0
+        }
+      },
+      "tables_total_bytes": 4456448,
+      "database_size_bytes": 13022911,
+      "capacity": {
+        "bytes_per_day": 2456438400,
+        "bytes_per_year": 896600016000,
+        "wal_peak_bytes": 134217728,
+        "maintenance_peak_bytes": 0,
+        "needed_bytes": 896734233728,
+        "free_bytes": 1329973157888,
+        "reserve_bytes": 107374182400,
+        "margin_bytes": 325864741760,
+        "verdict": "ENOUGH_ON_THIS_VOLUME"
+      }
+    },
+    "volume": {
+      "drive": "D:/",
+      "total_bytes": 1999425761280,
+      "free_bytes": 1329973157888
+    },
+    "not_proven": "simulated field only: neither the real plant's change rate nor the real disk is evidence for a one-year pass"
+  },
+  "finished": "2026-10-12 19:07:40"
+}

@@ -1,0 +1,72 @@
+"""D47: crash recovery, storage switching and the one-year capacity statement (方案模块 H).
+
+The checks live in scripts/verify_resilience.py; these tests run them short against the real system - a backend
+process that is killed hard, injected disk readings through the live runtime, measured database growth - and
+insist on the conclusions that matter: never a half-written group, never a route chosen against the thresholds,
+never a one-year pass for a volume that cannot hold the year.
+"""
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import verify_resilience as resilience  # noqa: E402
+
+GIB = 1024**3
+
+
+def test_a_year_that_does_not_fit_is_never_passed_and_the_wal_is_counted_once():
+    fits = resilience.year_capacity(1000.0, wal_peak=2 * GIB, maintenance_peak=GIB, free_bytes=100 * GIB, reserve_bytes=10 * GIB)
+    assert fits["bytes_per_year"] == 1000 * 86400 * 365 and fits["verdict"] == "ENOUGH_ON_THIS_VOLUME"
+    assert fits["needed_bytes"] == fits["bytes_per_year"] + 3 * GIB, "the log peak and the maintenance peak are added once, not per day"
+    assert fits["margin_bytes"] == 100 * GIB - 10 * GIB - fits["needed_bytes"]
+    short = resilience.year_capacity(1000.0, wal_peak=None, maintenance_peak=0, free_bytes=fits["bytes_per_year"], reserve_bytes=1)
+    assert short["margin_bytes"] == -1 and short["verdict"].startswith("INSUFFICIENT"), "one byte short is not a pass"
+
+
+async def test_a_hard_kill_at_any_moment_leaves_no_half_written_group_and_the_next_start_closes_the_run():
+    report = await resilience.crash(2)
+    assert [k["mode"] for k in report["kills"]] == ["during start-up", "under load"]
+    for kill in report["kills"]:
+        for check in (kill["primary"], kill["emergency"]):
+            assert check["half_written_groups"] == 0 and check["orphan_rows"] == 0
+    assert report["kills"][1]["primary"]["groups"] > 0, "the second process really had written before it was killed"
+    after = report["after"]["primary"]
+    assert after["half_written_groups"] == 0 and after["open_segments_in_ended_runs"] == 0
+    closed = [reason for ended, reason in after["runs"] if ended]
+    assert closed.count("ABNORMAL_EXIT") >= 1, "a killed run is closed from what is persisted, and says so"
+    history = report["history_after_crashes"]
+    assert history["partial"] is False and history["rows"]["bridge_mvv_01"] >= 2
+    assert isinstance(report["graceful_stop"], int), f"the Ctrl+Break stop could be tried: {report['graceful_stop']}"
+    assert after["runs"][-1] == (True, "NORMAL"), "a normal stop ends the run as normal (uvicorn re-raises the signal: the exit code is not 0)"
+
+
+async def test_the_injected_thresholds_choose_the_route_and_history_stays_whole_across_the_switches():
+    report = await resilience.storage(3)
+    for variant in ("with_removable_disk", "without"):
+        part = report[variant]
+        for step in part["steps"]:
+            assert step["route"] == step["expected"], step
+            assert set(step["archive"].values()) == {"OK"}, f"the switch did not cost the archive anything: {step}"
+            landed = {name: n for name, n in step["groups_landed"].items() if n}
+            target = step["expected"].lower()
+            assert set(landed) == {target}, f"every new group went to the one database the route names: {step}"
+        assert all(w == {"half_written_groups": 0, "orphan_rows": 0} for w in part["whole_groups"].values())
+        assert part["group_ids_unique"], "no group is stored in two databases"
+        assert part["history"]["partial"] is False and part["history"]["duplicates"] == 0 and part["history"]["in_order"]
+        assert part["history"]["raw_rows"] >= 6, "the merged history carries the rounds from every database"
+        assert part["owner_archive_lost_groups"] == 0
+    assert report["real_disk_growth_bytes"] < GIB, "the thresholds were injected: no real disk was filled"
+
+
+async def test_the_measured_growth_gives_a_year_figure_with_indexes_inside_and_a_verdict_that_follows_the_margin():
+    report = await resilience.capacity(8)
+    busy, quiet = report["every_input_changes_every_second"], report["no_input_changes"]
+    assert busy["database_bytes_per_second"] > 5 * quiet["database_bytes_per_second"] > 0
+    for part in (busy, quiet):
+        assert 0 < part["tables_total_bytes"] <= part["database_size_bytes"], "the tables with their indexes are inside the database size: counted once"
+        assert all(t["indexes"] > 0 for name, t in part["tables"].items() if name in ("observation", "result")), "the indexes are part of the figure"
+        cap = part["capacity"]
+        assert (cap["margin_bytes"] >= 0) == (cap["verdict"] == "ENOUGH_ON_THIS_VOLUME")
+        assert abs(cap["bytes_per_year"] - cap["bytes_per_day"] * 365) < 365
+    assert "simulated field only" in report["not_proven"]

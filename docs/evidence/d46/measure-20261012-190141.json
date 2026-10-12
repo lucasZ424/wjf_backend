@@ -1,0 +1,201 @@
+{
+  "started": "2026-10-12 18:57:14",
+  "host": "TXLAPTOP_ZLC",
+  "python": "3.13.4",
+  "initial_burst": {
+    "all_417_valid_after_seconds": 1.4,
+    "archive_caught_up_after_seconds": 0.06,
+    "seconds": 1.5,
+    "groups_per_second": 4.74,
+    "rows_per_second": 499.7,
+    "database_bytes_per_second": 1042831,
+    "estimated_bytes_per_second": 819511,
+    "published_groups": 6,
+    "committed_groups": 7,
+    "unexplained": {
+      "ingress_dropped": 0,
+      "queue_rejected": 0,
+      "refused": 0,
+      "failures": 0
+    },
+    "queue_depth": {
+      "count": 8,
+      "min": 0,
+      "p50": 0.0,
+      "p95": 2,
+      "p99": 2,
+      "max": 2
+    },
+    "ingress_depth": {
+      "count": 8,
+      "min": 0,
+      "p50": 0.0,
+      "p95": 0,
+      "p99": 0,
+      "max": 0
+    },
+    "event_loop_lateness_ms": {
+      "min": 3.8,
+      "p50": 6.6,
+      "p95": 14.8,
+      "p99": 14.8,
+      "max": 14.8
+    },
+    "commit_wait_ms": {
+      "min": 2.4,
+      "p50": 68.3,
+      "p95": 164.1,
+      "p99": 164.1,
+      "max": 164.1
+    },
+    "memory_mb": {
+      "start": 147.4,
+      "end": 147.4,
+      "max": 147.4
+    },
+    "maintenance_max_seconds": 0.115,
+    "database_bytes_peak": 9393855,
+    "wal_bytes_peak": 117440512
+  },
+  "steady": {
+    "backlog_left_after_seconds": 0.0,
+    "seconds": 180.1,
+    "groups_per_second": 2.19,
+    "rows_per_second": 418.0,
+    "database_bytes_per_second": 336690,
+    "estimated_bytes_per_second": 714946,
+    "published_groups": 360,
+    "committed_groups": 394,
+    "unexplained": {
+      "ingress_dropped": 0,
+      "queue_rejected": 0,
+      "refused": 0,
+      "failures": 0
+    },
+    "queue_depth": {
+      "count": 1688,
+      "min": 0,
+      "p50": 0.0,
+      "p95": 1,
+      "p99": 1,
+      "max": 3
+    },
+    "ingress_depth": {
+      "count": 1688,
+      "min": 0,
+      "p50": 0.0,
+      "p95": 0,
+      "p99": 0,
+      "max": 1
+    },
+    "event_loop_lateness_ms": {
+      "min": 0.1,
+      "p50": 4.5,
+      "p95": 9.6,
+      "p99": 14.6,
+      "max": 272.3
+    },
+    "commit_wait_ms": {
+      "min": 2.4,
+      "p50": 22.6,
+      "p95": 62.8,
+      "p99": 89.6,
+      "max": 161.3
+    },
+    "memory_mb": {
+      "start": 154.3,
+      "end": 165.6,
+      "max": 165.6
+    },
+    "maintenance_max_seconds": 0.293,
+    "database_bytes_peak": 68843199,
+    "wal_bytes_peak": 117440512
+  },
+  "outages": [
+    {
+      "source": "ua_field",
+      "outage_seconds": 25.3,
+      "noticed_after_seconds": 0.45,
+      "valid_again_after_seconds": 15.4,
+      "archive_backlog_cleared_after_seconds": 0.11,
+      "resyncs": 1,
+      "archive_states": {
+        "mb_field": "OK",
+        "ua_field": "OK"
+      },
+      "unexplained": {
+        "ingress_dropped": 0,
+        "queue_rejected": 0,
+        "refused": 0,
+        "failures": 0
+      }
+    },
+    {
+      "source": "mb_field",
+      "outage_seconds": 25.4,
+      "noticed_after_seconds": 0.58,
+      "valid_again_after_seconds": 10.65,
+      "archive_backlog_cleared_after_seconds": 0.06,
+      "resyncs": 1,
+      "archive_states": {
+        "mb_field": "OK",
+        "ua_field": "OK"
+      },
+      "unexplained": {
+        "ingress_dropped": 0,
+        "queue_rejected": 0,
+        "refused": 0,
+        "failures": 0
+      }
+    }
+  ],
+  "push_latency_ms": {
+    "within_the_backend": {
+      "min": 0.2,
+      "p50": 0.7,
+      "p95": 4.8,
+      "p99": 6.1,
+      "max": 6.7,
+      "groups": 453
+    },
+    "coalescing_wait": {
+      "min": 0.6,
+      "p50": 101.8,
+      "p95": 109.8,
+      "p99": 111.4,
+      "max": 330.5,
+      "groups": 453
+    },
+    "send_to_drawn": {
+      "min": 2.2,
+      "p50": 11.6,
+      "p95": 14.0,
+      "p99": 15.8,
+      "max": 43.0,
+      "groups": 453
+    },
+    "receipt_to_drawn": {
+      "min": 10.5,
+      "p50": 114.0,
+      "p95": 124.5,
+      "p99": 128.8,
+      "max": 334.5,
+      "groups": 453
+    }
+  },
+  "owner_health": {
+    "stale_generation_batches": 0,
+    "rejected_items": 0,
+    "app_loss": 0,
+    "dropped_while_resync": 0,
+    "resyncs": 2,
+    "expiries": 0,
+    "recoveries": 0,
+    "archive_lost_groups": 0,
+    "archive_recoveries": 0,
+    "pending_overflows": 0,
+    "clock_jumps": 0
+  },
+  "finished": "2026-10-12 19:01:39",
+  "unwritten_at_stop": 0
+}

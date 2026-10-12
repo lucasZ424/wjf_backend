@@ -36,17 +36,22 @@ def audit_entry(identity, action, target, result="COMMITTED"):
     return {"id": str(uuid4()), "time": time.time(), "actor": identity["username"], "action": action, "target": target, "result": result}
 
 
-def create_web_app(*, config, accounts, publisher, archive_router=None, queue=None, diagnostics=None) -> FastAPI:
+def create_web_app(*, config, accounts, publisher, archive_router=None, queue=None, diagnostics=None, lifecycle=None) -> FastAPI:
     """`queue` is the archive writer queue (for its counters); `diagnostics()` returns what only the acquisition
-    side knows, e.g. the OPC UA parameters the server really granted (`ua.Negotiated.as_dict()` per source)."""
+    side knows, e.g. the OPC UA parameters the server really granted (`ua.Negotiated.as_dict()` per source).
+    `lifecycle` (the `Runtime`) is started before the application takes requests and stopped after it has stopped."""
     @asynccontextmanager
     async def lifespan(app):
+        if lifecycle is not None:
+            await lifecycle.start()
         task = asyncio.create_task(publisher.run())  # the realtime packing and heartbeat clock
         try:
             yield
         finally:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
+            if lifecycle is not None:
+                await lifecycle.stop()
 
     app = FastAPI(title="HTSG", lifespan=lifespan)
 
@@ -125,7 +130,8 @@ def create_web_app(*, config, accounts, publisher, archive_router=None, queue=No
             archive["routing"], archive["health"] = archive_router.mode, dict(archive_router.health)
         if queue is not None:
             archive["queue"] = {"depth": queue.depth, "capacity": queue.capacity, **queue.stats}
-        return {"status": owner.status(), "archive": archive, "negotiated": diagnostics() if diagnostics else {}}
+        runtime = dict(lifecycle.health) if lifecycle is not None else {}
+        return {"status": owner.status(), "archive": archive, "negotiated": diagnostics() if diagnostics else {}, "runtime": runtime}
 
     @app.get("/api/admin/accounts", dependencies=[Depends(admin)])
     async def list_accounts():

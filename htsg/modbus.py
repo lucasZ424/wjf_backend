@@ -8,18 +8,35 @@ reported as a failed round, never filled from the previous one.
 from __future__ import annotations
 
 import asyncio
+import math
+import struct
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
 from . import records as rec
-from .adapters import decode_registers
 from .config import Point, Source, Timing
 from .recovery import Backoff
 from .timing import every_second
 
 WIDTH = {"uint16": 1, "int16": 1, "uint32": 2, "int32": 2, "float32": 2, "float64": 4}
 MAX_REGISTERS = 125  # Modbus limit for one read request
+
+
+def decode_registers(registers: list[int], point: Point):
+    """The engineering value of one point from its registers, or (None, "BAD") for an undecodable one."""
+    words = list(registers)
+    if point.word_order == "little":
+        words.reverse()
+    raw = b"".join(x.to_bytes(2, point.byte_order) for x in words)
+    fmt = {"uint16": "H", "int16": "h", "uint32": "I", "int32": "i", "float32": "f", "float64": "d"}[
+        point.data_type
+    ]
+    value = struct.unpack(">" + fmt, raw)[0]
+    if not math.isfinite(value) or value in point.invalid_values:
+        return None, "BAD"
+    scaled = value * point.scale + point.offset
+    return (scaled, "GOOD") if math.isfinite(scaled) else (None, "BAD")
 
 
 @dataclass(frozen=True, slots=True)

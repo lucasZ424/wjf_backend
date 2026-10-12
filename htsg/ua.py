@@ -110,6 +110,10 @@ class Negotiated:
             "session_timeout": self.session_timeout,
             "queue_capability": self.queue_capability,
             "min_queue": min((i.queue_size for i in self.items), default=None),
+            "max_queue": max((i.queue_size for i in self.items), default=None),
+            "sampling_interval_min": min((i.sampling_interval for i in self.items), default=None),
+            "sampling_interval_max": max((i.sampling_interval for i in self.items), default=None),
+            "items": len(self.items),
             "violations": list(self.violations),
         }
 
@@ -217,6 +221,7 @@ def negotiate(timing: Timing, created, revisions: list[ItemRevision], session_ti
             "keepalive_count": timing.ua_keepalive_count,
             "lifetime_count": timing.ua_lifetime_count,
             "queue_size": timing.ua_queue_size,
+            "sampling_interval": timing.ua_sampling_interval,
             "session_timeout": timing.ua_session_timeout,
         },
         publish_interval=publish,

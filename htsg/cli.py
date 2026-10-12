@@ -77,9 +77,10 @@ def main(*, deployment_locked=False):
 def _run(args, config):
     import uvicorn
 
-    from .api import create_app
+    from .archive import ArchiveStore
+    from .archive_router import ArchiveRouter
     from .runtime import Runtime
-    from .storage import Router, Store
+    from .web import create_web_app
 
     databases = json.loads(Path(args.database).read_text())
     if config.storage.external_enabled and not databases.get("external"):
@@ -87,18 +88,22 @@ def _run(args, config):
     accounts = Accounts(Path(args.accounts))
     if not accounts.users:
         raise SystemExit("Run init-accounts first")
-    external = Store(databases["external"]) if databases.get("external") else None
-    runtime = Runtime(
-        config, Router(config, Store(databases["primary"]), Store(databases["emergency"]), external)
-    )
+    stores = {name: ArchiveStore(databases[name], config.timing) for name in ("primary", "emergency")}
+    external = ArchiveStore(databases["external"], config.timing) if databases.get("external") else None
+    router = ArchiveRouter(config, stores["primary"], stores["emergency"], external)
+    runtime = Runtime(config, router, accounts)
     Path(".local").mkdir(exist_ok=True)
     handler = RotatingFileHandler(
         ".local/backend.log", maxBytes=2 * 1024**2, backupCount=3, encoding="utf-8"
     )
     logging.basicConfig(level=logging.INFO, handlers=[handler])
+    app = create_web_app(
+        config=config, accounts=accounts, publisher=runtime.publisher, archive_router=router,
+        queue=runtime.queue, diagnostics=runtime.diagnostics, lifecycle=runtime,
+    )  # fmt: skip
     server = uvicorn.Server(
         uvicorn.Config(
-            create_app(runtime, accounts),
+            app,
             host="127.0.0.1",
             port=args.port,
             workers=1,

@@ -2,14 +2,13 @@
   "mode": "development",
   "dev_admin_login": true,
   "time_basis": "received",
-  "sources": [{"id": "demo", "kind": "simulator", "enabled": true, "interval": 1}],
+  "sources": [{"id": "demo", "kind": "modbus", "enabled": true, "host": "127.0.0.1", "port": 15020, "interval": 1}],
   "points": [
-    {"id": "demo_temperature", "source": "demo", "unit": "demo_degC", "aggregation": "Direct", "low": 7, "high": 11.5, "stale_after": 5},
-    {"id": "demo_strain", "source": "demo", "unit": "demo_microstrain", "aggregation": "Direct", "simulator_base": 20, "high": 21.5, "stale_after": 5}
+    {"id": "demo_temperature", "source": "demo", "unit": "demo_degC", "address": 0, "data_type": "float32", "low": 7, "high": 11.5},
+    {"id": "demo_strain", "source": "demo", "unit": "demo_microstrain", "address": 2, "data_type": "float32", "high": 21.5}
   ],
   "derived": [
     {"id": "thermal_stress", "inputs": [], "operation": "unconfigured", "unit": "MPa"}
   ],
-  "profiles": [],
   "storage": {"development_budget_bytes": 10737418240, "cleanup_enabled": false, "external_enabled": false, "external_path": "", "external_start": 0.95}
 }

@@ -7,13 +7,17 @@ from pathlib import Path
 import pytest
 from asyncua import Client
 from fastapi.testclient import TestClient
+from owner_support import Recorder
 from pydantic import ValidationError
 from pymodbus.client import AsyncModbusTcpClient
 
-from htsg.adapters import adapter, decode_registers
 from htsg.config import Settings, load_settings
+from htsg.ingress import Ingress
+from htsg.modbus import ModbusAcquirer, decode_registers
+from htsg.owner import Owner
 from htsg.research_config import estimate_budget
 from htsg.simulation import FieldSimulator, create_simulation_app, encode_registers, signal_value
+from htsg.ua import UaAcquirer
 
 
 def free_port():
@@ -27,7 +31,6 @@ def small_config():
     ids = {"bridge_mvv_01", "temp_inner_01"}
     data["points"] = [p for p in data["points"] if p["id"] in ids]
     data["derived"] = []
-    data["profiles"] = []
     data["ui"] = {}
     data["simulation"]["signals"] = [
         {"point": "bridge_mvv_01", "base": 0.708},
@@ -64,9 +67,7 @@ def test_research_configuration_has_bounded_full_duration_capture():
     assert len(config.derived) == 209
     assert len([p for p in config.points if p.source == "mb_field"]) == 8
     assert all(p.unit == "mV/V" for p in config.points if p.source == "mb_field")
-    assert budget["capture_bytes_estimate"] < config.limits.capture_budget_bytes
     assert budget["validation_bytes_estimate"] < 2 * 1024**3
-    assert not config.profiles, "fault confirmation must not require a capture profile"
 
 
 def test_simulation_refuses_invalid_references_nonlocal_servers_and_overbudget():
@@ -169,57 +170,73 @@ async def test_real_protocols_fixed_values_bad_quality_and_write_rejection():
         await field.stop()
 
 
+class Chain:
+    """The real acquirers feeding a real owner through the ordered ingress - what the runtime assembles, without a database."""
+
+    def __init__(self, config):
+        self.config, self.recorder = config, Recorder()
+        self.owner = Owner(config, time.time(), time.monotonic(), commit=self.recorder.commit, publish=self.recorder.publish, run_id="sim")
+        self.ingress = Ingress(self.owner, 4096)
+        self.acquirers = [
+            (ModbusAcquirer if s.kind == "modbus" else UaAcquirer)(s, [p for p in config.points if p.source == s.id], config.timing, self.ingress)
+            for s in config.sources
+        ]
+        self.owner.on_rebuild = lambda source_id, reason: [a.request_rebuild(source_id, reason) for a in self.acquirers if hasattr(a, "request_rebuild")]
+        self.tasks = []
+
+    async def pump(self):
+        next_tick = time.monotonic() + 1
+        while True:
+            self.ingress.drain()
+            now = time.monotonic()
+            if now >= next_tick:
+                self.owner.tick(time.time(), now)
+                next_tick += 1
+            await asyncio.sleep(0.05)
+
+    async def __aenter__(self):
+        self.tasks = [asyncio.create_task(a.run()) for a in self.acquirers] + [asyncio.create_task(self.pump())]
+        return self
+
+    async def __aexit__(self, *exc):
+        for task in self.tasks:
+            task.cancel()
+        await asyncio.gather(*self.tasks, return_exceptions=True)
+
+    def view(self, point):
+        return self.owner.channel_views()[point]
+
+    async def until(self, condition, why, timeout=20):
+        async with asyncio.timeout(timeout):
+            while not condition():
+                await asyncio.sleep(0.05)
+        return why
+
+
 @pytest.mark.parametrize(
-    "kind,scenario,source_id,point",
+    "kind,scenario,source_id,point,other",
     [
-        ("modbus", "mb_off", "mb_field", "bridge_mvv_01"),
-        ("opcua", "ua_off", "ua_field", "temp_inner_01"),
+        ("modbus", "mb_off", "mb_field", "bridge_mvv_01", "temp_inner_01"),
+        ("opcua", "ua_off", "ua_field", "temp_inner_01", "bridge_mvv_01"),
     ],
 )
-async def test_backend_active_reads_both_real_protocols_and_source_restart(kind, scenario, source_id, point):
+async def test_backend_active_reads_both_real_protocols_and_source_restart(kind, scenario, source_id, point, other):
     config = small_config()
     field = FieldSimulator(config)
     await field.start()
-    observations = []
-    errors = []
-    tasks = [
-        asyncio.create_task(
-            adapter(
-                s,
-                [p for p in config.points if p.source == s.id],
-                lambda *args: observations.append(args),
-                lambda *args: errors.append(args),
-            )
-        )
-        for s in config.sources
-    ]
     try:
-        deadline = time.monotonic() + 8
-        while len({x[0] for x in observations}) < 2 and time.monotonic() < deadline:
-            await asyncio.sleep(0.05)
-        values = {x[0]: x[1] for x in observations}
-        assert values["bridge_mvv_01"] == pytest.approx(0.708)
-        assert values["temp_inner_01"] == 125
-        field.set_scenario(scenario)
-        deadline = time.monotonic() + 8
-        # The client can detect socket closure before the simulated server finishes shutdown.
-        while (
-            not any(x[0] == source_id for x in errors) or getattr(field, kind) is not None
-        ) and time.monotonic() < deadline:
-            await asyncio.sleep(0.05)
-        assert getattr(field, kind) is None
-        assert getattr(field, "opcua" if kind == "modbus" else "modbus") is not None
-        assert any(x[0] == source_id for x in errors)
-        count = len([x for x in observations if x[0] == point])
-        field.set_scenario("baseline")
-        deadline = time.monotonic() + 8
-        while len([x for x in observations if x[0] == point]) == count and time.monotonic() < deadline:
-            await asyncio.sleep(0.05)
-        assert len([x for x in observations if x[0] == point]) > count
+        async with Chain(config) as chain:
+            await chain.until(lambda: chain.view("bridge_mvv_01")["valid"] and chain.view("temp_inner_01")["valid"], "both protocols read")
+            assert chain.view("bridge_mvv_01")["value"] == pytest.approx(0.708)
+            assert chain.view("temp_inner_01")["value"] == 125
+            field.set_scenario(scenario)
+            await chain.until(lambda: not chain.view(point)["valid"] and getattr(field, kind) is None, "the stopped source is seen as down")
+            assert getattr(field, "opcua" if kind == "modbus" else "modbus") is not None
+            assert chain.view(other)["valid"], "the other protocol is not disturbed"
+            seen = len(chain.recorder.observations(point))
+            field.set_scenario("baseline")
+            await chain.until(lambda: chain.view(point)["valid"] and len(chain.recorder.observations(point)) > seen, "the restarted source delivers again")
     finally:
-        for task in tasks:
-            task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
         await field.stop()
 
 
@@ -242,35 +259,19 @@ async def test_full_owner_capacity_has_eight_bridge_and_two_hundred_opcua_inputs
     data["simulation"]["control_port"] = free_port()
     config = Settings.model_validate(data)
     field = FieldSimulator(config)
-    counts = {}
-    errors = []
-
-    def submit(point, value, quality, stamp, seq):
-        assert value is not None and quality == "GOOD"
-        counts[point] = counts.get(point, 0) + 1
-
-    tasks = []
     try:
         await field.start()
-        tasks = [
-            asyncio.create_task(
-                adapter(
-                    source,
-                    [p for p in config.points if p.source == source.id],
-                    submit,
-                    lambda *args: errors.append(args),
-                )
-            )
-            for source in config.sources
-        ]
-        async with asyncio.timeout(12):
-            while len(counts) != 208 or min(counts.values(), default=0) < 2:
-                await asyncio.sleep(0.05)
-        assert len(field.nodes) == 200
-        assert set(counts) == {p.id for p in config.points}
-        assert not errors
+        async with Chain(config) as chain:
+            def counts():
+                found = {}
+                for o in chain.recorder.observations():
+                    found[o.point_id] = found.get(o.point_id, 0) + 1
+                return found
+
+            await chain.until(lambda: len(counts()) == 208 and min(counts().values()) >= 2, "every input delivered twice", timeout=30)
+            assert len(field.nodes) == 200
+            assert set(counts()) == {p.id for p in config.points}
+            assert {o.quality for o in chain.recorder.observations()} == {"GOOD"}
+            assert chain.owner.health["resyncs"] == 0 and chain.owner.health["rejected_items"] == 0
     finally:
-        for task in tasks:
-            task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
         await field.stop()

@@ -5,6 +5,7 @@ or a clock step that did not open a segment, would let a stale value look valid 
 """
 
 import pytest
+from legacy_support import make_legacy
 from owner_support import Recorder, notify
 from test_source_validity import MONO0, WALL0, at, data, ua_only
 
@@ -130,12 +131,8 @@ def test_a_step_back_keeps_both_halves_apart_by_segment_and_re_states_the_values
 
 
 def test_a_legacy_database_is_never_read_from_or_written_to(archive_db_factory):
-    from htsg.storage import Store
-
     legacy = archive_db_factory()
-    old = Store(legacy.dsn)
-    old.initialize(CONFIG)
-    old.close()
+    make_legacy(legacy, CONFIG)
     fresh = archive_db_factory("emergency")
     router = ArchiveRouter(CONFIG, legacy, fresh)
     router.initialize()

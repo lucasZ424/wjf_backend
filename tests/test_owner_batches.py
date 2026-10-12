@@ -263,3 +263,18 @@ def test_unchanged_results_are_not_rewritten_but_changed_inputs_are_always_store
 
 def test_recorder_is_the_only_collaborator_needed():
     assert Recorder().commits == []
+
+
+def test_the_configuration_hash_is_taken_once_not_once_per_result(monkeypatch):
+    """Found while measuring the full-scale input in D45: the hash of the whole configuration was recomputed for every
+    stored result, so one 200-item notification cost a third of a second of the single owner's time."""
+    from htsg.config import Settings
+
+    calls, real = [], Settings.config_id.fget
+    monkeypatch.setattr(Settings, "config_id", property(lambda self: (calls.append(1), real(self))[1]))
+    owner, _ = make_owner()
+    taken = len(calls)
+    owner.accept(notify([("ti", 500.0 + n / 10) for n in range(3)] + [("to", 440.0)]))
+    owner.accept(poll(1, {"b1": 0.6, "b2": 0.7}))
+    owner.accept(poll(2, {"b1": 0.7, "b2": 0.8}))
+    assert len(calls) == taken, "no result asked for the hash again"

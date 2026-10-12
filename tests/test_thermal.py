@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 
-from htsg.calculation import calculate
+from htsg.derive import Input, evaluate
 from htsg.thermal import ThermalModel, estimate_thermal
 
 
@@ -69,51 +69,29 @@ def test_no_silent_extrapolation_or_nonfinite_result(temperature, reason):
         estimate_thermal(model(), temperature, 600)
 
 
-def calculate_stress(**input_overrides):
-    config = SimpleNamespace(
-        models=(model(),),
-        derived=(
-            SimpleNamespace(
-                id="stress",
-                inputs=("inner", "outer"),
-                operation="thermal_stress",
-                model_id="research",
-                max_age=2,
-                extreme_low=None,
-                extreme_high=None,
-                scale=1,
-                offset=0,
-            ),
-        ),
-    )
-    inner = {"value": 610, "quality": "GOOD", **input_overrides}
-    frame = {
-        "run_id": "r",
-        "window_start": 100,
-        "window_end": 101,
-        "values": {"inner": inner, "outer": {"value": 600, "quality": "GOOD"}},
-    }
-    return calculate(config, frame, None)["derived_results"]["stress"]
+def outcome(inner=610.0, valid=True):
+    """The stress rule as the owner applies it at the end of a batch: from the inputs' validity, nothing else."""
+    rule = SimpleNamespace(
+        id="stress", inputs=("inner", "outer"), operation="thermal_stress", model_id="research",
+        extreme_low=None, extreme_high=None, scale=1, offset=0,
+    )  # fmt: skip
+    return evaluate(rule, [Input(inner, valid), Input(600.0, True)], {"research": model()})
 
 
-def test_frame_preserves_estimate_metadata_and_held_input_age():
-    result = calculate_stress(basis="HELD_VALUE", basis_time=100)
-    assert result["status"] == "OK" and result["value"] == pytest.approx(10)
-    assert result["max_input_age"] == 1
-    assert result["estimate"]["parameters"]["young_mpa"] == 200000
+def test_result_preserves_estimate_metadata():
+    result = outcome()
+    assert result.status == "OK" and result.value == pytest.approx(10)
+    assert result.estimate["parameters"]["young_mpa"] == 200000
 
 
-@pytest.mark.parametrize(
-    "input_overrides",
-    [{"quality": "BAD_TIME"}, {"value": None}, {"basis": "HELD_VALUE", "basis_time": 90}],
-)
-def test_research_label_does_not_bypass_input_quality_or_freshness(input_overrides):
-    result = calculate_stress(**input_overrides)
-    assert result["status"] == "NOT_AVAILABLE" and result["value"] is None
-    assert result["reason"] == "INPUT_UNAVAILABLE"
+@pytest.mark.parametrize("inner,valid", [(610.0, False), (None, True)])
+def test_research_label_does_not_bypass_input_quality(inner, valid):
+    result = outcome(inner, valid)
+    assert result.status == "NOT_AVAILABLE" and result.value is None
+    assert result.reason == "INPUT_UNAVAILABLE"
 
 
-def test_outside_research_temperature_range_is_visible_on_frame():
-    result = calculate_stress(value=850)
-    assert result["status"] == "NOT_AVAILABLE" and result["value"] is None
-    assert result["reason"] == "TEMPERATURE_OUTSIDE_MODEL_RANGE"
+def test_outside_research_temperature_range_is_visible_on_the_result():
+    result = outcome(850.0)
+    assert result.status == "NOT_AVAILABLE" and result.value is None
+    assert result.reason == "TEMPERATURE_OUTSIDE_MODEL_RANGE"

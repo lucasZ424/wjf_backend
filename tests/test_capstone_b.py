@@ -129,18 +129,10 @@ def test_output_does_not_depend_on_frame_windows_or_per_point_expiry():
         names = {f.name for f in dataclasses.fields(cls)}
         assert not names & {"window_start", "window_end", "stale_after", "frame_id"}, cls.__name__
 
-    def run(config):
-        owner = Owner(config, 1000.0, 100.0, commit=lambda g: None, publish=lambda p: None, run_id="x")
-        for source in ("mb_field", "ua_field"):
-            owner.begin_generation(source, 1, 1000.0, 100.0)
-        owner.accept(ua([*zip(INNER, [480.0] * 96, strict=True), *zip(OUTER, [440.0] * 96, strict=True), *PROCESS.items()], 1001.0, 1))
-        owner.accept(mb(1, [0.7] * 8))
-        return {k: (v.current.value, v.current.status) for k, v in owner.results.items()}
-
     payload = FULL.model_dump(mode="json")
-    for p in payload["points"]:
-        p["stale_after"] = 0.001  # would have expired every point under the old per-point rule
-    assert run(FULL.__class__.model_validate(payload)) == run(FULL)
+    payload["points"][0]["stale_after"] = 0.001  # the per-point expiry of the old frame chain
+    with pytest.raises(ValueError, match="stale_after"):
+        FULL.__class__.model_validate(payload)  # is no longer a setting at all, so nothing can depend on it
 
 
 def test_commit_groups_always_carry_inputs_with_the_results_computed_from_them():

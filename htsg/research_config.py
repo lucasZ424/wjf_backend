@@ -90,9 +90,7 @@ def estimate_budget(config):
     raw_bytes = seconds * source_rate * 1024
     return {
         "source_samples_per_second": source_rate,
-        "capture_bytes_estimate": 0,
         "validation_bytes_estimate": math.ceil(frame_bytes + raw_bytes + 8 * 1024**2),
-        "capture_budget_bytes": config.limits.capture_budget_bytes,
         "development_budget_bytes": config.storage.development_budget_bytes,
         "estimate_note": "1024 B/stored frame value including indexes, 1024 B/continuous raw sample, 8 MiB overhead; estimate only; excludes existing data and WAL",
     }
@@ -171,8 +169,6 @@ def validate_research(config):
         elif not p.node_id.startswith("ns=2;s="):
             raise ValueError("simulation NodeId must use ns=2;s=<name>")
     budget = estimate_budget(config)
-    if budget["capture_bytes_estimate"] > budget["capture_budget_bytes"]:
-        raise ValueError("simulation Pre estimate exceeds capture budget; reduce capture points/rate")
     if budget["validation_bytes_estimate"] > budget["development_budget_bytes"]:
         raise ValueError("simulation validation estimate exceeds development budget; reduce scope")
     return config

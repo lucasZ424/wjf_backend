@@ -126,7 +126,7 @@ def base_point(**extra):
     return {"id": "a", "source": "s", "unit": "u", **extra}
 
 
-def settings(points=(), derived=(), sources=({"id": "s", "kind": "simulator"},)):
+def settings(points=(), derived=(), sources=({"id": "s", "kind": "modbus"},)):
     return Settings.model_validate({"sources": list(sources), "points": list(points), "derived": list(derived)})
 
 
@@ -175,6 +175,6 @@ def test_derived_channel_mixing_two_sources_is_not_rejected():
     config = settings(
         [base_point(), base_point(id="b", source="t")],
         [{"id": "d", "inputs": ["a", "b"], "operation": "difference", "unit": "u", "high": 3}],
-        sources=({"id": "s", "kind": "simulator"}, {"id": "t", "kind": "simulator"}),
+        sources=({"id": "s", "kind": "modbus"}, {"id": "t", "kind": "modbus"}),
     )
     assert config.derived[0].inputs == ("a", "b")

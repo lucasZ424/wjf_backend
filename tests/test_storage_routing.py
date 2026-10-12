@@ -243,10 +243,10 @@ def test_maintenance_never_deletes_records_older_than_a_year(archive_db_factory,
 @pytest.mark.parametrize("bad", [0, -1, 1023, 10 * GIB + 1, None, 2**63])
 def test_a_development_budget_that_would_bypass_the_quota_is_rejected(bad):
     with pytest.raises(ValidationError):
-        Settings.model_validate({"sources": [{"id": "s", "kind": "simulator"}], "storage": {"development_budget_bytes": bad}})
+        Settings.model_validate({"sources": [{"id": "s", "kind": "modbus"}], "storage": {"development_budget_bytes": bad}})
 
 
 @pytest.mark.parametrize("good", [1024, 10 * GIB, 5 * GIB])
 def test_the_boundary_budgets_are_valid(good):
-    cfg = Settings.model_validate({"sources": [{"id": "s", "kind": "simulator"}], "storage": {"development_budget_bytes": good}})
+    cfg = Settings.model_validate({"sources": [{"id": "s", "kind": "modbus"}], "storage": {"development_budget_bytes": good}})
     assert cfg.storage.development_budget_bytes == good

@@ -1,34 +1,35 @@
-from types import SimpleNamespace
+"""The simplified development login and the account state behind every credential (终版 §2.3)."""
 
 import pytest
 from fastapi.testclient import TestClient
+from owner_support import small_config
 
-from htsg.api import create_app
 from htsg.auth import Accounts
 from htsg.config import Settings
-from htsg.runtime import Runtime
+from htsg.owner import Owner
+from htsg.publisher import Publisher
+from htsg.web import create_web_app
+
+
+def app_for(tmp_path, **settings):
+    config = small_config(**settings)
+    accounts = Accounts(tmp_path / "accounts.json")
+    original = accounts.create("admin", "admin")
+    owner = Owner(config, 1000.0, 100.0, run_id="t")
+    return create_web_app(config=config, accounts=accounts, publisher=Publisher(owner)), accounts, original
 
 
 @pytest.mark.parametrize("enabled", [False, True])
-def test_short_admin_credential_is_explicit_and_shared_by_http_and_websocket(settings, tmp_path, enabled):
-    accounts = Accounts(tmp_path / "accounts.json")
-    original = accounts.create("admin", "admin")
-    runtime = Runtime(settings.model_copy(update={"dev_admin_login": enabled}), SimpleNamespace())
-    client = TestClient(create_app(runtime, accounts))
+def test_short_admin_credential_is_explicit_and_shared_by_http_and_websocket(tmp_path, enabled):
+    app, accounts, original = app_for(tmp_path, dev_admin_login=enabled)
     headers = {"Authorization": "Bearer admin:admin"}
-    try:
+    with TestClient(app) as client:
         response = client.get("/api/me", headers=headers)
         assert response.status_code == (200 if enabled else 401)
         assert client.get("/api/me", headers={"Authorization": "Bearer " + original}).status_code == 200
         assert client.get("/api/me").status_code == 401
         if enabled:
             assert response.json() == {"username": "admin", "role": "admin"}
-            assert (
-                client.post(
-                    "/api/development/observations", headers=headers, json={"point_id": "x", "value": 2}
-                ).status_code
-                == 200
-            )
             with client.websocket_connect("/api/stream") as ws:
                 ws.send_json({"credential": "admin:admin"})
                 assert ws.receive_json()["type"] == "snapshot"
@@ -37,10 +38,6 @@ def test_short_admin_credential_is_explicit_and_shared_by_http_and_websocket(set
             accounts.uncertain = False
             accounts.users["admin"]["active"] = False
             assert client.get("/api/me", headers=headers).status_code == 401
-    finally:
-        runtime.io.shutdown(wait=True)
-        runtime.read_io.shutdown(wait=True)
-        runtime.calc_io.shutdown(wait=True)
 
 
 def test_production_refuses_development_login():

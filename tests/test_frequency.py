@@ -1,4 +1,7 @@
+import copy
+
 import pytest
+from owner_support import small_config
 
 from htsg.config import Settings, Source
 from htsg.research_config import Simulation
@@ -8,20 +11,28 @@ from htsg.timing import every_second
 @pytest.mark.parametrize("interval", [0.05, 0.2, 2, 60])
 def test_input_and_simulator_frequency_cannot_depart_from_one_hertz(interval):
     with pytest.raises(ValueError):
-        Source(id="s", kind="simulator", interval=interval)
+        Source(id="s", kind="modbus", interval=interval)
     with pytest.raises(ValueError):
         Simulation(interval=interval)
 
 
-def test_aggregation_and_background_refresh_are_not_configurable(settings):
-    data = settings.model_dump()
-    data["points"][0]["aggregation"] = "Mean"
-    with pytest.raises(ValueError):
-        Settings.model_validate(data)
-    data["points"][0]["aggregation"] = "Direct"
-    data["limits"]["maintenance_interval"] = 3
-    with pytest.raises(ValueError):
-        Settings.model_validate(data)
+def test_aggregation_and_background_refresh_are_not_configurable():
+    """终版 §18.1: the settings of the frame and capture-window mechanisms are gone and are not accepted again."""
+    data = small_config().model_dump()
+    assert Settings.model_validate(data)
+    for where, key, value in (
+        (lambda d: d["points"][0], "aggregation", "Mean"),
+        (lambda d: d["points"][0], "stale_after", 5),
+        (lambda d: d["derived"][0], "max_age", 2),
+        (lambda d: d["limits"], "maintenance_interval", 3),
+        (lambda d: d["limits"], "capture_budget_bytes", 1024),
+        (lambda d: d["sources"][0], "timeout", 3),
+        (lambda d: d, "profiles", []),
+    ):
+        edited = copy.deepcopy(data)
+        where(edited)[key] = value
+        with pytest.raises(ValueError, match=key):
+            Settings.model_validate(edited)
 
 
 async def test_one_second_schedule_excludes_work_time_and_skips_overruns(monkeypatch):

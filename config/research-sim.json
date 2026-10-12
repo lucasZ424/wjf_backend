@@ -15,16 +15,14 @@
       "enabled": true,
       "host": "127.0.0.1",
       "port": 15020,
-      "interval": 1,
-      "timeout": 1
+      "interval": 1
     },
     {
       "id": "ua_field",
       "kind": "opcua",
       "enabled": true,
       "endpoint": "opc.tcp://127.0.0.1:14840/htsg/",
-      "interval": 1,
-      "timeout": 1
+      "interval": 1
     }
   ],
   "points": [
@@ -34,8 +32,6 @@
       "unit": "mV/V",
       "extreme_low": -30,
       "extreme_high": 30,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "address": 0,
       "device_id": 1,
       "data_type": "float32"
@@ -48,8 +44,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_01"
     },
     {
@@ -60,8 +54,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_01"
     },
     {
@@ -70,8 +62,6 @@
       "unit": "mV/V",
       "extreme_low": -30,
       "extreme_high": 30,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "address": 2,
       "device_id": 1,
       "data_type": "float32"
@@ -84,8 +74,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_02"
     },
     {
@@ -96,8 +84,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_02"
     },
     {
@@ -106,8 +92,6 @@
       "unit": "mV/V",
       "extreme_low": -30,
       "extreme_high": 30,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "address": 4,
       "device_id": 1,
       "data_type": "float32"
@@ -120,8 +104,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_03"
     },
     {
@@ -132,8 +114,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_03"
     },
     {
@@ -142,8 +122,6 @@
       "unit": "mV/V",
       "extreme_low": -30,
       "extreme_high": 30,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "address": 6,
       "device_id": 1,
       "data_type": "float32"
@@ -156,8 +134,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_04"
     },
     {
@@ -168,8 +144,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_04"
     },
     {
@@ -178,8 +152,6 @@
       "unit": "mV/V",
       "extreme_low": -30,
       "extreme_high": 30,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "address": 8,
       "device_id": 1,
       "data_type": "float32"
@@ -192,8 +164,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_05"
     },
     {
@@ -204,8 +174,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_05"
     },
     {
@@ -214,8 +182,6 @@
       "unit": "mV/V",
       "extreme_low": -30,
       "extreme_high": 30,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "address": 10,
       "device_id": 1,
       "data_type": "float32"
@@ -228,8 +194,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_06"
     },
     {
@@ -240,8 +204,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_06"
     },
     {
@@ -250,8 +212,6 @@
       "unit": "mV/V",
       "extreme_low": -30,
       "extreme_high": 30,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "address": 12,
       "device_id": 1,
       "data_type": "float32"
@@ -264,8 +224,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_07"
     },
     {
@@ -276,8 +234,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_07"
     },
     {
@@ -286,8 +242,6 @@
       "unit": "mV/V",
       "extreme_low": -30,
       "extreme_high": 30,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "address": 14,
       "device_id": 1,
       "data_type": "float32"
@@ -300,8 +254,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_08"
     },
     {
@@ -312,8 +264,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_08"
     },
     {
@@ -324,8 +274,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_09"
     },
     {
@@ -336,8 +284,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_09"
     },
     {
@@ -348,8 +294,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_10"
     },
     {
@@ -360,8 +304,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_10"
     },
     {
@@ -372,8 +314,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_11"
     },
     {
@@ -384,8 +324,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_11"
     },
     {
@@ -396,8 +334,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_12"
     },
     {
@@ -408,8 +344,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_12"
     },
     {
@@ -420,8 +354,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_13"
     },
     {
@@ -432,8 +364,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_13"
     },
     {
@@ -444,8 +374,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_14"
     },
     {
@@ -456,8 +384,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_14"
     },
     {
@@ -468,8 +394,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_15"
     },
     {
@@ -480,8 +404,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_15"
     },
     {
@@ -492,8 +414,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_16"
     },
     {
@@ -504,8 +424,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_16"
     },
     {
@@ -516,8 +434,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_17"
     },
     {
@@ -528,8 +444,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_17"
     },
     {
@@ -540,8 +454,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_18"
     },
     {
@@ -552,8 +464,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_18"
     },
     {
@@ -564,8 +474,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_19"
     },
     {
@@ -576,8 +484,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_19"
     },
     {
@@ -588,8 +494,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_20"
     },
     {
@@ -600,8 +504,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_20"
     },
     {
@@ -612,8 +514,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_21"
     },
     {
@@ -624,8 +524,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_21"
     },
     {
@@ -636,8 +534,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_22"
     },
     {
@@ -648,8 +544,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_22"
     },
     {
@@ -660,8 +554,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_23"
     },
     {
@@ -672,8 +564,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_23"
     },
     {
@@ -684,8 +574,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_24"
     },
     {
@@ -696,8 +584,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_24"
     },
     {
@@ -708,8 +594,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_25"
     },
     {
@@ -720,8 +604,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_25"
     },
     {
@@ -732,8 +614,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_26"
     },
     {
@@ -744,8 +624,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_26"
     },
     {
@@ -756,8 +634,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_27"
     },
     {
@@ -768,8 +644,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_27"
     },
     {
@@ -780,8 +654,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_28"
     },
     {
@@ -792,8 +664,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_28"
     },
     {
@@ -804,8 +674,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_29"
     },
     {
@@ -816,8 +684,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_29"
     },
     {
@@ -828,8 +694,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_30"
     },
     {
@@ -840,8 +704,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_30"
     },
     {
@@ -852,8 +714,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_31"
     },
     {
@@ -864,8 +724,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_31"
     },
     {
@@ -876,8 +734,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_32"
     },
     {
@@ -888,8 +744,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_32"
     },
     {
@@ -900,8 +754,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_33"
     },
     {
@@ -912,8 +764,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_33"
     },
     {
@@ -924,8 +774,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_34"
     },
     {
@@ -936,8 +784,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_34"
     },
     {
@@ -948,8 +794,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_35"
     },
     {
@@ -960,8 +804,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_35"
     },
     {
@@ -972,8 +814,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_36"
     },
     {
@@ -984,8 +824,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_36"
     },
     {
@@ -996,8 +834,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_37"
     },
     {
@@ -1008,8 +844,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_37"
     },
     {
@@ -1020,8 +854,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_38"
     },
     {
@@ -1032,8 +864,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_38"
     },
     {
@@ -1044,8 +874,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_39"
     },
     {
@@ -1056,8 +884,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_39"
     },
     {
@@ -1068,8 +894,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_40"
     },
     {
@@ -1080,8 +904,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_40"
     },
     {
@@ -1092,8 +914,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_41"
     },
     {
@@ -1104,8 +924,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_41"
     },
     {
@@ -1116,8 +934,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_42"
     },
     {
@@ -1128,8 +944,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_42"
     },
     {
@@ -1140,8 +954,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_43"
     },
     {
@@ -1152,8 +964,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_43"
     },
     {
@@ -1164,8 +974,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_44"
     },
     {
@@ -1176,8 +984,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_44"
     },
     {
@@ -1188,8 +994,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_45"
     },
     {
@@ -1200,8 +1004,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_45"
     },
     {
@@ -1212,8 +1014,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_46"
     },
     {
@@ -1224,8 +1024,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_46"
     },
     {
@@ -1236,8 +1034,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_47"
     },
     {
@@ -1248,8 +1044,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_47"
     },
     {
@@ -1260,8 +1054,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_48"
     },
     {
@@ -1272,8 +1064,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_48"
     },
     {
@@ -1284,8 +1074,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_49"
     },
     {
@@ -1296,8 +1084,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_49"
     },
     {
@@ -1308,8 +1094,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_50"
     },
     {
@@ -1320,8 +1104,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_50"
     },
     {
@@ -1332,8 +1114,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_51"
     },
     {
@@ -1344,8 +1124,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_51"
     },
     {
@@ -1356,8 +1134,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_52"
     },
     {
@@ -1368,8 +1144,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_52"
     },
     {
@@ -1380,8 +1154,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_53"
     },
     {
@@ -1392,8 +1164,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_53"
     },
     {
@@ -1404,8 +1174,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_54"
     },
     {
@@ -1416,8 +1184,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_54"
     },
     {
@@ -1428,8 +1194,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_55"
     },
     {
@@ -1440,8 +1204,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_55"
     },
     {
@@ -1452,8 +1214,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_56"
     },
     {
@@ -1464,8 +1224,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_56"
     },
     {
@@ -1476,8 +1234,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_57"
     },
     {
@@ -1488,8 +1244,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_57"
     },
     {
@@ -1500,8 +1254,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_58"
     },
     {
@@ -1512,8 +1264,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_58"
     },
     {
@@ -1524,8 +1274,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_59"
     },
     {
@@ -1536,8 +1284,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_59"
     },
     {
@@ -1548,8 +1294,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_60"
     },
     {
@@ -1560,8 +1304,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_60"
     },
     {
@@ -1572,8 +1314,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_61"
     },
     {
@@ -1584,8 +1324,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_61"
     },
     {
@@ -1596,8 +1334,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_62"
     },
     {
@@ -1608,8 +1344,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_62"
     },
     {
@@ -1620,8 +1354,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_63"
     },
     {
@@ -1632,8 +1364,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_63"
     },
     {
@@ -1644,8 +1374,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_64"
     },
     {
@@ -1656,8 +1384,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_64"
     },
     {
@@ -1668,8 +1394,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_65"
     },
     {
@@ -1680,8 +1404,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_65"
     },
     {
@@ -1692,8 +1414,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_66"
     },
     {
@@ -1704,8 +1424,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_66"
     },
     {
@@ -1716,8 +1434,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_67"
     },
     {
@@ -1728,8 +1444,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_67"
     },
     {
@@ -1740,8 +1454,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_68"
     },
     {
@@ -1752,8 +1464,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_68"
     },
     {
@@ -1764,8 +1474,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_69"
     },
     {
@@ -1776,8 +1484,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_69"
     },
     {
@@ -1788,8 +1494,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_70"
     },
     {
@@ -1800,8 +1504,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_70"
     },
     {
@@ -1812,8 +1514,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_71"
     },
     {
@@ -1824,8 +1524,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_71"
     },
     {
@@ -1836,8 +1534,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_72"
     },
     {
@@ -1848,8 +1544,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_72"
     },
     {
@@ -1860,8 +1554,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_73"
     },
     {
@@ -1872,8 +1564,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_73"
     },
     {
@@ -1884,8 +1574,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_74"
     },
     {
@@ -1896,8 +1584,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_74"
     },
     {
@@ -1908,8 +1594,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_75"
     },
     {
@@ -1920,8 +1604,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_75"
     },
     {
@@ -1932,8 +1614,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_76"
     },
     {
@@ -1944,8 +1624,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_76"
     },
     {
@@ -1956,8 +1634,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_77"
     },
     {
@@ -1968,8 +1644,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_77"
     },
     {
@@ -1980,8 +1654,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_78"
     },
     {
@@ -1992,8 +1664,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_78"
     },
     {
@@ -2004,8 +1674,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_79"
     },
     {
@@ -2016,8 +1684,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_79"
     },
     {
@@ -2028,8 +1694,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_80"
     },
     {
@@ -2040,8 +1704,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_80"
     },
     {
@@ -2052,8 +1714,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_81"
     },
     {
@@ -2064,8 +1724,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_81"
     },
     {
@@ -2076,8 +1734,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_82"
     },
     {
@@ -2088,8 +1744,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_82"
     },
     {
@@ -2100,8 +1754,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_83"
     },
     {
@@ -2112,8 +1764,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_83"
     },
     {
@@ -2124,8 +1774,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_84"
     },
     {
@@ -2136,8 +1784,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_84"
     },
     {
@@ -2148,8 +1794,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_85"
     },
     {
@@ -2160,8 +1804,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_85"
     },
     {
@@ -2172,8 +1814,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_86"
     },
     {
@@ -2184,8 +1824,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_86"
     },
     {
@@ -2196,8 +1834,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_87"
     },
     {
@@ -2208,8 +1844,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_87"
     },
     {
@@ -2220,8 +1854,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_88"
     },
     {
@@ -2232,8 +1864,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_88"
     },
     {
@@ -2244,8 +1874,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_89"
     },
     {
@@ -2256,8 +1884,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_89"
     },
     {
@@ -2268,8 +1894,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_90"
     },
     {
@@ -2280,8 +1904,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_90"
     },
     {
@@ -2292,8 +1914,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_91"
     },
     {
@@ -2304,8 +1924,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_91"
     },
     {
@@ -2316,8 +1934,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_92"
     },
     {
@@ -2328,8 +1944,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_92"
     },
     {
@@ -2340,8 +1954,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_93"
     },
     {
@@ -2352,8 +1964,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_93"
     },
     {
@@ -2364,8 +1974,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_94"
     },
     {
@@ -2376,8 +1984,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_94"
     },
     {
@@ -2388,8 +1994,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_95"
     },
     {
@@ -2400,8 +2004,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_95"
     },
     {
@@ -2412,8 +2014,6 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_outer_96"
     },
     {
@@ -2424,108 +2024,90 @@
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "aggregation": "Direct",
-      "stale_after": 5,
       "node_id": "ns=2;s=temp_inner_96"
     },
     {
       "id": "load_mw",
       "source": "ua_field",
       "unit": "MW",
-      "aggregation": "Direct",
       "high": 693,
       "hysteresis_high": 10,
       "extreme_low": -20,
       "extreme_high": 800,
-      "stale_after": 5,
       "node_id": "ns=2;s=load_mw"
     },
     {
       "id": "waterwall_flow",
       "source": "ua_field",
       "unit": "t/h",
-      "aggregation": "Direct",
       "low": 925,
       "hysteresis_low": 90,
       "extreme_low": -50,
       "extreme_high": 3000,
-      "stale_after": 5,
       "node_id": "ns=2;s=waterwall_flow"
     },
     {
       "id": "main_steam_flow",
       "source": "ua_field",
       "unit": "t/h",
-      "aggregation": "Direct",
       "high": 2223,
       "hysteresis_high": 10,
       "extreme_low": -50,
       "extreme_high": 3000,
-      "stale_after": 5,
       "node_id": "ns=2;s=main_steam_flow"
     },
     {
       "id": "main_steam_pressure",
       "source": "ua_field",
       "unit": "MPa",
-      "aggregation": "Direct",
       "high": 30.0,
       "hysteresis_high": 0.15,
       "extreme_low": -0.1,
       "extreme_high": 40,
-      "stale_after": 5,
       "node_id": "ns=2;s=main_steam_pressure"
     },
     {
       "id": "feedwater_temperature",
       "source": "ua_field",
       "unit": "degC",
-      "aggregation": "Direct",
       "low": 250,
       "hysteresis_low": 6,
       "high": 320,
       "hysteresis_high": 1,
       "extreme_low": -20,
       "extreme_high": 400,
-      "stale_after": 5,
       "node_id": "ns=2;s=feedwater_temperature"
     },
     {
       "id": "reheat_temperature",
       "source": "ua_field",
       "unit": "degC",
-      "aggregation": "Direct",
       "high": 630,
       "hysteresis_high": 1,
       "extreme_low": -50,
       "extreme_high": 800,
-      "stale_after": 5,
       "node_id": "ns=2;s=reheat_temperature"
     },
     {
       "id": "working_fluid_temperature",
       "source": "ua_field",
       "unit": "degC",
-      "aggregation": "Direct",
       "high": 460,
       "hysteresis_high": 3,
       "extreme_low": -50,
       "extreme_high": 800,
-      "stale_after": 5,
       "node_id": "ns=2;s=working_fluid_temperature"
     },
     {
       "id": "furnace_pressure",
       "source": "ua_field",
       "unit": "kPa",
-      "aggregation": "Direct",
       "low": -0.5,
       "hysteresis_low": 0.05,
       "high": 0.5,
       "hysteresis_high": 0.05,
       "extreme_low": -5,
       "extreme_high": 5,
-      "stale_after": 5,
       "node_id": "ns=2;s=furnace_pressure"
     }
   ],
@@ -5424,7 +5006,7 @@
     {
       "id": "thermal_assumed",
       "young_mpa": 170000,
-      "expansion_per_k": 0.0000135,
+      "expansion_per_k": 1.35e-05,
       "restraint": 0.5,
       "young_relative_uncertainty": 0.1,
       "expansion_relative_uncertainty": 0.1,
@@ -5434,13 +5016,6 @@
       "reference_urls": []
     }
   ],
-  "profiles": [],
-  "limits": {
-    "capture_budget_bytes": 67108864,
-    "write_batch_records": 128,
-    "ring_samples": 10000,
-    "max_capture": 86400
-  },
   "storage": {
     "primary_path": "D:/HTSG-dev/primary",
     "emergency_path": "D:/HTSG-dev/emergency",

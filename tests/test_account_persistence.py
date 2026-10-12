@@ -4,28 +4,31 @@ from pathlib import Path
 import psycopg
 import pytest
 from fastapi.testclient import TestClient
+from owner_support import small_config
+from test_archive_router import Disks
 
-from htsg.api import create_app
+from htsg.archive_router import ArchiveRouter
 from htsg.auth import Accounts
+from htsg.owner import Owner
+from htsg.publisher import Publisher
 from htsg.runtime import Runtime
-from htsg.storage import Router
+from htsg.web import create_web_app
 
 
-def test_waiting_websocket_does_not_deliver_data_after_account_state_becomes_uncertain(
-    settings, databases, tmp_path
-):
+def test_waiting_websocket_does_not_deliver_data_after_account_state_becomes_uncertain(tmp_path):
     from starlette.websockets import WebSocketDisconnect
 
+    config = small_config()
     accounts = Accounts(tmp_path / "accounts.json")
     credential = accounts.create("admin", "admin")
-    runtime = Runtime(settings, Router(settings, *databases))
-    with TestClient(create_app(runtime, accounts)) as client:
+    app = create_web_app(config=config, accounts=accounts, publisher=Publisher(Owner(config, 1000.0, 100.0, run_id="t")))
+    with TestClient(app) as client:
         with client.websocket_connect("/api/stream") as ws:
             ws.send_json({"credential": credential})
             assert ws.receive_json()["type"] == "snapshot"
             accounts.uncertain = True
             with pytest.raises(WebSocketDisconnect) as closed:
-                ws.receive_json()
+                ws.receive_json()  # the heartbeat finds the account uncertain and nothing is sent
             assert closed.value.code == 1008
 
 
@@ -110,37 +113,39 @@ def test_database_snapshot_wins_over_clean_stale_cache(account_setup):
 
 
 @pytest.mark.parametrize("pending", [False, True])
-def test_offline_cache_allowed_only_without_unresolved_change(
-    settings, databases, tmp_path, monkeypatch, pending
-):
+async def test_offline_cache_allowed_only_without_unresolved_change(archive_db_factory, tmp_path, monkeypatch, pending):
+    """The runtime settles the accounts with the database when it starts (終版 §2.3): a clean local cache may carry on
+    while the database cannot be read, an unfinished change may not - then the backend does not start at all."""
+    config = small_config(sources=[{"id": "mb", "kind": "modbus"}, {"id": "ua", "kind": "opcua"}])
+    router = ArchiveRouter(config, archive_db_factory("primary"), archive_db_factory("emergency"), disk_usage=Disks())
     accounts = Accounts(tmp_path / "accounts.json")
-    admin = accounts.create("admin", "admin")
+    accounts.create("admin", "admin")
     if pending:
         accounts.begin_update()
-    runtime = Runtime(settings, Router(settings, *databases))
 
     def unavailable():
         raise psycopg.OperationalError("database read unavailable")
 
-    monkeypatch.setattr(databases[0], "read_accounts", unavailable)
-    app = create_app(runtime, accounts)
+    monkeypatch.setattr(router.primary, "read_accounts", unavailable)
+    runtime = Runtime(config, router, accounts)
     if pending:
         with pytest.raises(psycopg.OperationalError):
-            with TestClient(app):
-                pass
-        assert not runtime.running
+            await runtime.start()
+        assert not runtime.running and runtime.health["accounts"] == "RECONCILIATION_REQUIRED"
     else:
-        with TestClient(app) as client:
-            response = client.get("/api/me", headers={"Authorization": "Bearer " + admin})
-            assert response.status_code == 200
+        await runtime.start()
+        try:
             assert runtime.health["accounts"] == "LOCAL_VERIFICATION_CACHE_ONLY"
+        finally:
+            await runtime.stop()
 
 
-def test_invalid_audit_rolls_back_account_transaction(settings, databases, tmp_path):
+def test_invalid_audit_rolls_back_account_transaction(archive_db_factory, tmp_path):
     accounts = Accounts(tmp_path / "accounts.json")
     accounts.create("admin", "admin")
     accounts.create("viewer", "viewer")
-    store = databases[0]
+    store = archive_db_factory("primary")
+    store.initialize(small_config())
     store.sync_accounts(accounts.users)
     candidate = copy.deepcopy(accounts.users)
     candidate["viewer"]["active"] = False

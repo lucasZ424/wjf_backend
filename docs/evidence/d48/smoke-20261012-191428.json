@@ -1,0 +1,112 @@
+{
+  "candidate": {
+    "commit": "7fd4e24dd6521bfede958f8881f584a7d273202e",
+    "clean": false,
+    "code_files": 25,
+    "code_sha256": "2dd796b42f6d0de1c55690af990438175a22e6f2961f558244f66350d29dc549",
+    "schema_sha256": "2479b07e89acac998df150ebe832091c6538d0718da75cc4e03222e5b7065ee2",
+    "pages_sha256": "b2f966fb35734a6d1552ab1623eb1b623e0e4c8846250330e5b44ac2d19c4033",
+    "configs_sha256": "6e1f673dc1a40fd51efc8f4c1b85062b64dacde4a7a3666f56d821624cedeac5",
+    "schema_generation": 5
+  },
+  "first start on a new database": {
+    "page_served_is_this_tree": true,
+    "config_id_is_the_one_on_disk": true,
+    "archive_sources": {
+      "mb_field": "OK",
+      "ua_field": "OK"
+    },
+    "groups_committed": 47,
+    "queue_failures": 0,
+    "negotiated_ua": {
+      "requested": {
+        "publish_interval": 1.0,
+        "keepalive_count": 1,
+        "lifetime_count": 60,
+        "queue_size": 10,
+        "sampling_interval": 1.0,
+        "session_timeout": 60.0
+      },
+      "publish_interval": 1.0,
+      "keepalive_count": 1,
+      "lifetime_count": 60,
+      "session_timeout": 60.0,
+      "queue_capability": "OVERFLOW_DETECTABLE",
+      "min_queue": 10,
+      "max_queue": 10,
+      "sampling_interval_min": 1.0,
+      "sampling_interval_max": 1.0,
+      "items": 200,
+      "violations": []
+    },
+    "accounts": "DATABASE_AUTHORITATIVE",
+    "history": {
+      "raw_rows": 21,
+      "duplicates": 0,
+      "in_order": true,
+      "partial": false,
+      "gaps": 0
+    },
+    "stop": "STOPPED",
+    "runs_in_database": [
+      [
+        "6d9191d6c0274c5da7e01fb9ce37aad9",
+        true,
+        "NORMAL"
+      ]
+    ]
+  },
+  "restart on the same database": {
+    "page_served_is_this_tree": true,
+    "config_id_is_the_one_on_disk": true,
+    "archive_sources": {
+      "mb_field": "OK",
+      "ua_field": "OK"
+    },
+    "groups_committed": 47,
+    "queue_failures": 0,
+    "negotiated_ua": {
+      "requested": {
+        "publish_interval": 1.0,
+        "keepalive_count": 1,
+        "lifetime_count": 60,
+        "queue_size": 10,
+        "sampling_interval": 1.0,
+        "session_timeout": 60.0
+      },
+      "publish_interval": 1.0,
+      "keepalive_count": 1,
+      "lifetime_count": 60,
+      "session_timeout": 60.0,
+      "queue_capability": "OVERFLOW_DETECTABLE",
+      "min_queue": 10,
+      "max_queue": 10,
+      "sampling_interval_min": 1.0,
+      "sampling_interval_max": 1.0,
+      "items": 200,
+      "violations": []
+    },
+    "accounts": "DATABASE_AUTHORITATIVE",
+    "history": {
+      "raw_rows": 42,
+      "duplicates": 0,
+      "in_order": true,
+      "partial": false,
+      "gaps": 0
+    },
+    "stop": "STOPPED",
+    "runs_in_database": [
+      [
+        "6d9191d6c0274c5da7e01fb9ce37aad9",
+        true,
+        "NORMAL"
+      ],
+      [
+        "01ebe0ac81414a0fae2fbdb85e9b93cd",
+        true,
+        "NORMAL"
+      ]
+    ]
+  },
+  "logs_in": "C:\\Users\\zhoul\\AppData\\Local\\Temp\\htsg-smoke-d2f90e11eee141079bfdbf4d415a3a31"
+}

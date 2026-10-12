@@ -9,7 +9,7 @@ from pydantic import ValidationError
 
 from htsg.config import Settings, Timing
 
-BASE = {"sources": [{"id": "s", "kind": "simulator"}], "points": [], "derived": []}
+BASE = {"sources": [{"id": "s", "kind": "modbus"}], "points": [], "derived": []}
 
 
 def test_defaults_match_the_section_11_table():

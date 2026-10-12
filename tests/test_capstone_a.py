@@ -8,12 +8,12 @@ from pathlib import Path
 
 import psycopg
 import pytest
+from legacy_support import make_legacy
 from pydantic import ValidationError
 
 from htsg import records as r
 from htsg.archive import LegacyDatabaseError
 from htsg.config import Settings, fault_rule, load_settings
-from htsg.storage import Store
 
 ROOT = Path(__file__).resolve().parents[1]
 FULL = load_settings(ROOT / "config" / "research-sim.json")
@@ -102,9 +102,7 @@ def test_a_result_naming_an_unknown_configuration_version_is_refused(archive_db_
 
 def test_legacy_database_stays_exactly_as_it_was(archive_db_factory):
     legacy = archive_db_factory()
-    old = Store(legacy.dsn)
-    old.initialize(FULL)
-    old.close()
+    make_legacy(legacy, FULL)
     query = "SELECT table_name,column_name FROM information_schema.columns WHERE table_schema='public' ORDER BY 1,2"
     with legacy.session() as conn:
         before = conn.execute(query).fetchall()

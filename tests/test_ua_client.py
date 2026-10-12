@@ -148,7 +148,8 @@ async def test_subscription_is_created_with_the_specified_explicit_parameters(fi
         assert (p.RequestedPublishingInterval, p.RequestedMaxKeepAliveCount, p.RequestedLifetimeCount) == (1000, 2, 60)
         assert p.RequestedLifetimeCount != 10000, "the library's own default must not be used"
         assert negotiated.requested == {
-            "publish_interval": 1, "keepalive_count": 2, "lifetime_count": 60, "queue_size": 10, "session_timeout": 60,
+            "publish_interval": 1, "keepalive_count": 2, "lifetime_count": 60, "queue_size": 10, "sampling_interval": 1,
+            "session_timeout": 60,
         }  # fmt: skip
         # what is stored is what the server returned, read back from the creation reply
         assert negotiated.publish_interval == sub.created.RevisedPublishingInterval / 1000
@@ -186,6 +187,8 @@ def test_a_queue_revised_to_one_is_marked_but_not_rejected():
     granted = negotiate(Timing(), fake_created(1000, 60, 2), items, 60.0)
     assert granted.queue_capability == "OVERWRITE_UNDETECTABLE"
     assert granted.as_dict()["min_queue"] == 1 and granted.violations == []
+    assert granted.as_dict()["max_queue"] == 10 and granted.as_dict()["items"] == 2, "the delivery table needs the whole spread, not just the smallest"
+    assert (granted.as_dict()["sampling_interval_min"], granted.as_dict()["sampling_interval_max"]) == (1.0, 1.0)
     assert negotiate(Timing(), fake_created(1000, 60, 2), items[:1], 60.0).queue_capability == "OVERFLOW_DETECTABLE"
 
 

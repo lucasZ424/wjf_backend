@@ -4,13 +4,13 @@ from types import SimpleNamespace
 import psycopg
 import pytest
 
+from htsg.archive_router import ExternalBindingError
+from htsg.archive_router import validate_external_binding as check_binding
 from htsg.config import Settings, Storage
-from htsg.storage import ExternalBindingError
-from htsg.storage import Store as DatabaseStore
 
 
 def validate_external_binding(config, external, primary, emergency):
-    return DatabaseStore.validate_external_binding(external, config, primary, emergency)
+    return check_binding(external, config, primary, emergency)
 
 
 class Store:
