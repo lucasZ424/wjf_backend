@@ -67,9 +67,9 @@ const currentPage = () => pages.find(p => p.id === state.page) || pages[0];
 function renderPage() {
   if (!state.config) return;
   const page = currentPage();
-  $("navigation").innerHTML = pages.map(p => `<button data-page="${p.id}" class="${p.id === page.id ? "active" : ""}"><span>${String(p.id).padStart(2, "0")}</span>${esc(p.name)}</button>`).join("");
+  $("navigation").innerHTML = pages.map(p => `<button data-page="${p.id}" class="${p.id === page.id ? "active" : ""}">${esc(p.name)}</button>`).join("");
   $("navigation").querySelectorAll("button").forEach(b => b.onclick = () => { state.page = Number(b.dataset.page); renderPage(); });
-  $("workspace").innerHTML = `<div class="page-heading"><div><span class="eyebrow">HTSG / ${String(page.id).padStart(2, "0")}</span><h2>${esc(page.name)}</h2><span class="muted">${esc(state.config.project?.title || "")}</span></div><span class="badge">数据来源：后端协议主动读取</span></div>${page.html()}`;
+  $("workspace").innerHTML = `<div class="page-heading"><div><span class="eyebrow">HTSG</span><h2>${esc(page.name)}</h2><span class="muted">${esc(state.config.project?.title || "")}</span></div><span class="badge">数据来源：后端协议主动读取</span></div>${page.html()}`;
   page.mount?.();
   renderLive();
 }

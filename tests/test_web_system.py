@@ -22,7 +22,7 @@ from htsg.owner import Owner
 from htsg.publisher import Publisher
 from htsg.web import create_web_app
 
-NAMES = ["01系统总览", "02水冷壁应变场", "04热应力分析", "05历史查询", "12系统自检", "14系统管理·权限", "15算法引擎·数字孪生"]
+NAMES = ["系统总览", "水冷壁应变场", "热应力分析", "历史查询", "系统自检", "系统管理·权限", "算法引擎·数字孪生"]
 
 
 def sign_in_with(page, rig, credential):
@@ -40,9 +40,10 @@ def test_the_seven_pages_come_in_the_designed_order(page, archive_rig):
     sign_in(page, archive_rig)
     shown = [t.replace(" ", "").replace("\n", "") for t in page.locator("#navigation button").all_inner_texts()]
     assert shown == NAMES
-    for number, name in zip((1, 2, 4, 5, 12, 14, 15), NAMES, strict=True):
-        page.get_by_role("button", name=name[2:]).click()
-        assert f"HTSG / {number:02d}" in page.locator(".page-heading").inner_text()
+    for name in NAMES:
+        page.get_by_role("button", name=name).click()
+        assert page.locator(".page-heading h2").inner_text() == name, "a page is known by its title; no page number is shown"
+    assert "HTSG /" not in page.locator(".page-heading").inner_text() and not any(c.isdigit() for t in shown for c in t)
     assert page.errors == []
 
 

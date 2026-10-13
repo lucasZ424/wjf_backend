@@ -30,7 +30,6 @@ PAIR = 2  # the third temperature pair
 PROXY_PER_K = 1.1475  # MPa per K: E 170 GPa x alpha 1.35e-5 1/K x restraint 0.5
 FORGED = 987654.321  # a load nobody sent: "987,654" on screen would mean a damaged message was applied
 NAMES = ["系统总览", "水冷壁应变场", "热应力分析", "历史查询", "系统自检", "系统管理·权限", "算法引擎·数字孪生"]
-HEADINGS = ["HTSG / 01", "HTSG / 02", "HTSG / 04", "HTSG / 05", "HTSG / 12", "HTSG / 14", "HTSG / 15"]
 
 
 def fmt(value):
@@ -666,9 +665,9 @@ def test_no_route_changes_a_channel_a_threshold_or_the_configuration_for_anyone(
 
 def test_all_seven_pages_open_in_the_designed_order_at_desktop_width(page, archive_rig):
     open_page(page, archive_rig, "系统总览", who="admin")
-    for name, heading in zip(NAMES, HEADINGS, strict=True):
+    for n, name in enumerate(NAMES, start=1):
         page.locator("#navigation").get_by_role("button", name=name).click()
-        assert heading in page.locator(".page-heading").inner_text()
+        assert page.locator(".page-heading h2").inner_text() == name
         page.wait_for_timeout(400)
-        keep(page, f"desktop-{heading[-2:]}")
+        keep(page, f"desktop-{n}")
     assert page.errors == []
