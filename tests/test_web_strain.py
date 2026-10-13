@@ -46,6 +46,17 @@ def block(page, number):
     return page.locator(f'{MAP} .block[data-station="S{number:02d}"]')
 
 
+def box_of(page, number):
+    """The block's box.  The page draws the blocks anew with every message, so the element asked about can be replaced
+    between finding it and measuring it: ask again for a moment instead of failing on that instant."""
+    for _ in range(40):
+        found = block(page, number).bounding_box()
+        if found:
+            return found
+        page.wait_for_timeout(50)
+    raise AssertionError(f"block S{number:02d} has no box")
+
+
 def cells(page, row, table="#strain-table"):
     return page.locator(f"{table} tbody tr").nth(row).locator("td").all_inner_texts()
 
@@ -78,7 +89,7 @@ def test_there_are_eight_fixed_blocks_laid_out_by_the_configuration_and_nothing_
     area = page.locator(MAP).bounding_box()
     boxes = []
     for number, station in enumerate(still.config.ui.stations, start=1):
-        box = block(page, number).bounding_box()
+        box = box_of(page, number)
         assert abs((box["x"] + box["width"] / 2 - area["x"]) / area["width"] * 100 - station.x) < 2
         assert abs((box["y"] + box["height"] / 2 - area["y"]) / area["height"] * 100 - station.y) < 3
         boxes.append(box)
