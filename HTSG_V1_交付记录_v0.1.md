@@ -28,7 +28,7 @@
 | 账户与数据库对账 | 以数据库为准 | 以数据库为准 |
 | 正常停止（Ctrl+Break，端口关闭） | 已停止 | 已停止 |
 | 库里的运行记录 | 1 次，`NORMAL` | 2 次，均 `NORMAL` |
-| 历史窗口内的 `bridge_mvv_01` 原始记录 | 21 行，无重复、按序 | 42 行（首次的 21 行仍在，加上本次的），无重复、按序 |
+| 历史窗口内的 `bridge_mvv_01` 原始记录 | 16 行，无重复、按序 | 32 行（首次的 16 行仍在，加上本次的），无重复、按序 |
 
 候选版本摘要（运行入口实际加载的 25 个 `htsg` 模块、结构、页面、配置）与[测量报告第 0 节](HTSG_V1_满量测量与容量报告_v0.1.md)相同，D46、D47、烟测针对的是同一份代码与配置。
 
@@ -87,14 +87,14 @@
 - 删除了 `config.simulator` 源与开发观测注入入口、`/api/current`、`/api/history`、事件类接口、旧的页内历史设置；`config` 里旧机制字段不再被接受。
 - 实现取值：`limits.commit_queue` 默认 400 组取代 `ordinary_queue/event_queue/write_batch_records`（终版第 18.1 节说这些是“实现基线、按第 16 节验证”，新链路是单一有序队列）；`Negotiated.as_dict()` 增加了采样周期与队列的范围，供本表使用。
 - 前端不做移动端布局（用户指示 2026-10-12）。
-- **未完成并需要用户授权的一项：** 旧帧链路的模块与测试在本环境里没有被删除（删除命令被权限分类器拒绝），见下节。
+- 旧帧链路的模块、测试与旧页面脚本已在 D45 删除（共 30 个文件，由用户执行 `git rm`；本环境的删除命令被权限分类器拒绝），见下节。
 
-## 7. 待决：旧链路文件的删除
+## 7. 已删除的旧链路文件
 
-D45 要求清除被替代的链路。下列文件已经**不被任何入口加载**（`tests/test_runtime.py` 核对），但仍在仓库里；删除命令被拒绝，需要用户授权（或自行删除）后，才能把“全套适用测试”收口到最终 Capstone H。
+D45 要求清除被替代的链路。下列 30 个文件已删除（用户执行 `git rm`），它们仍在提交 `7fd4e24` 及之前的 git 历史里；`tests/test_runtime.py` 核对包里已无这些模块、`htsg/schema.sql` 不再随包安装、入口加载的模块里没有它们。
 
-- 模块：`htsg/engine.py`、`calculation.py`、`faults.py`、`adapters.py`、`storage.py`、`schema.sql`、`capture.py`、`api.py`、`research_api.py`。
-- 已被新用例取代的旧测试文件：`tests/test_engine.py`、`test_pre_coverage.py`、`test_audit_lifecycle.py`、`test_audit_regressions.py`、`test_storage.py`、`test_external_integration.py`、`test_external_storage.py`、`test_capacity_recall.py`、`test_fault_points.py`、`test_fault_validation.py`、`test_research_flow.py`、`test_replay.py`、`test_calculation.py`、`test_protocols.py`、`test_scenario_archive_guard.py`、`test_api.py`、`test_external_api.py`，以及它们的辅助 `tests/fault_capture_worker.py`。
-- 针对旧页面、已失效的脚本：`scripts/validate_ui.py`、`validate_recall_ui.py`、`validate_research_cycle.py`。
+- 模块 9 个：`htsg/engine.py`、`calculation.py`、`faults.py`、`adapters.py`、`storage.py`、`schema.sql`、`capture.py`、`api.py`、`research_api.py`。
+- 旧测试 17 个及辅助 1 个：`tests/test_engine.py`、`test_pre_coverage.py`、`test_audit_lifecycle.py`、`test_audit_regressions.py`、`test_storage.py`、`test_external_integration.py`、`test_external_storage.py`、`test_capacity_recall.py`、`test_fault_points.py`、`test_fault_validation.py`、`test_research_flow.py`、`test_replay.py`、`test_calculation.py`、`test_protocols.py`、`test_scenario_archive_guard.py`、`test_api.py`、`test_external_api.py`、`tests/fault_capture_worker.py`。
+- 针对旧页面的脚本 3 个：`scripts/validate_ui.py`、`validate_recall_ui.py`、`validate_research_cycle.py`。
 
-这些文件对应的终版条款与替代用例见[执行记录第 1 节 D01 的处置表](HTSG_V1_开发执行记录_v0.1.md)和 D45 条目。
+这些文件对应的终版条款与替代用例见[执行记录第 1 节 D01 的处置表](HTSG_V1_开发执行记录_v0.1.md)和 D45 条目。实施方案第 2 节表里指向它们的链接已改成文字。删除后，代码摘要与删除前相同（运行入口只加载 25 个未被删除的模块），烟测与完整套件在删除后重跑。

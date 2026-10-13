@@ -1,6 +1,6 @@
 {
   "candidate": {
-    "commit": "7fd4e24dd6521bfede958f8881f584a7d273202e",
+    "commit": "beeb1886aefadf383d40baa5d39747c24dd5f106",
     "clean": false,
     "code_files": 25,
     "code_sha256": "2dd796b42f6d0de1c55690af990438175a22e6f2961f558244f66350d29dc549",
@@ -16,7 +16,7 @@
       "mb_field": "OK",
       "ua_field": "OK"
     },
-    "groups_committed": 47,
+    "groups_committed": 37,
     "queue_failures": 0,
     "negotiated_ua": {
       "requested": {
@@ -41,7 +41,7 @@
     },
     "accounts": "DATABASE_AUTHORITATIVE",
     "history": {
-      "raw_rows": 21,
+      "raw_rows": 16,
       "duplicates": 0,
       "in_order": true,
       "partial": false,
@@ -50,7 +50,7 @@
     "stop": "STOPPED",
     "runs_in_database": [
       [
-        "6d9191d6c0274c5da7e01fb9ce37aad9",
+        "ba163745e3e44f76b46640d272070e15",
         true,
         "NORMAL"
       ]
@@ -63,7 +63,7 @@
       "mb_field": "OK",
       "ua_field": "OK"
     },
-    "groups_committed": 47,
+    "groups_committed": 37,
     "queue_failures": 0,
     "negotiated_ua": {
       "requested": {
@@ -88,7 +88,7 @@
     },
     "accounts": "DATABASE_AUTHORITATIVE",
     "history": {
-      "raw_rows": 42,
+      "raw_rows": 32,
       "duplicates": 0,
       "in_order": true,
       "partial": false,
@@ -97,16 +97,16 @@
     "stop": "STOPPED",
     "runs_in_database": [
       [
-        "6d9191d6c0274c5da7e01fb9ce37aad9",
+        "ba163745e3e44f76b46640d272070e15",
         true,
         "NORMAL"
       ],
       [
-        "01ebe0ac81414a0fae2fbdb85e9b93cd",
+        "a1b2a618ded849fda652eebc9b66b27e",
         true,
         "NORMAL"
       ]
     ]
   },
-  "logs_in": "C:\\Users\\zhoul\\AppData\\Local\\Temp\\htsg-smoke-d2f90e11eee141079bfdbf4d415a3a31"
+  "logs_in": "C:\\Users\\zhoul\\AppData\\Local\\Temp\\htsg-smoke-a7d4fead3c7c494cbfc338ced1d11455"
 }

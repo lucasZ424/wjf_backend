@@ -10,6 +10,7 @@ import asyncio
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 import httpx
 import psycopg
@@ -124,9 +125,22 @@ async def test_realtime_state_does_not_wait_for_a_database_that_cannot_be_reache
     assert runtime.health["unwritten_at_stop"] > 0, "what could not be written is reported at the end, not hidden"
 
 
+OLD_CHAIN = ("htsg.engine", "htsg.calculation", "htsg.faults", "htsg.adapters", "htsg.storage", "htsg.capture", "htsg.api", "htsg.research_api")
+
+
+def test_the_old_frame_chain_is_gone_from_the_package_and_the_old_schema_is_not_shipped():
+    """D45 ②④: the calculator, frame, window and profile mechanisms no longer exist to be started, and the old
+    frame-era schema is not part of what is installed."""
+    import importlib.util
+
+    assert [name for name in OLD_CHAIN if importlib.util.find_spec(name) is not None] == []
+    assert not (Path(__file__).resolve().parents[1] / "htsg" / "schema.sql").exists()
+    assert "schema.sql" not in (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(encoding="utf-8").replace("archive_schema.sql", "")
+
+
 def test_the_delivered_entry_points_load_none_of_the_old_frame_chain():
     """D45 ②: the calculator, frame, window and profile mechanisms are not reachable from the way the system starts."""
-    old = {"htsg.engine", "htsg.calculation", "htsg.faults", "htsg.adapters", "htsg.storage", "htsg.capture", "htsg.api", "htsg.research_api"}
+    old = set(OLD_CHAIN)
     code = (
         "import sys, htsg.cli, htsg.runtime, htsg.web, htsg.archive, htsg.archive_router, htsg.modbus, htsg.ua, htsg.owner; "
         f"print(sorted(m for m in sys.modules if m in {old!r}))"

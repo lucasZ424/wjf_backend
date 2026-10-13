@@ -17,12 +17,14 @@
 
 | 现有入口 | 当前问题 | 处理位置 |
 | --- | --- | --- |
-| [Engine.receive/tick/make_frame](htsg/engine.py)、[calculate](htsg/calculation.py) | 整秒桶、逐点过期、Frame输入、变化量依赖前帧 | D07—D11 |
-| [adapter/订阅handler](htsg/adapters.py)、[every_second](htsg/timing.py) | Modbus逐点读；UA缓存每秒重报且非Good置空 | D07、D12—D18 |
+| Engine.receive/tick/make_frame（旧文件 htsg/engine.py，D45 已删除）、calculate（旧文件 htsg/calculation.py，D45 已删除） | 整秒桶、逐点过期、Frame输入、变化量依赖前帧 | D07—D11 |
+| adapter/订阅handler（旧文件 htsg/adapters.py，D45 已删除）、[every_second](htsg/timing.py) | Modbus逐点读；UA缓存每秒重报且非Good置空 | D07、D12—D18 |
 | [Runtime.emit/writer/calculator](htsg/runtime.py) | 异步帧计算；优先/普通双队列；状态与提交不成组 | D08—D11、D21—D26、D45 |
-| [Store/Router](htsg/storage.py)、[schema.sql](htsg/schema.sql) | JSON记录、帧表、预算拆批、应急丢派生 | D05—D06、D19—D26 |
-| [FaultState](htsg/faults.py)、Engine.assess | 观察驱动5秒、1.5秒间隔中断、极值替代普通阈值 | D27—D31 |
-| [API](htsg/api.py)、[research API](htsg/research_api.py)、[app.js](htsg/static/app.js) | 帧快照、旧回溯取值和页面状态 | D32—D44 |
+| Store/Router（旧文件 htsg/storage.py，D45 已删除）、schema.sql（旧文件 htsg/schema.sql，D45 已删除） | JSON记录、帧表、预算拆批、应急丢派生 | D05—D06、D19—D26 |
+| FaultState（旧文件 htsg/faults.py，D45 已删除）、Engine.assess | 观察驱动5秒、1.5秒间隔中断、极值替代普通阈值 | D27—D31 |
+| API（旧文件 htsg/api.py，D45 已删除）、research API（旧文件 htsg/research_api.py，D45 已删除）、[app.js](htsg/static/app.js) | 帧快照、旧回溯取值和页面状态 | D32—D44 |
+
+（表中标“已删除”的旧文件在 D45 清除，链接因此改为文字；它们仍在 Capstone G 提交 `7fd4e24` 及之前的 git 历史里。）
 
 复用现有协议库、热模型、权限、卷绑定检查和路由选择；只改受新契约影响的部分。客户端订阅类与Runtime同名的Subscription须明确区分，避免改错入口。
 

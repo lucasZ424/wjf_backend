@@ -149,6 +149,7 @@ async def smoke(seconds: float) -> dict:
             report[label]["stop"] = await backend.stop_and_wait()
             await asyncio.sleep(2)  # the process finishes writing the end of the run after its port is closed
             report[label]["runs_in_database"] = runs_of(primary)
+            backend.ensure_gone()  # Ctrl+Break also drops the PowerShell wrapper into its debugger prompt: it must not linger
         report["logs_in"] = str(work)
     except BaseException:
         for log in sorted(work.glob("backend-*.log")):  # the logs are removed with the folder: show what they said
