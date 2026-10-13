@@ -1,4 +1,4 @@
-"""D44: the seven pages, the self-check, permissions and the model page (终版 §11, §12, §15).
+"""D44: the transitional six pages, self-check and permissions; communication logs are not implemented yet.
 
 Real Chrome against the running application.  Why it matters: when something is wrong the operator reads the
 self-check page and the banner, so they must say what really happened - what the server granted, what the archive
@@ -14,7 +14,7 @@ from browser_support import sign_in
 from fastapi.testclient import TestClient
 from live_support import BRIDGES
 from owner_support import small_config
-from web_rig import WebRig
+from web_rig import WebRig, nominal
 
 from htsg.auth import Accounts
 from htsg.config import Settings
@@ -22,7 +22,7 @@ from htsg.owner import Owner
 from htsg.publisher import Publisher
 from htsg.web import create_web_app
 
-NAMES = ["系统总览", "水冷壁应变场", "热应力分析", "历史查询", "系统自检", "系统管理·权限", "算法引擎·数字孪生"]
+NAMES = ["系统总览", "水冷壁应变场", "热应力分析", "历史查询", "系统自检", "系统管理·权限"]
 
 
 def sign_in_with(page, rig, credential):
@@ -36,13 +36,21 @@ def api(page, rig, method, path, credential, **kw):
     return page.request.fetch(rig.url + path, method=method, headers={"Authorization": "Bearer " + credential, "Content-Type": "application/json"}, **kw)
 
 
-def test_the_seven_pages_come_in_the_designed_order(page, archive_rig):
+def test_the_transitional_six_pages_keep_receiving_groups_when_switched(page, archive_rig):
     sign_in(page, archive_rig)
     shown = [t.replace(" ", "").replace("\n", "") for t in page.locator("#navigation button").all_inner_texts()]
     assert shown == NAMES
-    for name in NAMES:
-        page.get_by_role("button", name=name).click()
-        assert page.locator(".page-heading h2").inner_text() == name, "a page is known by its title; no page number is shown"
+    point = next(d.inputs[0] for d in archive_rig.config.derived if d.operation == "difference")
+    try:
+        for index, name in enumerate(NAMES):
+            page.get_by_role("button", name=name).click()
+            assert page.locator(".page-heading h2").inner_text() == name, "a page is known by its title; no page number is shown"
+            archive_rig.call(archive_rig.ua, [(point, 470.0 + index)])
+            seq = archive_rig.call(lambda: archive_rig.owner.pub_seq)
+            page.wait_for_function("seq => Number(document.querySelector('#stream-time').textContent.split('序号 ')[1]) >= seq", arg=seq)
+            assert page.errors == [], f"a live update after switching to {name} must not touch removed DOM"
+    finally:
+        archive_rig.call(archive_rig.ua, [(point, nominal()[point])])
     assert "HTSG /" not in page.locator(".page-heading").inner_text() and not any(c.isdigit() for t in shown for c in t)
     assert page.errors == []
 
@@ -100,7 +108,7 @@ def test_a_full_fault_buffer_is_announced_on_every_page_with_the_counts(page, ti
     text = page.locator("#archive-banner").inner_text()
     assert "故障归档不完整" in text and "1/1" in text and "已拒绝 1 条" in text and "mb_field" in text
     assert "实时的“已确认”状态仍然正确" in text
-    for name in ("系统总览", "热应力分析", "系统自检", "算法引擎·数字孪生"):
+    for name in NAMES:
         page.get_by_role("button", name=name).click()
         assert page.locator("#archive-banner").is_visible(), f"on the current page: {name}"
     page.get_by_role("button", name="系统自检").click()
@@ -167,21 +175,25 @@ def test_an_administrator_creates_and_stops_accounts_and_every_step_is_on_record
     assert [e for e in page.errors if "409" not in e] == [], "only the refusal this test provoked (409) shows in the console"
 
 
-def test_the_model_page_shows_the_real_parameters_version_and_the_research_caveats_and_nothing_heavier(page, archive_rig):
-    sign_in(page, archive_rig)
-    page.get_by_role("button", name="算法引擎·数字孪生").click()
-    card = page.locator("#model-cards .card").first
-    card.get_by_text("当前估算示例").wait_for()
-    text = card.inner_text()
-    model = archive_rig.config.models[0]
-    assert model.id in text and f"版本 {model.version}" in text and model.basis in text
-    assert "170 GPa" in text and "1.35e-5 1/K" in text and "0.5（绝对变化 ±0.2）" in text and "-50 ～ 800 ℃" in text
-    assert "96 路热应力代理量" in text
-    assert "参数敏感性范围" in text and "符号约定：第一路温度（内壁）高于第二路（外壁）为正" in text
-    whole = page.locator("#workspace").inner_text()
-    assert "研究代理量" in whole and "不是统计置信区间" in whole and "本期只有这一个轻量的温差—应力代理模型" in whole
-    for heavy in ("RBF", "PINN", "iFEM", "Norton", "蠕变", "剩余寿命", "占位", "即将"):
-        assert heavy not in whole, f"no placeholder for a model that does not exist: {heavy}"
+def test_removing_the_model_page_and_its_config_payload_keeps_live_thermal_results(page, rig):
+    sign_in(page, rig)
+    assert page.locator("#navigation button").all_inner_texts() == NAMES, "six pages until communication logs are implemented"
+    config = api(page, rig, "GET", "/api/ui-config", rig.credentials["viewer"]).json()
+    assert "models" not in config, "the removed page's parameter payload is no longer exposed"
+    chosen = next(d for d in rig.config.derived if d.operation == "difference")
+    page.get_by_role("button", name="热应力分析").click()
+    page.locator("#pair-select").select_option("0")
+    try:
+        for inner, delta, stress in ((500.0, 50.0, 57.375), (430.0, -20.0, -22.95)):
+            rig.call(rig.ua, [(chosen.inputs[0], inner), (chosen.inputs[1], 450.0)])
+            page.wait_for_function("delta => document.querySelector('#trend-canvas').plot?.panels[1].points.at(-1)?.v === delta", arg=delta)
+            got = page.evaluate("document.querySelector('#trend-canvas').plot.panels.map(p => p.points.at(-1))")
+            assert got[1]["valid"] and got[2]["valid"], "shared thermal calculation remains valid after removing the page"
+            assert got[2]["v"] == pytest.approx(stress), "E 170 GPa x alpha 1.35e-5/K x restraint 0.5, still pushed live"
+            assert page.locator("#model-cards").count() == 0
+        assert "研究估算" in page.locator("#trend-latest").inner_text()
+    finally:
+        rig.call(rig.ua, [(pid, nominal()[pid]) for pid in chosen.inputs])
     assert page.errors == []
 
 

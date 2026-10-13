@@ -60,7 +60,6 @@ const pages = [
   {id: 5, name: "历史查询", html: historyHtml, mount: mountHistory},
   {id: 12, name: "系统自检", html: selfcheckHtml, mount: loadHealth, update: updateSelfcheck},
   {id: 14, name: "系统管理·权限", html: permissionsHtml, mount: mountPeople},
-  {id: 15, name: "算法引擎·数字孪生", html: modelHtml, update: updateModel},
 ];
 const currentPage = () => pages.find(p => p.id === state.page) || pages[0];
 
@@ -566,18 +565,12 @@ function plotReplay(canvas, channel, result) {
   });
 }
 
-// ------------------------------------------- pages 12, 14, 15 and the archive banner (终版 §11, §12, §15)
+// ------------------------------------------- pages 12, 14 and the archive banner (终版 §11, §12, §15)
 
 const ARCHIVE_STATES = {OK: ["正常", "ok"], LOST: ["已中断，缺口尚未恢复", "bad"], RECOVERING: ["恢复中，等待确认写入", "warn"]};
 const ROUTES = {PRIMARY: "正常库", EXTERNAL: "移动库", EMERGENCY: "应急库", UNKNOWN: "未知"};
 const ROLES = {admin: "管理员", viewer: "只读用户"};
 const health = {data: null, error: ""};
-// The backend names its conventions in English; the page says them in Chinese and shows an unknown one unchanged.
-const BACKEND_TEXT = {
-  "positive when first temperature exceeds second": "第一路温度（内壁）高于第二路（外壁）为正",
-  "parameter sensitivity only; excludes input and model-form errors": "只反映模型参数的变化，不含输入误差和模型形式误差",
-};
-const backendText = text => BACKEND_TEXT[text] || text;
 
 // What the page in front of the operator must say about the archive, whichever page that is.
 function renderBanner() {
@@ -695,30 +688,6 @@ function drawPeople() {
     loadPeople();
   });
   $("audit-log").innerHTML = people.audit ? table(["时间", "操作者", "操作", "对象", "结果"], people.audit.map(a => [stamp(a.time), esc(a.actor), esc(a.action), esc(a.target), esc(a.result)])) : `<p class="muted">管理操作记录不可用：${esc(people.auditError || "正在读取…")}</p>`;
-}
-
-// -------------------------------------------------------------------------------- page 15: the model
-
-function modelHtml() {
-  return `<div id="model-cards"></div>
-    <div class="note">应力值是基于温差与约束假设的研究代理量；参数敏感性范围只反映上述参数的变化，不含输入误差、几何和模型形式误差，也不是统计置信区间。正负号只表示两路温度的差异方向（第一路高于第二路为正），不直接代表材料的拉压应力。本期只有这一个轻量的温差—应力代理模型。</div>`;
-}
-function updateModel() {
-  const models = state.config.models || [], p = pairs()[0], estimate = p && channel(p.stress)?.estimate;
-  $("model-cards").innerHTML = models.map(m => {
-    const users = state.config.derived.filter(d => d.model_id === m.id);
-    return `<div class="card" style="margin-bottom:16px"><h3>${esc(m.id)} · 版本 ${esc(m.version)}</h3>
-      <p>${esc(m.basis)}</p>
-      ${table(["科研假设参数", "配置值"], [
-        ["弹性模量 E", `${fmt(m.young_mpa / 1000, 1)} GPa（相对变化 ±${fmt(m.young_relative_uncertainty * 100, 0)}%）`],
-        ["线膨胀系数 α", `${m.expansion_per_k.toExponential(2)} 1/K（相对变化 ±${fmt(m.expansion_relative_uncertainty * 100, 0)}%）`],
-        ["约束系数 k（0～1）", `${fmt(m.restraint, 2)}（绝对变化 ±${fmt(m.restraint_uncertainty, 2)}）`],
-        ["温度适用范围", `${fmt(m.min_temperature_c, 0)} ～ ${fmt(m.max_temperature_c, 0)} ℃`],
-        ["使用该模型的通道", `${users.length} 路热应力代理量`],
-        ["参考链接", (m.reference_urls || []).length ? esc(m.reference_urls.join("、")) : "无（合成科研假设，非现场标定）"],
-      ])}
-      ${estimate && estimate.model_id === m.id ? `<h3 style="margin-top:14px">当前估算示例 · ${esc(p.name)}</h3><p>温差 ${signed(estimate.temperature_difference_k)} K → 代理值 ${signed(channel(p.stress).value)} MPa，参数敏感性范围 ${estimate.parameter_range_mpa.map(v => signed(v)).join(" ～ ")} MPa。符号约定：${esc(backendText(estimate.sign_convention))}。范围含义：${esc(backendText(estimate.range_meaning))}。</p>` : '<p class="muted">等待实时数据以显示当前估算示例。</p>'}</div>`;
-  }).join("") || '<div class="card"><p class="muted">配置中没有热应力模型。</p></div>';
 }
 
 // ---------------------------------------------------------------------------------- the realtime socket

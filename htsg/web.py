@@ -109,7 +109,6 @@ def create_web_app(*, config, accounts, publisher, archive_router=None, queue=No
             "ui": config.ui.model_dump(),
             "points": [p.model_dump() for p in config.points],
             "derived": [d.model_dump() for d in config.derived],
-            "models": [m.model_dump() for m in config.models],
             "config_id": config.config_id,
             "mode": config.mode,
             "timing": {
