@@ -65,6 +65,11 @@ class Runtime:
             if isinstance(acquirer, UaAcquirer) and acquirer.negotiated is not None
         }
 
+    def connect_failures(self) -> dict[str, int]:
+        """The acquirers' own count of failed connect attempts since the last successful one (终版 §11), per source.
+        Read as it stands: not rebuilt from the log, the backoff or the resync count."""
+        return {source_id: acquirer.connect_failures for source_id, acquirer in self.acquirers.items()}
+
     # ------------------------------------------------------------------------------------------ start
 
     def _open_archive(self):

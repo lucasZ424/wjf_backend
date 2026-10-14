@@ -116,6 +116,9 @@ class ModbusAcquirer:
         self.backoff = Backoff(timing)
         self.outcomes: list[str] = []  # recent round outcomes, for health and tests
         self.consecutive_timeouts = 0
+        # completed CONNECT attempts that failed since the public connect() last succeeded (终版 §11);
+        # nothing else counts: not a failed round, not a cancelled attempt, not a resync.
+        self.connect_failures = 0
 
     def _default_client(self):
         from pymodbus.client import AsyncModbusTcpClient
@@ -141,20 +144,25 @@ class ModbusAcquirer:
         poll_id = f"{self.source.id}/{self.gen}/{tick}"
         start_wall = time.time()
         items, answered, timed_out, excepted, broken = [], 0, 0, 0, False
+        requests = []  # how each request ended, for the communication log
         for k, span in enumerate(self.plan):
+            scope = f"{span.kind}/{span.device_id}/{span.address}+{span.count}"
             try:
                 response = await self._read(client, span)
             except (ConnectionException, OSError):
                 broken = True
                 break
-            except (ModbusIOException, TimeoutError):
+            except (ModbusIOException, TimeoutError) as error:
                 timed_out += 1
+                requests.append(rec.RequestResult(scope, "TIMEOUT", None, str(error)))
                 continue
             wall, mono = time.time(), time.monotonic()  # each response keeps its own receive time
             if response.isError():
                 excepted += 1
+                requests.append(rec.RequestResult(scope, "EXCEPTION", getattr(response, "exception_code", None)))
                 continue
             answered += 1
+            requests.append(rec.RequestResult(scope, "OK"))
             for point, value, quality in decode_span(span, response.registers):
                 items.append(rec.Item(point.id, value, quality, None, None, f"{poll_id}/{k}", wall, mono))
         end_wall, end_mono = time.time(), time.monotonic()
@@ -178,14 +186,23 @@ class ModbusAcquirer:
             outcome=outcome,
             poll_start_wall=start_wall,
             poll_end_wall=end_wall,
+            requests=tuple(requests),
         )
         return batch, outcome
 
-    async def _connect(self, client) -> bool:
+    async def _connect(self, client) -> tuple[bool, str | None, str | None]:
+        """(connected, reason code, detail).  The public call's boolean decides; what the library gives away is all
+        there is: a False carries no reason (pymodbus swallows it), a timeout of OUR call is told apart from it."""
+        limit = self.timing.modbus_connect_timeout
         try:
-            return bool(await asyncio.wait_for(client.connect(), self.timing.modbus_connect_timeout))
-        except (TimeoutError, OSError):
-            return False
+            connected = bool(await asyncio.wait_for(client.connect(), limit))
+        except TimeoutError:  # the application's own limit (before OSError: a timeout is one)
+            return False, "APP_CONNECT_TIMEOUT", f"建连调用{limit:g}秒内未返回"
+        except OSError as error:
+            return False, "ERROR:" + type(error).__name__, repr(error)
+        if connected:
+            return True, None, None
+        return False, "LIBRARY_NO_REASON", "连接失败，库未提供原因"
 
     async def session(self, client) -> str:
         """Run planned rounds on a live connection; return why the session ended."""
@@ -210,7 +227,10 @@ class ModbusAcquirer:
         while True:
             client = self.client_factory()
             try:
-                if await self._connect(client):
+                connected, reason, detail = await self._connect(client)
+                if connected:
+                    self.connect_failures = 0
+                    self.hub.attempt_ok(self.source.id, "CONNECT", time.time(), time.monotonic())
                     self.gen += 1
                     self.hub.begin_generation(self.source.id, self.gen, time.time(), time.monotonic())
                     down_reported = False
@@ -219,10 +239,13 @@ class ModbusAcquirer:
                     self.backoff.settle(time.monotonic())
                     self.hub.source_down(self.source.id, self.gen, reason, time.time(), time.monotonic())
                     down_reported = True
-                elif not down_reported and self.gen:
+                else:
+                    self.connect_failures += 1
                     now = (time.time(), time.monotonic())
-                    self.hub.source_down(self.source.id, self.gen, "CONNECT_FAILED", *now)
-                    down_reported = True
+                    self.hub.attempt_failed(self.source.id, "CONNECT", reason, detail, *now)
+                    if not down_reported and self.gen:
+                        self.hub.source_down(self.source.id, self.gen, "CONNECT_FAILED", *now)
+                        down_reported = True
             finally:
                 client.close()
             await self.sleep(self.backoff.next_delay())

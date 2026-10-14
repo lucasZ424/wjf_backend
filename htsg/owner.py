@@ -13,6 +13,7 @@ from dataclasses import dataclass, field, replace
 from uuid import uuid4
 
 from . import records as rec
+from .commlog import CommLog, clean_detail
 from .config import Settings, fault_rule
 from .derive import Input, Outcome, Topology, evaluate, unavailable
 from .extremes import is_extreme
@@ -50,8 +51,12 @@ class SourceState:
     enabled_mono: float = 0.0
     last_comm_wall: float | None = None
     last_comm_mono: float | None = None
-    wait_mono: float | None = None
+    wait_mono: float | None = None  # set when this generation's subscription starts waiting; None until then
     alarm: bool = False
+    # persistent resync (§11): transitions INTO RESYNC, cleared by a stable spell of valid communication
+    resync_count: int = 0
+    stable_since: float | None = None  # first valid response of the current uninterrupted spell
+    interrupted: bool = False  # resync / expiry / alarm happened since the last valid response: the next one is a recovery
     last_outcome: str | None = None
     resync_reason: str | None = None
     # archive health of this source (§5 C2): OK -> LOST (refused / queue full) -> RECOVERING (recovery
@@ -149,6 +154,7 @@ class Owner:
         self._multi: set[str] = set()
         self.order = 0
         self.pub_seq = 0
+        self.commlog = CommLog(self.run_id)  # this run's communication log (§15.1): in memory, appended here only
         self.health = {
             "stale_generation_batches": 0,
             "rejected_items": 0,
@@ -402,12 +408,38 @@ class Owner:
     # ------------------------------------------------------------ communication
 
     def _comm(self, s: SourceState, wall: float, mono: float) -> list[rec.StateRecord]:
-        """A valid response arrived: only this advances the communication time (never a reconnect attempt)."""
+        """A valid response arrived: only this advances the communication time (never a reconnect attempt).
+
+        Three different facts are logged, never one in place of another (§15.1): the first valid communication of the
+        run, the first valid response after an interruption (resync or expiry, alarmed or not), and the clearing of an
+        alarm.  Being connected or subscribed is none of them.
+        """
+        before = self._comm_of(s)
+        if before is None:
+            self._log(s, "FIRST_COMM", "FIRST_VALID_RESPONSE", wall, mono)
+        elif s.interrupted:
+            self._log(s, "COMM_RECOVERED", "VALID_RESPONSE", wall, mono, comm=before)
+        s.interrupted = False
         s.last_comm_wall, s.last_comm_mono = wall, mono
+        if s.stable_since is None:
+            s.stable_since = mono  # the stable spell is counted from the first response, interruptions restart it
+        if s.wait_mono is None:
+            s.wait_mono = mono  # a response of this subscription proves it is waiting, whatever the event order
         if s.alarm:
             s.alarm = False
+            self._log(s, "COMM_ALARM_CLEARED", "VALID_RESPONSE", wall, mono, comm=before)
             return [self._state(s, "COMM_RESTORED", wall, mono)]
         return []
+
+    @staticmethod
+    def _comm_of(s: SourceState):
+        """The last valid communication known now, as the log wants it: (wall, monotonic) or None."""
+        return None if s.last_comm_wall is None else (s.last_comm_wall, s.last_comm_mono)
+
+    def _log(self, s: SourceState, event: str, reason: str, wall: float, mono: float, *, comm=False, failure=False, detail=None):
+        """One fact of this source into the communication log.  `comm` defaults to the last communication known now."""
+        comm = self._comm_of(s) if comm is False else comm
+        return self.commlog.event(s.id, s.conn_gen or None, event, reason, wall, mono, comm=comm, failure=failure, detail=detail)
 
     def _alarm_limit(self, s: SourceState) -> float:
         t = self.config.timing
@@ -431,7 +463,9 @@ class Owner:
         t = self.config.timing
         baseline = s.last_comm_mono if s.last_comm_mono is not None else s.enabled_mono
         if not s.alarm and mono - baseline >= self._alarm_limit(s):
-            s.alarm = True
+            s.alarm, s.interrupted = True, True
+            s.stable_since = None
+            self._log(s, "COMM_ALARM", "NEVER_RESPONDED" if s.last_comm_mono is None else "NO_VALID_RESPONSE", wall, mono, failure=True)
             self._emit(
                 rec.GROUP_STATE,
                 s,
@@ -448,18 +482,29 @@ class Owner:
                     )
                 ],
             )
-        if s.kind == "modbus" or s.state == RESYNC:
+        if s.kind == "modbus":
+            self._settle(s, mono)
             return
+        if s.state == RESYNC or s.wait_mono is None:
+            return  # nothing to wait for, or the subscription has not started waiting: not silent, just not begun
         # OPC UA: silence is measured from the later of the last response and this subscription's own start
-        latest = max(
-            s.last_comm_mono if s.last_comm_mono is not None else -math.inf,
-            s.wait_mono if s.wait_mono is not None else -math.inf,
-        )
+        latest = max(s.last_comm_mono if s.last_comm_mono is not None else -math.inf, s.wait_mono)
         quiet = mono - latest
         if s.state == VALID and quiet >= t.ua_data_validity:
             self._expire(s, wall, mono)
         if quiet >= t.ua_alarm_seconds:
             self._start_resync(s, "SILENCE", wall, mono)
+        self._settle(s, mono)
+
+    def _settle(self, s: SourceState, mono: float):
+        """A stable spell of valid communication (§11) ends persistent resync: the count starts over.
+
+        Not the backoff's failure count (which Modbus measures from connect) and not `state == VALID` (a Modbus source
+        stays VALID through timed-out rounds): the spell is counted from this generation's first valid response and
+        any timeout, disconnect, expiry, resync, alarm or new generation restarts it.
+        """
+        if s.stable_since is not None and mono - s.stable_since >= self.config.timing.backoff_stable_seconds:
+            s.resync_count = 0
 
     def _invalidate(self, s: SourceState):
         """Cached values stay but stop counting: change chains break and derived results are unavailable."""
@@ -473,7 +518,8 @@ class Owner:
     def _expire(self, s: SourceState, wall: float, mono: float):
         """3 s without a valid response: data unusable, segment cut, no rebuild (§11)."""
         end = min(wall, (s.last_comm_wall or wall) + self.config.timing.ua_data_validity)
-        s.state = EXPIRED
+        s.state, s.stable_since, s.interrupted = EXPIRED, None, True
+        self._log(s, "DATA_EXPIRED", "VALIDITY_EXCEEDED", wall, mono, failure=True)
         self.health["expiries"] += 1
         states = []
         if s.open_segment:
@@ -490,7 +536,9 @@ class Owner:
         if s.open_segment:
             s.open_segment = False
             states.append(self._state(s, "SEG_END", wall, mono, reason=reason, end_wall=wall))
-        s.state, s.resync_reason = RESYNC, reason
+        s.state, s.resync_reason, s.stable_since, s.interrupted = RESYNC, reason, None, True
+        s.resync_count += 1  # a real transition: repeats while already in RESYNC returned above
+        self._log(s, "RESYNC", reason, wall, mono, failure=True)
         self.health["resyncs"] += 1
         self._invalidate(s)
         states.append(self._state(s, "RESYNC", wall, mono, reason=reason))
@@ -526,6 +574,7 @@ class Owner:
         for rule in self.topology.rules:  # a lost planned round breaks every consecutive-round chain
             if self.result_source[rule.id] == s.id:
                 self.baselines.pop(rule.id, None)
+        self._log(s, "APP_LOSS", reason, wall, mono, failure=True).count = count  # batches lost, not times reported
         record = self._state(s, "APP_LOSS", wall, mono, reason=reason, tick=tick, count=count)
         self._emit(rec.GROUP_STATE, s, wall, states=[record])
         if s.kind == "opcua":  # notifications went missing: the OPC UA state can no longer be trusted
@@ -542,7 +591,8 @@ class Owner:
         if s.open_segment:
             states.append(self._state(s, "SEG_END", wall, mono, reason="NEW_GENERATION"))
         s.conn_gen, s.seg, s.open_segment = gen, s.seg + 1, True
-        s.state, s.last_tick, s.wait_mono, s.resync_reason = WAITING, None, mono, None
+        s.state, s.last_tick, s.wait_mono, s.resync_reason = WAITING, None, None, None  # waiting starts with begin_waiting
+        s.stable_since = None
         s.watermark_wall, s.watermark_mono = 0.0, None
         for pid in s.point_ids:
             self.points[pid] = PointState()
@@ -552,6 +602,39 @@ class Owner:
                 self.baselines.pop(rule.id, None)
         states.append(self._state(s, "SEG_START", wall, mono, conn_gen=gen, reason=reason))
         self._emit(rec.GROUP_STATE, s, wall, states=states)
+        self.commlog.end_rounds(source_id, "NEW_GENERATION", wall, mono)  # round failures never outlive their generation
+        self._log(s, "NEW_GENERATION", reason, wall, mono)  # connected: not the same thing as communicating again
+
+    def begin_waiting(self, source_id: str, gen: int, mono: float):
+        """CreateSubscription has returned: from now the 3 s / 6 s checks of this generation run (§11).
+
+        Only the wait start is set.  The communication time is never touched, so a first response that was
+        already processed keeps its own time.
+        """
+        s = self.sources[source_id]
+        if gen == s.conn_gen and s.wait_mono is None:
+            s.wait_mono = mono
+
+    # ------------------------------------------------------- communication log
+
+    def attempt_failed(self, source_id: str, phase: str, reason: str, detail, truncated: bool, wall: float, mono: float):
+        """A CONNECT / SUBSCRIBE attempt failed (from the protocol task, through the ordered entry).
+
+        Log only: no state record, no group, nothing archived.  A source switched off by configuration makes no attempts.
+        """
+        s = self.sources[source_id]
+        if s.enabled:
+            comm = None if s.last_comm_wall is None else (s.last_comm_wall, s.last_comm_mono)
+            self.commlog.attempt_failed(source_id, phase, reason, wall, mono, detail=detail, truncated=truncated, comm=comm)
+
+    def attempt_ok(self, source_id: str, phase: str, wall: float, mono: float):
+        """The phase succeeded: its failure aggregate ends (and only that phase's)."""
+        self.commlog.attempt_ok(source_id, phase, wall, mono)
+
+    def report_diag_lost(self, count: int):
+        """Diagnostic facts were refused at the ordered entry.  Counted for the log's own completeness note; this is
+        not an application loss and starts no resync."""
+        self.commlog.diag_lost += count
 
     # ---------------------------------------------------------------- intake
 
@@ -648,7 +731,11 @@ class Owner:
 
     def _accept_poll(self, s: SourceState, batch) -> bool:
         s.last_outcome = batch.outcome
-        states = self._comm(s, batch.wall, batch.mono) if batch.outcome in ("OK", "EXCEPTION") else []
+        if batch.outcome in ("OK", "EXCEPTION"):
+            states = self._comm(s, batch.wall, batch.mono)
+        else:
+            states, s.stable_since = [], None  # a round without an answer ends the stable spell, the state stays VALID
+        self._log_requests(s, batch)
         s.batch_seq += 1
         if s.state == WAITING:
             s.state = VALID
@@ -666,6 +753,19 @@ class Owner:
         poll = self._state(s, "POLL", batch.wall, batch.mono, **self._poll_detail(s, batch, observations))
         self._emit(rec.GROUP_BATCH, s, batch.wall, observations, results, [*states, poll])
         return True
+
+    def _log_requests(self, s: SourceState, batch):
+        """Failures are kept per request: a request that answered ends only ITS earlier failure, never another's."""
+        for q in batch.requests:
+            if q.outcome == "OK":
+                self.commlog.round_ok(s.id, q.scope, batch.wall, batch.mono)
+                continue
+            event, reason = ("POLL_TIMEOUT", "NO_ANSWER") if q.outcome == "TIMEOUT" else ("POLL_EXCEPTION", f"EXCEPTION_CODE_{q.code}")
+            text, truncated = clean_detail(q.detail)
+            self.commlog.round_failed(
+                s.id, s.conn_gen, event, reason, batch.wall, batch.mono,
+                scope=q.scope, detail=text, truncated=truncated, comm=self._comm_of(s),
+            )  # fmt: skip
 
     def _poll_detail(self, s, batch, observations):
         responses = {}
@@ -780,7 +880,13 @@ class Owner:
         return group
 
     def start(self, wall: float, mono: float):
-        """Register this run before any data: the process, its configuration and start time."""
+        """Register this run before any data: the process, its configuration and start time.
+
+        Also the moment acquisition starts: a source's "never responded" alarm counts from here (§11), not from
+        when this object was built, which is before the archive opens.
+        """
+        for s in self.sources.values():
+            s.enabled_mono = mono
         self._run_group(wall, mono, "RUN_START", config_id=self.config_id, started_wall=self.started_wall)
 
     def shutdown(self, wall: float, mono: float):
@@ -937,9 +1043,8 @@ class Owner:
         """
         views = {}
         for pid, ps in self.points.items():
-            source, obs = self.sources[self.point_source[pid]], ps.obs
-            usable = source.state == VALID
-            valid = bool(usable and ps.good)
+            obs = ps.obs
+            valid, reason = self._input_validity(pid, ps)
             views[pid] = {
                 "kind": "input",
                 "value": obs.value if obs else None,
@@ -950,7 +1055,7 @@ class Owner:
                 "asserted_wall": obs.asserted_wall if obs else None,
                 "extreme": bool(obs and obs.extreme),
                 "valid": valid,
-                "reason": None if valid else ps.reason if usable else "SOURCE_" + source.state,
+                "reason": reason,
                 **self._fault_view(pid),
             }
         for pid, state in self.results.items():
@@ -968,6 +1073,39 @@ class Owner:
                 **self._fault_view(pid),
             }
         return views
+
+    def _input_validity(self, pid: str, ps: PointState) -> tuple[bool, str | None]:
+        """(valid, why not): decided here, once, for the realtime view and for the communication table alike."""
+        source = self.sources[self.point_source[pid]]
+        usable = source.state == VALID
+        valid = bool(usable and ps.good)
+        return valid, None if valid else ps.reason if usable else "SOURCE_" + source.state
+
+    def communication_inputs(self) -> list[dict]:
+        """Every input as the communication page shows it: ONE row per input, ALL of it from the observation the owner
+        holds for that input right now (id, value, quality, receive time, source timestamp), plus its validity as of this
+        call.  Synchronous, so a row cannot be assembled from two observations.  A source timestamp is shown as received -
+        absent for Modbus and when the server gave none - and judges nothing.  Never-observed inputs are empty, not zero.
+        """
+        rows = []
+        for pid, ps in self.points.items():
+            obs = ps.obs
+            valid, reason = self._input_validity(pid, ps)
+            rows.append(
+                {
+                    "point_id": pid,
+                    "source_id": self.point_source[pid],
+                    "observation_id": obs.id if obs else None,
+                    "value": obs.value if obs else None,
+                    "quality": obs.quality if obs else None,
+                    "status_code": obs.status_code if obs else None,
+                    "received_time": obs.received_wall if obs else None,
+                    "source_time": obs.source_time if obs else None,
+                    "valid": valid,
+                    "reason": reason,
+                }
+            )
+        return rows
 
     def _fault_view(self, pid: str) -> dict:
         if pid not in self.rules:
@@ -988,6 +1126,8 @@ class Owner:
                     "alarm": s.alarm,
                     "archive": s.archive,
                     "last_comm_wall": s.last_comm_wall,
+                    "resync_count": s.resync_count,
+                    "persistent_resync": s.resync_count >= self.config.timing.resync_persistent_after,
                 }
                 for s in self.sources.values()
             },

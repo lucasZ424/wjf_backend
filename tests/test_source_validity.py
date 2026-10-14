@@ -252,7 +252,8 @@ def test_new_subscription_wait_boundaries_are_independent_of_the_source_alarm_ba
     data(owner, 101.0)
     tick(owner, 107.0)  # old generation: resync + alarm raised (6 s after 101.0)
     assert owner.sources["ua"].alarm
-    owner.begin_generation("ua", 2, *at(120.0))  # a NEW wait starts at 120
+    owner.begin_generation("ua", 2, *at(120.0))
+    owner.begin_waiting("ua", 2, 120.0)  # CreateSubscription returned: a NEW wait starts at 120 (D44a, not at connect)
     rebuilds.clear()
     tick(owner, 122.9)
     assert owner.sources["ua"].state == "WAITING" and not rebuilds

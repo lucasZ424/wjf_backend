@@ -1,4 +1,4 @@
-"""D44: the transitional six pages, self-check and permissions; communication logs are not implemented yet.
+"""D44: the seven pages' common behaviour, the self-check and permissions (the communication page itself: test_web_comm.py).
 
 Real Chrome against the running application.  Why it matters: when something is wrong the operator reads the
 self-check page and the banner, so they must say what really happened - what the server granted, what the archive
@@ -22,7 +22,7 @@ from htsg.owner import Owner
 from htsg.publisher import Publisher
 from htsg.web import create_web_app
 
-NAMES = ["系统总览", "水冷壁应变场", "热应力分析", "历史查询", "系统自检", "系统管理·权限"]
+NAMES = ["系统总览", "水冷壁应变场", "热应力分析", "历史查询", "系统自检", "通信·日志", "系统管理·权限"]
 
 
 def sign_in_with(page, rig, credential):
@@ -36,7 +36,7 @@ def api(page, rig, method, path, credential, **kw):
     return page.request.fetch(rig.url + path, method=method, headers={"Authorization": "Bearer " + credential, "Content-Type": "application/json"}, **kw)
 
 
-def test_the_transitional_six_pages_keep_receiving_groups_when_switched(page, archive_rig):
+def test_the_seven_pages_keep_receiving_groups_when_switched(page, archive_rig):
     sign_in(page, archive_rig)
     shown = [t.replace(" ", "").replace("\n", "") for t in page.locator("#navigation button").all_inner_texts()]
     assert shown == NAMES
@@ -177,7 +177,7 @@ def test_an_administrator_creates_and_stops_accounts_and_every_step_is_on_record
 
 def test_removing_the_model_page_and_its_config_payload_keeps_live_thermal_results(page, rig):
     sign_in(page, rig)
-    assert page.locator("#navigation button").all_inner_texts() == NAMES, "six pages until communication logs are implemented"
+    assert page.locator("#navigation button").all_inner_texts() == NAMES, "the seven pages, the communication log between self-check and permissions"
     config = api(page, rig, "GET", "/api/ui-config", rig.credentials["viewer"]).json()
     assert "models" not in config, "the removed page's parameter payload is no longer exposed"
     chosen = next(d for d in rig.config.derived if d.operation == "difference")

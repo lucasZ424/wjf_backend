@@ -68,12 +68,32 @@ class Databases:
                 conn.execute(sql.SQL("DROP DATABASE {} WITH (FORCE)").format(sql.Identifier(name)))
 
 
+class Acquisition:
+    """What the acquisition side would hand the health reading: each acquirer's own connect-failure count.  The rig has no
+    protocol tasks, so a test sets the counts it wants the page to show."""
+
+    health: dict = {}
+
+    def __init__(self):
+        self.failures = {}
+
+    def connect_failures(self):
+        return dict(self.failures)
+
+    async def start(self):  # the web application starts and stops its lifecycle; nothing to run here
+        return None
+
+    async def stop(self):
+        return None
+
+
 class WebRig:
     def __init__(self, tmp_path, config=FULL, archive=False, steady=True, run_id="web", feed_archive=True):
         """`feed_archive=False` leaves the archive to the test (`write_groups`): the live owner does not write."""
         self.config, self.archive, self.steady = config, archive, steady
         self.run_id, self.feed_archive = run_id, feed_archive
         self.diagnostics = {}  # what the acquisition side would report (negotiated OPC UA parameters); set by a test
+        self.acquisition = Acquisition()  # ... and its connect-failure counts, `acquisition.failures`
         self.databases, self.router, self.queue, self.seeded = None, None, None, 0
         self.accounts = Accounts(tmp_path / "accounts.json")
         self.credentials = {
@@ -127,6 +147,7 @@ class WebRig:
             app = create_web_app(
                 config=self.config, accounts=self.accounts, publisher=self.publisher,
                 archive_router=self.router, queue=self.queue, diagnostics=lambda: self.diagnostics,
+                lifecycle=self.acquisition,
             )  # fmt: skip
             self.server = uvicorn.Server(
                 uvicorn.Config(app, host="127.0.0.1", port=self.port, log_level="warning", lifespan="on")

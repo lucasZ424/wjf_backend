@@ -88,6 +88,12 @@ async def test_the_runtime_reads_both_protocols_archives_serves_the_history_and_
                 granted = health["negotiated"]["ua_field"]
                 assert granted["keepalive_count"] == TIMING.ua_keepalive_count and granted["requested"]["queue_size"] == 10
                 assert granted["violations"] == [], "what the server really granted was checked against the limits"
+                comm = health["communication"]  # D44d: the same response carries the communication state
+                assert len(comm["inputs"]) == 208 and all(row["observation_id"] and row["valid"] for row in comm["inputs"])
+                assert {s: v["connect_failures"] for s, v in health["status"]["sources"].items()} == {"mb_field": 0, "ua_field": 0}
+                assert {(e["source_id"], e["event"]) for e in comm["log"]["entries"]} >= {
+                    (s, e) for s in ("mb_field", "ua_field") for e in ("NEW_GENERATION", "FIRST_COMM")
+                } and comm["log"]["incomplete"] is False, "each source: connected, then its first valid communication"
                 assert {s: v["archive"] for s, v in health["archive"]["sources"].items()} == {"mb_field": "OK", "ua_field": "OK"}
                 assert health["archive"]["queue"]["committed"] > 0 and health["archive"]["queue"]["failures"] == 0
                 assert len((await client.get("/api/channels", headers=headers)).json()["channels"]) == 417
@@ -123,6 +129,33 @@ async def test_realtime_state_does_not_wait_for_a_database_that_cannot_be_reache
         finally:
             await runtime.stop()
     assert runtime.health["unwritten_at_stop"] > 0, "what could not be written is reported at the end, not hidden"
+
+
+async def test_a_slow_archive_start_does_not_use_up_the_time_a_source_may_stay_quiet(monkeypatch):
+    """终版 §11: the alarm baseline is when acquisition really starts - not when the owner was built, which is before
+    the archive opens.  A slow start must not make the "never responded" alarm come early."""
+    from owner_support import small_config
+
+    monkeypatch.setattr(runtime_module, "STOP_WRITE_WAIT", 0.5)
+    config = small_config(sources=[{"id": "mb", "kind": "modbus", "enabled": True, "host": "127.0.0.1", "port": 1}, {"id": "ua", "kind": "opcua"}])
+    dead = "host=127.0.0.1 port=1 dbname=htsg user=nobody connect_timeout=1"
+    router = ArchiveRouter(config, ArchiveStore(dead), ArchiveStore(dead), disk_usage=Disks())
+    runtime = Runtime(config, router)
+    built = time.monotonic()
+    open_archive = router.initialize
+
+    def slow_open(run_id):
+        time.sleep(0.7)  # the archive takes a while to open
+        return open_archive(run_id)
+
+    monkeypatch.setattr(router, "initialize", slow_open)
+    await runtime.start()
+    try:
+        started = runtime.owner.sources["mb"].enabled_mono
+        assert started >= built + 0.7, "the baseline was taken before the archive had opened"
+        assert started <= time.monotonic()
+    finally:
+        await runtime.stop()
 
 
 OLD_CHAIN = ("htsg.engine", "htsg.calculation", "htsg.faults", "htsg.adapters", "htsg.storage", "htsg.capture", "htsg.api", "htsg.research_api")

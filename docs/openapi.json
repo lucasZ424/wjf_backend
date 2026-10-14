@@ -66,14 +66,249 @@
     "/api/health": {
       "get": {
         "summary": "Health",
-        "description": "What the self-check page shows besides the live stream: archive, writer queue, negotiated parameters.",
+        "description": "What the self-check and communication pages show besides the live stream: archive, writer queue, negotiated\nparameters, each source's resync and connect-failure counts, the run's communication log and the input table.",
         "operationId": "health_api_health_get",
         "responses": {
           "200": {
-            "description": "Successful Response",
+            "description": "Health and communication state",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "properties": {
+                    "status": {
+                      "properties": {
+                        "sources": {
+                          "additionalProperties": {
+                            "properties": {
+                              "resync_count": {
+                                "type": "integer",
+                                "description": "Entries into RESYNC since the last stable spell of valid communication"
+                              },
+                              "persistent_resync": {
+                                "type": "boolean",
+                                "description": "resync_count reached the persistent threshold (5)"
+                              },
+                              "connect_failures": {
+                                "type": "integer",
+                                "description": "Failed connect attempts since the public connect last succeeded (0: none yet)"
+                              }
+                            },
+                            "type": "object",
+                            "description": "State, alarm, archive state and last communication of one source."
+                          },
+                          "type": "object",
+                          "description": "Per source id."
+                        }
+                      },
+                      "type": "object",
+                      "description": "The owner's source and fault state; each source also carries the acquirer's `connect_failures`."
+                    },
+                    "archive": {
+                      "type": "object",
+                      "description": "Archive routing, writer queue and per-source archive state."
+                    },
+                    "negotiated": {
+                      "type": "object",
+                      "description": "What the OPC UA server really granted, per source (unchanged shape)."
+                    },
+                    "runtime": {
+                      "type": "object",
+                      "description": "Runtime flags."
+                    },
+                    "communication": {
+                      "properties": {
+                        "taken_time": {
+                          "type": "number",
+                          "description": "When this response was taken from the owner; not an observation time"
+                        },
+                        "log": {
+                          "properties": {
+                            "scope": {
+                              "type": "string"
+                            },
+                            "limit": {
+                              "type": "integer"
+                            },
+                            "evicted": {
+                              "type": "integer",
+                              "description": "Entries moved out of the log (first in, first out)"
+                            },
+                            "oldest_time": {
+                              "type": [
+                                "number",
+                                "null"
+                              ],
+                              "description": "Discovery time of the oldest entry still held"
+                            },
+                            "diag_lost": {
+                              "type": "integer",
+                              "description": "Diagnostic facts refused at the ordered entry; not a data loss"
+                            },
+                            "incomplete": {
+                              "type": "boolean"
+                            },
+                            "entries": {
+                              "items": {
+                                "properties": {
+                                  "seq": {
+                                    "type": "integer"
+                                  },
+                                  "source_id": {
+                                    "type": "string"
+                                  },
+                                  "kind": {
+                                    "type": "string"
+                                  },
+                                  "event": {
+                                    "type": "string"
+                                  },
+                                  "reason": {
+                                    "type": "string"
+                                  },
+                                  "conn_gen": {
+                                    "type": [
+                                      "integer",
+                                      "null"
+                                    ]
+                                  },
+                                  "phase": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "detail": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "detail_truncated": {
+                                    "type": "boolean"
+                                  },
+                                  "found_time": {
+                                    "type": "number"
+                                  },
+                                  "last_comm_time": {
+                                    "type": [
+                                      "number",
+                                      "null"
+                                    ]
+                                  },
+                                  "first_failure": {
+                                    "type": [
+                                      "number",
+                                      "null"
+                                    ]
+                                  },
+                                  "last_failure": {
+                                    "type": [
+                                      "number",
+                                      "null"
+                                    ]
+                                  },
+                                  "count": {
+                                    "type": "integer"
+                                  },
+                                  "state": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "ended_time": {
+                                    "type": [
+                                      "number",
+                                      "null"
+                                    ]
+                                  },
+                                  "end_reason": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "type": "object",
+                                "description": "One log entry; `state` is ACTIVE / ENDED for repeated failures, empty for a single event."
+                              },
+                              "type": "array"
+                            }
+                          },
+                          "type": "object",
+                          "description": "This run's communication log, in memory, at most `limit` entries, oldest first."
+                        },
+                        "inputs": {
+                          "items": {
+                            "properties": {
+                              "point_id": {
+                                "type": "string"
+                              },
+                              "source_id": {
+                                "type": "string"
+                              },
+                              "observation_id": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "value": {
+                                "type": [
+                                  "number",
+                                  "null"
+                                ]
+                              },
+                              "quality": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "status_code": {
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ]
+                              },
+                              "received_time": {
+                                "type": [
+                                  "number",
+                                  "null"
+                                ]
+                              },
+                              "source_time": {
+                                "type": [
+                                  "number",
+                                  "null"
+                                ],
+                                "description": "As the server gave it (OPC UA only); judges nothing"
+                              },
+                              "valid": {
+                                "type": "boolean",
+                                "description": "Validity at the moment of the response"
+                              },
+                              "reason": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "type": "object",
+                            "description": "observation_id, value, quality, status_code, received_time and source_time all belong to the same observation."
+                          },
+                          "type": "array",
+                          "description": "Every input, one row each; a row is taken whole from ONE observation."
+                        }
+                      },
+                      "type": "object",
+                      "description": "What the communication page shows."
+                    }
+                  },
+                  "type": "object",
+                  "description": "Memory only: nothing here reads the database or asks a device."
+                }
               }
             }
           }

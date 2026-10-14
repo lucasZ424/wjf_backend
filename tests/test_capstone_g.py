@@ -1,4 +1,4 @@
-"""Capstone G: the transitional six pages end to end; communication logs remain unimplemented.
+"""Capstone G: the seven pages end to end.
 
 Chrome against the running application - owner, publisher, WebSocket and archive in a server thread - with
 everything that goes wrong made to go wrong for real: damaged messages on the socket, a client that does not
@@ -29,7 +29,7 @@ OK = "document.querySelector('#connection').textContent === '实时连接'"
 PAIR = 2  # the third temperature pair
 PROXY_PER_K = 1.1475  # MPa per K: E 170 GPa x alpha 1.35e-5 1/K x restraint 0.5
 FORGED = 987654.321  # a load nobody sent: "987,654" on screen would mean a damaged message was applied
-NAMES = ["系统总览", "水冷壁应变场", "热应力分析", "历史查询", "系统自检", "系统管理·权限"]
+NAMES = ["系统总览", "水冷壁应变场", "热应力分析", "历史查询", "系统自检", "通信·日志", "系统管理·权限"]
 
 
 def fmt(value):
@@ -660,10 +660,10 @@ def test_no_route_changes_a_channel_a_threshold_or_the_configuration_for_anyone(
     assert before == after, "the configuration is what it was"
 
 
-# ----------------------------------------------------------------------------------------- transitional six pages
+# ---------------------------------------------------------------------------------------------------- the seven pages
 
 
-def test_the_transitional_six_pages_open_in_order_at_desktop_width(page, archive_rig):
+def test_the_seven_pages_open_in_order_at_desktop_width(page, archive_rig):
     open_page(page, archive_rig, "系统总览", who="admin")
     for n, name in enumerate(NAMES, start=1):
         page.locator("#navigation").get_by_role("button", name=name).click()

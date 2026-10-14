@@ -186,9 +186,13 @@ class ManagedSubscription(Subscription):
 
 
 async def open_subscription(
-    client: ManagedClient, points: list[Point], timing: Timing, on_result, handles: dict | None = None
+    client: ManagedClient, points: list[Point], timing: Timing, on_result, handles: dict | None = None, on_created=None
 ):
-    """Create the subscription and its monitored items with explicit parameters; never leak on failure."""
+    """Create the subscription and its monitored items with explicit parameters; never leak on failure.
+
+    `on_created()` runs the moment CreateSubscription has returned - before the monitored items exist - because
+    that is when the subscription starts to wait for its first publish (§11).
+    """
     params = ua.CreateSubscriptionParameters(
         RequestedPublishingInterval=timing.ua_publish_interval * 1000,
         RequestedLifetimeCount=timing.ua_lifetime_count,
@@ -200,6 +204,8 @@ async def open_subscription(
     sub = ManagedSubscription(client.uaclient.session, params, on_result, handles)
     created = await sub.init()
     try:
+        if on_created is not None:
+            on_created()
         revisions = await sub.create_items(points, timing)
         bad = [r.point_id for r in revisions if r.status >> 30 == 2]
         if bad:
@@ -341,7 +347,10 @@ class UaAcquirer:
         self.channel: UaChannel | None = None
         self.rebuild_reason: str | None = None
         self.last_error: str | None = None
-        self.history: list[str] = []
+        self.phase: str | None = None  # CONNECT | SUBSCRIBE while an attempt is under way, else None
+        # completed CONNECT attempts that failed since the public connect() last returned (终版 §11): the security
+        # setup that precedes it counts, a failed SUBSCRIBE / a cancelled attempt / teardown never does.
+        self.connect_failures = 0
 
     def _default_client(self):
         client = ManagedClient(
@@ -371,21 +380,37 @@ class UaAcquirer:
         if task is not None and not task.done():
             task.cancel()
 
+    def _plain(self, text: str) -> str:
+        """The configured user name and password never appear in what is logged, whatever shape the message has."""
+        for env in (self.source.username_env, self.source.password_env):
+            secret = os.environ.get(env) if env else None
+            if secret:
+                text = text.replace(secret, "***")
+        return text
+
     async def _generation(self) -> str:
         client = self.client_factory()
+        self.phase = "CONNECT"
         if self.source.security:
             await client.set_security_string(self.source.security)
         sub = None
         try:
-            await client.connect()
+            await client.connect()  # the public call returning is the success (its value is not looked at)
+            self.connect_failures = 0
+            self.hub.attempt_ok(self.source.id, "CONNECT", time.time(), time.monotonic())
+            self.phase = "SUBSCRIBE"
             self.gen += 1
             self.rebuild_reason = None
             self.hub.begin_generation(self.source.id, self.gen, time.time(), time.monotonic())
             handles: dict[int, Point] = {}
             self.channel = UaChannel(self.source.id, self.gen, self.hub, handles, on_lost=self.request_rebuild)
+            gen = self.gen
             sub, self.negotiated = await open_subscription(
-                client, self.points, self.timing, self.channel.on_publish, handles
-            )
+                client, self.points, self.timing, self.channel.on_publish, handles,
+                on_created=lambda: self.hub.begin_waiting(self.source.id, gen, time.monotonic()),
+            )  # fmt: skip
+            self.hub.attempt_ok(self.source.id, "SUBSCRIBE", time.time(), time.monotonic())
+            self.phase = None
             async for _ in self.ticker():
                 if self.rebuild_reason:
                     return self.rebuild_reason
@@ -410,7 +435,12 @@ class UaAcquirer:
             except Exception as error:
                 reason = "ERROR:" + type(error).__name__
                 self.last_error = repr(error)
-            self.history.append(reason)
+                if self.phase is not None:  # an attempt failed, before or after the connection existed
+                    if self.phase == "CONNECT":
+                        self.connect_failures += 1
+                    now = (time.time(), time.monotonic())
+                    self.hub.attempt_failed(self.source.id, self.phase, reason, self._plain(self.last_error), *now)
+            self.phase = None
             if self.gen:
                 self.hub.source_down(self.source.id, self.gen, reason, time.time(), time.monotonic())
             await self.sleep(self.backoff.next_delay())

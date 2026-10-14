@@ -68,6 +68,16 @@ class Item:
 
 
 @dataclass(frozen=True, slots=True)
+class RequestResult:
+    """How ONE request of a Modbus round ended (the communication log keeps failures per request, §15.1)."""
+
+    scope: str  # which request: register kind, device and address range
+    outcome: str  # OK | TIMEOUT | EXCEPTION
+    code: int | None = None  # the protocol exception code of an EXCEPTION answer
+    detail: str | None = None  # the library's text, if it gave one; the entry point cleans it
+
+
+@dataclass(frozen=True, slots=True)
 class InputBatch:
     """One accepted protocol delivery: a Modbus poll or one OPC UA data notification."""
 
@@ -83,6 +93,7 @@ class InputBatch:
     poll_start_wall: float | None = None
     poll_end_wall: float | None = None
     publish_seq: int | None = None  # OPC UA sequence number
+    requests: tuple[RequestResult, ...] = ()  # Modbus: the outcome of every request of the round
 
 
 @dataclass(frozen=True, slots=True)

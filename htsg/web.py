@@ -36,6 +36,84 @@ def audit_entry(identity, action, target, result="COMMITTED"):
     return {"id": str(uuid4()), "time": time.time(), "actor": identity["username"], "action": action, "target": target, "result": result}
 
 
+def _object(description, properties=None, **extra):
+    return {"type": "object", "description": description, **({"properties": properties} if properties else {}), **extra}
+
+
+_NUMBER, _TEXT, _FLAG, _COUNT = {"type": "number"}, {"type": "string"}, {"type": "boolean"}, {"type": "integer"}
+_NUMBER_N, _TEXT_N, _COUNT_N = ({"type": [t, "null"]} for t in ("number", "string", "integer"))  # OpenAPI 3.1: a type or null
+HEALTH_SCHEMA = _object(
+    "Memory only: nothing here reads the database or asks a device.",
+    {
+        "status": _object(
+            "The owner's source and fault state; each source also carries the acquirer's `connect_failures`.",
+            {
+                "sources": _object(
+                    "Per source id.",
+                    additionalProperties=_object(
+                        "State, alarm, archive state and last communication of one source.",
+                        {
+                            "resync_count": {**_COUNT, "description": "Entries into RESYNC since the last stable spell of valid communication"},
+                            "persistent_resync": {**_FLAG, "description": "resync_count reached the persistent threshold (5)"},
+                            "connect_failures": {**_COUNT, "description": "Failed connect attempts since the public connect last succeeded (0: none yet)"},
+                        },
+                    ),
+                )
+            },
+        ),
+        "archive": _object("Archive routing, writer queue and per-source archive state."),
+        "negotiated": _object("What the OPC UA server really granted, per source (unchanged shape)."),
+        "runtime": _object("Runtime flags."),
+        "communication": _object(
+            "What the communication page shows.",
+            {
+                "taken_time": {**_NUMBER, "description": "When this response was taken from the owner; not an observation time"},
+                "log": _object(
+                    "This run's communication log, in memory, at most `limit` entries, oldest first.",
+                    {
+                        "scope": _TEXT,
+                        "limit": _COUNT,
+                        "evicted": {**_COUNT, "description": "Entries moved out of the log (first in, first out)"},
+                        "oldest_time": {**_NUMBER_N, "description": "Discovery time of the oldest entry still held"},
+                        "diag_lost": {**_COUNT, "description": "Diagnostic facts refused at the ordered entry; not a data loss"},
+                        "incomplete": _FLAG,
+                        "entries": {
+                            "type": "array",
+                            "items": _object(
+                                "One log entry; `state` is ACTIVE / ENDED for repeated failures, empty for a single event.",
+                                {
+                                    "seq": _COUNT, "source_id": _TEXT, "kind": _TEXT, "event": _TEXT, "reason": _TEXT,
+                                    "conn_gen": {**_COUNT_N}, "phase": {**_TEXT_N},
+                                    "detail": {**_TEXT_N}, "detail_truncated": _FLAG,
+                                    "found_time": _NUMBER, "last_comm_time": {**_NUMBER_N},
+                                    "first_failure": {**_NUMBER_N}, "last_failure": {**_NUMBER_N},
+                                    "count": _COUNT, "state": {**_TEXT_N},
+                                    "ended_time": {**_NUMBER_N}, "end_reason": {**_TEXT_N},
+                                },
+                            ),
+                        },
+                    },
+                ),
+                "inputs": {
+                    "type": "array",
+                    "description": "Every input, one row each; a row is taken whole from ONE observation.",
+                    "items": _object(
+                        "observation_id, value, quality, status_code, received_time and source_time all belong to the same observation.",
+                        {
+                            "point_id": _TEXT, "source_id": _TEXT, "observation_id": {**_TEXT_N},
+                            "value": {**_NUMBER_N}, "quality": {**_TEXT_N},
+                            "status_code": {**_COUNT_N}, "received_time": {**_NUMBER_N},
+                            "source_time": {**_NUMBER_N, "description": "As the server gave it (OPC UA only); judges nothing"},
+                            "valid": {**_FLAG, "description": "Validity at the moment of the response"}, "reason": {**_TEXT_N},
+                        },
+                    ),
+                },
+            },
+        ),
+    },
+)
+
+
 def create_web_app(*, config, accounts, publisher, archive_router=None, queue=None, diagnostics=None, lifecycle=None) -> FastAPI:
     """`queue` is the archive writer queue (for its counters); `diagnostics()` returns what only the acquisition
     side knows, e.g. the OPC UA parameters the server really granted (`ua.Negotiated.as_dict()` per source).
@@ -120,9 +198,13 @@ def create_web_app(*, config, accounts, publisher, archive_router=None, queue=No
             },
         }
 
-    @app.get("/api/health", dependencies=[Depends(user)])
+    @app.get(
+        "/api/health", dependencies=[Depends(user)],
+        responses={200: {"description": "Health and communication state", "content": {"application/json": {"schema": HEALTH_SCHEMA}}}},
+    )  # fmt: skip
     async def health():
-        """What the self-check page shows besides the live stream: archive, writer queue, negotiated parameters."""
+        """What the self-check and communication pages show besides the live stream: archive, writer queue, negotiated
+        parameters, each source's resync and connect-failure counts, the run's communication log and the input table."""
         owner = publisher.owner
         archive = {"sources": {sid: owner.history_status(sid) for sid in owner.sources}, "routing": None, "health": {}}
         if archive_router is not None:
@@ -130,7 +212,14 @@ def create_web_app(*, config, accounts, publisher, archive_router=None, queue=No
         if queue is not None:
             archive["queue"] = {"depth": queue.depth, "capacity": queue.capacity, **queue.stats}
         runtime = dict(lifecycle.health) if lifecycle is not None else {}
-        return {"status": owner.status(), "archive": archive, "negotiated": diagnostics() if diagnostics else {}, "runtime": runtime}
+        status, failures = owner.status(), lifecycle.connect_failures() if lifecycle is not None else {}
+        for source_id, source in status["sources"].items():
+            source["connect_failures"] = failures.get(source_id, 0)  # the acquirer's own count, copied
+        communication = {"taken_time": time.time(), "log": owner.commlog.snapshot(), "inputs": owner.communication_inputs()}
+        return {
+            "status": status, "archive": archive, "negotiated": diagnostics() if diagnostics else {}, "runtime": runtime,
+            "communication": communication,
+        }  # fmt: skip
 
     @app.get("/api/admin/accounts", dependencies=[Depends(admin)])
     async def list_accounts():

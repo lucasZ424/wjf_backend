@@ -59,6 +59,7 @@ const pages = [
   {id: 4, name: "热应力分析", html: trendHtml, mount: mountTrend, update: updateTrend},
   {id: 5, name: "历史查询", html: historyHtml, mount: mountHistory},
   {id: 12, name: "系统自检", html: selfcheckHtml, mount: loadHealth, update: updateSelfcheck},
+  {id: 13, name: "通信·日志", html: commHtml, mount: mountComm},  // no `update`: nothing here is redrawn from the live stream
   {id: 14, name: "系统管理·权限", html: permissionsHtml, mount: mountPeople},
 ];
 const currentPage = () => pages.find(p => p.id === state.page) || pages[0];
@@ -570,7 +571,8 @@ function plotReplay(canvas, channel, result) {
 const ARCHIVE_STATES = {OK: ["正常", "ok"], LOST: ["已中断，缺口尚未恢复", "bad"], RECOVERING: ["恢复中，等待确认写入", "warn"]};
 const ROUTES = {PRIMARY: "正常库", EXTERNAL: "移动库", EMERGENCY: "应急库", UNKNOWN: "未知"};
 const ROLES = {admin: "管理员", viewer: "只读用户"};
-const health = {data: null, error: ""};
+const health = {data: null, error: "", seq: 0};
+const HEALTH_PAGES = [12, 13];  // the only pages that read /api/health, and only while they are in front
 
 // What the page in front of the operator must say about the archive, whichever page that is.
 function renderBanner() {
@@ -587,10 +589,27 @@ function renderBanner() {
 }
 
 async function loadHealth() {
-  try { health.data = await api("/api/health"); health.error = ""; } catch (error) { health.error = error.message; }
-  if (state.page === 12) updateSelfcheck();
+  const mine = ++health.seq;
+  let data = null, error = "";
+  try { data = await api("/api/health"); } catch (failure) { error = failure.message; }
+  if (mine !== health.seq || state.stopped || !HEALTH_PAGES.includes(state.page)) return;  // an older answer, or the page was left
+  health.data = data ?? health.data;
+  health.error = error;
+  if (state.page === 12) updateSelfcheck(); else drawComm();
 }
-setInterval(() => { if (!state.stopped && state.page === 12) loadHealth(); }, 5000);
+setInterval(() => { if (!state.stopped && HEALTH_PAGES.includes(state.page)) loadHealth(); }, 5000);
+
+// ------------------------------------------------------------- the two counters of a source, on two pages
+
+// Both come from the same /api/health answer as everything else on the communication page, so the two pages agree.
+const COUNTER_NOTE = "重新同步次数：实际进入重新同步的次数（已在重新同步中的重试不计），连续有效通信 60 秒后清零，达到 5 次为持续失步；"
+  + "连续建连失败次数：自上次建连成功以来已完成并失败的建连尝试次数，建连成功立即清零（订阅或读取失败不计）。"
+  + "二者与日志里的合并次数含义不同，互不替代。每 5 秒随健康状态刷新。";
+function counterCells(id) {
+  const s = health.data?.status?.sources?.[id];
+  if (!s) return ["—", "—"];
+  return [`${s.resync_count}${s.persistent_resync ? " " + badge("持续失步", "bad") : ""}`, String(s.connect_failures)];
+}
 
 // ----------------------------------------------------------------------------------- page 12: self-check
 
@@ -610,7 +629,8 @@ function negotiatedRows(n) {
 function updateSelfcheck() {
   const status = state.live.status, data = health.data, timing = state.config.timing || {};
   const sources = Object.entries(status?.sources || {});
-  $("check-sources").innerHTML = table(["数据源", "类型", "数据状态", "通信", "最后通信"], sources.map(([id, s]) => [esc(id), esc(KINDS[s.kind] || s.kind), esc(SOURCE_STATES[s.state] || s.state), s.alarm ? badge("通信告警", "bad") : badge("正常", "ok"), clock(s.last_comm_wall)]));
+  $("check-sources").innerHTML = table(["数据源", "类型", "数据状态", "通信", "最后通信", "重新同步次数", "连续建连失败次数"], sources.map(([id, s]) => [esc(id), esc(KINDS[s.kind] || s.kind), esc(SOURCE_STATES[s.state] || s.state), s.alarm ? badge("通信告警", "bad") : badge("正常", "ok"), clock(s.last_comm_wall), ...counterCells(id)]))
+    + `<p class="chart-caption">${esc(COUNTER_NOTE)}</p>`;
   const negotiated = data?.negotiated || {};
   $("check-negotiated").innerHTML = health.error ? `<p class="log-error">读取失败：${esc(health.error)}</p>` : sources.filter(([, s]) => s.kind === "opcua").map(([id]) => {
     const n = negotiated[id];
@@ -634,6 +654,100 @@ function updateSelfcheck() {
     ["故障确认时长", `${timing.fault_confirm_seconds} 秒`], ["OPC UA 数据有效期 / 断连告警", `${timing.ua_data_validity} 秒 / ${timing.ua_alarm_seconds} 秒`], ["Modbus 断连告警", `${timing.modbus_alarm_seconds} 秒`],
     ["推送合并 / 空闲心跳", `${timing.push_coalesce * 1000} 毫秒 / ${timing.push_heartbeat} 秒`], ["前端消息延迟提示", `${timing.ui_stall_notice} 秒`], ["故障缓冲上限", `${timing.fault_buffer_limit} 条`], ["水位提交间隔", `${timing.watermark_interval} 秒`],
   ]);
+}
+
+// ------------------------------------------------------------------------ page 13: communication and log (终版 §15.1)
+
+// Everything on this page comes from ONE /api/health answer, read every 5 s while the page is in front and replaced as a
+// whole - the input table is never patched with live (WebSocket) values, so a row cannot mix two observations and the
+// page cannot look fresher than the moment it was read.  The log is this run's memory only, no level, no history.
+const COMM_EVENTS = {
+  NEW_GENERATION: "新连接/订阅代次建立", FIRST_COMM: "首次有效通信", COMM_RECOVERED: "通信恢复（中断后首个有效响应）",
+  COMM_ALARM_CLEARED: "通信告警解除", RESYNC: "进入重新同步", DATA_EXPIRED: "数据失效", COMM_ALARM: "通信告警",
+  APP_LOSS: "应用丢失（入口满）", POLL_TIMEOUT: "Modbus 请求无应答", POLL_EXCEPTION: "Modbus 协议异常应答",
+};
+const COMM_PHASES = {CONNECT: "建连", SUBSCRIBE: "建订阅"};
+const COMM_ENDS = {
+  REASON_CHANGED: "原因改变", CONNECT_OK: "建连成功", SUBSCRIBE_OK: "订阅创建成功", SUCCESS: "请求成功", NEW_GENERATION: "新代次建立",
+};
+const commEvent = e => e.kind === "ATTEMPT" ? `${COMM_PHASES[e.phase] || e.phase}尝试失败` : COMM_EVENTS[e.event] || e.event;
+const commEnd = reason => COMM_ENDS[reason] || (String(reason).startsWith("EVENT:") ? `其他事件（${COMM_EVENTS[reason.slice(6)] || reason.slice(6)}）` : reason);
+const stampAt = seconds => Number.isFinite(seconds) ? stampMs(seconds) : "—";  // a missing time is a dash, never ".000"
+const stateCode = code => code ? ` 0x${(code >>> 0).toString(16).toUpperCase()}` : "";
+
+function commHtml() {
+  return `<div class="note">本页是只读诊断：只显示<b>本次运行</b>内存中的通信记录，重启后清空，不读取归档，也没有更早的通信历史。读数是按“状态获取时刻”取的一次快照，不代表各点同时采样；页面刷新不是新的观测。源时间戳只按服务器给出的原样显示，不据此判断过期、断连或冻结。</div>
+    <p id="comm-taken" class="chart-caption"></p>
+    <div class="card"><h3>数据源状态</h3><div id="comm-sources"></div></div>
+    <div class="card"><h3>点位映射与实际读数</h3><div id="comm-inputs" class="scroll"></div></div>
+    <div class="card"><h3>通信日志（本次运行）</h3><div id="comm-log-meta"></div><div id="comm-log" class="scroll"></div></div>`;
+}
+function mountComm() {
+  health.data = null;  // a visit starts empty: rows left over from an earlier visit would carry an old time
+  health.error = "";
+  drawComm();
+  loadHealth();  // the first read is at once, then every 5 s while this page stays in front
+}
+function mappingText(point) {
+  if (!point) return "—";
+  return point.node_id ? `NodeId ${point.node_id}` : `设备 ${point.device_id} · ${point.register_kind === "input" ? "输入" : "保持"}寄存器 ${point.address} · ${point.data_type}`;
+}
+function commSources(data) {
+  const sources = Object.entries(data.status?.sources || {});
+  return table(["数据源", "类型", "数据状态", "通信", "最后有效通信", "代次", "重新同步次数", "连续建连失败次数"],
+    sources.map(([id, s]) => [esc(id), esc(KINDS[s.kind] || s.kind), esc(SOURCE_STATES[s.state] || s.state),
+      s.alarm ? badge("通信告警", "bad") : badge("正常", "ok"), stampAt(s.last_comm_wall), s.conn_gen || "尚无",
+      `${s.resync_count}${s.persistent_resync ? " " + badge("持续失步", "bad") : ""}`, String(s.connect_failures)]))
+    + `<p class="chart-caption">${esc(COUNTER_NOTE)}</p>`;
+}
+function commInputs(rows) {
+  const points = new Map((state.config.points || []).map(p => [p.id, p]));
+  return table(["通道", "数据源", "映射", "值", "质量", "可用性", "后端接收时刻", "源时间戳"], rows.map(row => {
+    const point = points.get(row.point_id), seen = row.observation_id != null;
+    const value = row.value == null ? "—" : `${fmt(row.value, 4)} ${esc(unitText(point?.unit))}`;
+    return [`${esc(label(row.point_id))}<br><small>${esc(row.point_id)}</small>`, esc(row.source_id), esc(mappingText(point)), value,
+      seen ? esc(row.quality) + stateCode(row.status_code) : "—",
+      row.valid ? badge("有效", "ok") : badge(reasonText(row.reason), "bad"),
+      seen ? stampAt(row.received_time) : "尚无观测",
+      !seen ? "—" : row.source_time == null ? "未知" : stampAt(row.source_time)];
+  }));
+}
+function commLog(log) {
+  const meta = [`当前保留 <b>${log.entries.length}</b> / ${log.limit} 条（按首次出现顺序，聚合更新不改变位置）`,
+    `已淘汰 <b>${log.evicted}</b> 条${log.oldest_time == null ? "" : `，现存最早记录 ${stampAt(log.oldest_time)}`}`,
+    `诊断丢失 <b>${log.diag_lost}</b> 次（诊断事实未能进入日志；不是数据丢失，也不触发重新同步）`];
+  const incomplete = log.incomplete ? " " + badge("日志不完整", "warn") : "";
+  const body = log.entries.length
+    ? table(["序号", "发现时刻", "数据源", "事件", "原因 / 详情", "代次", "次数", "首次失败", "最近失败", "状态", "最后有效通信"], [...log.entries].reverse().map(commEntry))
+    : '<p class="empty">暂无记录。没有已记录的事件，不表示从未发生通信故障：这里只有本次运行的内存记录。</p>';
+  return {meta: `<p>${meta.join(" · ")}${incomplete}</p>`, body};
+}
+function commEntry(e) {
+  const detail = [e.scope ? `请求 ${esc(e.scope)}` : "", e.detail ? esc(e.detail) + (e.detail_truncated ? "（已截断）" : "") : ""].filter(Boolean);
+  const when = e.state === "ACTIVE" ? badge("进行中")
+    : e.state === "ENDED" ? `${badge("已结束")} ${stampAt(e.ended_time)} · ${esc(commEnd(e.end_reason))}` : "—";
+  const last = e.last_comm_time == null ? "此前从未有过有效通信"
+    : `${stampAt(e.last_comm_time)}，发现时已隔 ${fmt(e.silent_seconds, 1)} 秒`;
+  return [e.seq, stampAt(e.found_time), esc(e.source_id), esc(commEvent(e)), `<code>${esc(e.reason)}</code>${detail.map(d => `<br>${d}`).join("")}`,
+    e.kind === "ATTEMPT" ? "跨尝试，不绑定单一代次" : e.conn_gen ?? "尚无代次", e.count,
+    e.state ? stampAt(e.first_failure) : "—", e.state ? stampAt(e.last_failure) : "—", when, last];
+}
+function drawComm() {
+  if (state.page !== 13 || !$("comm-sources")) return;
+  const comm = health.data?.communication;
+  if (!comm) {
+    const text = health.error ? `<p class="log-error">读取失败：${esc(health.error)}</p>` : '<p class="muted">正在读取…</p>';
+    for (const id of ["comm-sources", "comm-inputs", "comm-log"]) $(id).innerHTML = text;
+    $("comm-taken").textContent = "";
+    $("comm-log-meta").innerHTML = "";
+    return;
+  }
+  $("comm-taken").innerHTML = `状态获取时刻：<b>${stampAt(comm.taken_time)}</b>（取这一刻的快照；每行的“后端接收时刻”才是观测时刻）${health.error ? ` · <span class="log-error">最近一次刷新失败：${esc(health.error)}，以下仍是上次读到的内容</span>` : ""}`;
+  $("comm-sources").innerHTML = commSources(health.data);
+  $("comm-inputs").innerHTML = commInputs(comm.inputs);
+  const log = commLog(comm.log);
+  $("comm-log-meta").innerHTML = log.meta;
+  $("comm-log").innerHTML = log.body;
 }
 
 // ------------------------------------------------------------------------- page 14: roles and accounts

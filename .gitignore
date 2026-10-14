@@ -11,3 +11,5 @@ htsg_hmi.html
 build/
 dist/
 历史方案/
+docs/
+tests/

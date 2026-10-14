@@ -48,7 +48,7 @@ async def test_full_scale_nominal_run_stays_quiet_when_nothing_changes():
             rig.owner.points["temp_outer_01"].obs.value  # fmt: skip
 
         # the library is not allowed to reconnect or recreate on its own
-        assert rig.uaa.gen == 1 and rig.uaa.history == [] and rig.mba.gen == 1
+        assert rig.uaa.gen == 1 and rig.owner.health["resyncs"] == 0 and rig.mba.gen == 1
 
 
 async def test_modbus_timeout_static_values_and_recovery_at_full_scale():
@@ -89,7 +89,7 @@ async def test_silence_inside_the_window_recovers_the_same_generation_and_longer
         rig.proxy.resume()  # inside the 3-6 s window: same subscription resumes with continuous numbers
         await rig.until(lambda: rig.owner.sources["ua_field"].state == "VALID", timeout=8, why="same-generation recovery")
         s = rig.owner.sources["ua_field"]
-        assert s.conn_gen == 1 and s.seg == 2 and rig.uaa.gen == 1 and rig.uaa.history == []
+        assert s.conn_gen == 1 and s.seg == 2 and rig.uaa.gen == 1 and s.resync_count == 0
         assert len(rig.groups(r.GROUP_RECOVERY)) == recoveries + 1
         group = rig.groups(r.GROUP_RECOVERY)[-1]
         assert {o.point_id for o in group.observations if o.origin == r.ORIGIN_ASSERTION} >= set(UA_NAMES)
@@ -132,5 +132,5 @@ async def test_a_dropped_opcua_server_is_one_disconnect_and_one_application_init
         await rig.until(lambda: rig.uaa.gen == 2 and rig.owner.sources["ua_field"].state == "VALID",
                         timeout=40, why="rebuilt after the server returned")  # fmt: skip
         assert rig.owner.health["resyncs"] == 1, "exactly one rebuild cycle: no second, library-initiated one"
-        assert len(rig.uaa.history) == 1
+        assert rig.owner.sources["ua_field"].resync_count == 1
         assert rig.ua.subscription_count == 1, "the old subscription was not leaked next to the new one"
