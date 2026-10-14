@@ -1,4 +1,4 @@
-"""D27-D28: ordinary fault timing and two-sided hysteresis (终版 §8, §8.1; defaults in docs/默认越限阈值与回差.md).
+"""D27-D28: ordinary fault timing and two-sided hysteresis (终版 §8, §8.1; defaults in dev-docs/默认越限阈值与回差.md).
 
 Why it matters: a constant violating value must still confirm after 5 s without any new sample, a single
 number must not stand in for both hysteresis sides, and bad data must neither confirm nor recover a fault.

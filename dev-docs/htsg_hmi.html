@@ -1,0 +1,2117 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>锅炉高温应变·管系位移安全监测系统</title>
+<style>
+:root{
+  --bg:#1c2a42; --bg2:#1a2840; --panel:#1e2d48; --panel2:#223354;
+  --border:#2a4060; --border2:#3a5278;
+  --txt:#cbd9e8; --muted:#7aa0c8; --dim:#6896be;
+  --cyan:#70b8ff; --blue:#2e78e0; --green:#2ecc71; --amber:#f5a623; --red:#ff5555; --purple:#a78bfa; --orange:#ff9d4d;
+  --grid:#2a4060;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:"Segoe UI","Microsoft YaHei",-apple-system,sans-serif;
+  background:linear-gradient(180deg,#1a2840 0%,#1c2a42 100%);
+  color:var(--txt); font-size:13px; overflow:hidden; height:100vh;
+  display:flex; flex-direction:column;
+}
+#topbar{
+  height:54px; flex:0 0 54px; display:flex; align-items:center;
+  background:linear-gradient(180deg,#1e3050,#1a2840);
+  border-bottom:1px solid var(--border2); padding:0 16px; gap:14px;
+  box-shadow:0 2px 12px rgba(0,0,0,.5); z-index:20;
+}
+#logo{display:flex;align-items:center;gap:10px;flex-shrink:1;min-width:0;overflow:hidden}
+#logo .mark{
+  width:42px;height:34px;border-radius:7px;
+  background:linear-gradient(135deg,var(--orange),#e8612a);
+  display:flex;align-items:center;justify-content:center;font-weight:800;color:#1a0c03;font-size:12px;letter-spacing:.5px;
+  box-shadow:0 0 14px rgba(255,157,77,.45);
+}
+#logo .t1{font-size:15px;font-weight:700;letter-spacing:.5px;color:#eaf4ff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#logo .t2{font-size:10px;color:var(--muted);letter-spacing:1px;white-space:nowrap}
+#topbar .spacer{flex:1}
+.unit-sel{display:flex;align-items:center;gap:6px;background:#1a2a45;border:1px solid var(--border);border-radius:6px;padding:4px 6px}
+.unit-sel select{background:transparent;color:var(--cyan);border:none;font-size:13px;font-weight:600;outline:none}
+.tb-stat{display:flex;align-items:center;gap:7px;padding:5px 11px;background:#1a2a45;border:1px solid var(--border);border-radius:6px;font-size:12px;white-space:nowrap;flex-shrink:0}
+.tb-stat .led{width:9px;height:9px;border-radius:50%;box-shadow:0 0 7px currentColor}
+.led.g{background:var(--green);color:var(--green)}
+.led.a{background:var(--amber);color:var(--amber)}
+.led.r{background:var(--red);color:var(--red)}
+.led.c{background:var(--cyan);color:var(--cyan)}
+#clock{font-variant-numeric:tabular-nums;font-size:13px;color:#dbe9f7;min-width:148px;text-align:right}
+#nav{
+  flex:0 0 42px;height:42px;display:flex;align-items:center;gap:3px;
+  background:#1c2e4a;border-bottom:1.5px solid var(--border2);padding:0 14px;
+  overflow-x:auto;overflow-y:hidden;white-space:nowrap;z-index:15;
+}
+#nav::-webkit-scrollbar{height:5px}
+#nav::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+.navbtn{
+  display:inline-flex;align-items:center;gap:5px;padding:0 12px;height:30px;flex-shrink:0;
+  border:1px solid transparent;border-radius:5px;background:transparent;color:var(--muted);
+  font-size:12px;cursor:pointer;white-space:nowrap;font-family:inherit;font-weight:500;
+  letter-spacing:.02em;transition:all .15s;
+}
+.navbtn:hover{background:#243860;color:#c8e0ff}
+.navbtn.active{color:#90ccff;background:#1e4278;border-color:#3a6abf;box-shadow:0 0 8px rgba(50,120,255,.25)}
+.navbtn .ix{font-size:10px;opacity:.55;font-weight:700;font-family:monospace}
+.navbtn .key{color:var(--amber);font-size:8px;border:1px solid var(--amber);border-radius:3px;padding:0 3px;opacity:.9}
+#main{flex:1;overflow:hidden;position:relative}
+.page{position:absolute;inset:0;overflow:auto;padding:12px;display:none}
+.page.active{display:block}
+.page::-webkit-scrollbar{width:8px;height:8px}
+.page::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
+.page::-webkit-scrollbar-track{background:#1a2a44}
+.grid{display:grid;gap:12px}
+.g2{grid-template-columns:repeat(2,1fr)}
+.g3{grid-template-columns:repeat(3,1fr)}
+.g4{grid-template-columns:repeat(4,1fr)}
+.g5{grid-template-columns:repeat(5,1fr)}
+.g6{grid-template-columns:repeat(6,1fr)}
+.card{background:linear-gradient(180deg,var(--panel),var(--bg2));border:1px solid var(--border);border-radius:9px;padding:11px 13px;position:relative}
+.card.key{border-color:var(--cyan);box-shadow:0 0 0 1px rgba(112,184,255,.15),0 6px 20px rgba(0,0,0,.3)}
+.card-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px}
+.card-h .ttl{font-size:13px;font-weight:600;color:#dbeafe;display:flex;align-items:center;gap:7px}
+.card-h .ttl .dot{width:7px;height:7px;border-radius:2px;background:var(--cyan);box-shadow:0 0 6px var(--cyan)}
+.card-h .sub{font-size:11px;color:var(--muted)}
+.badge{font-size:10px;padding:2px 8px;border-radius:11px;border:1px solid var(--border2);color:var(--muted)}
+.badge.key{background:rgba(112,184,255,.12);border-color:var(--cyan);color:var(--cyan)}
+.badge.ok{background:rgba(46,204,113,.12);border-color:var(--green);color:var(--green)}
+.badge.warn{background:rgba(245,166,35,.13);border-color:var(--amber);color:var(--amber)}
+.badge.alm{background:rgba(255,85,85,.14);border-color:var(--red);color:var(--red)}
+.vbtn{padding:3px 10px;font-size:11px;border-radius:5px;cursor:pointer;border:1px solid var(--border2);background:#223354;color:var(--muted);font-family:inherit;transition:all .15s}
+.vbtn:hover{background:#243860;color:#c8e0ff}
+.vbtn.on{border-color:#3a6abf;background:#1e4278;color:#90ccff}
+.metric{background:#223354;border:1px solid var(--border2);border-radius:7px;padding:10px 13px;position:relative;overflow:hidden}
+.metric .ml{font-size:10px;color:var(--muted);margin-bottom:5px;display:flex;align-items:center;gap:6px;letter-spacing:.06em;text-transform:uppercase;font-weight:600}
+.metric .mv{font-size:23px;font-weight:700;color:#e8f4ff;font-family:"Consolas",monospace;font-variant-numeric:tabular-nums;line-height:1}
+.metric .mv small{font-size:12px;color:var(--muted);font-weight:400;margin-left:3px}
+.metric .mtrend{font-size:10px;color:var(--muted);margin-top:6px}
+.metric .accent{position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--cyan)}
+.metric.warn .accent{background:var(--amber)} .metric.alm .accent{background:var(--red)}
+.metric.warn .mv{color:#ffd98a} .metric.alm .mv{color:#ff9b9b}
+canvas{display:block;width:100%}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;color:var(--muted);font-weight:500;padding:6px 8px;border-bottom:1px solid var(--border);font-size:11px}
+td{padding:6px 8px;border-bottom:1px solid #1a2a40;font-variant-numeric:tabular-nums}
+tr:hover td{background:#243860}
+.mono{font-family:"Consolas","Courier New",monospace}
+.tag-g{color:var(--green)} .tag-a{color:var(--amber)} .tag-r{color:var(--red)} .tag-c{color:var(--cyan)}
+.pill{display:inline-block;padding:1px 7px;border-radius:9px;font-size:10px}
+.pill.g{background:rgba(46,204,113,.15);color:var(--green)}
+.pill.a{background:rgba(245,166,35,.15);color:var(--amber)}
+.pill.r{background:rgba(255,85,85,.16);color:var(--red)}
+.pill.c{background:rgba(112,184,255,.14);color:var(--cyan)}
+.alm-row{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:6px;margin-bottom:5px;background:#223354;border-left:3px solid var(--border2);font-size:12px}
+.alm-row.r{border-left-color:var(--red);background:rgba(255,85,85,.07)}
+.alm-row.a{border-left-color:var(--amber);background:rgba(245,166,35,.06)}
+.alm-row.g{border-left-color:var(--green)}
+.alm-row .ts{color:var(--muted);font-size:10px;font-variant-numeric:tabular-nums}
+.alm-row .src{color:var(--muted);font-size:10px;margin-left:auto}
+#ctrl{
+  flex:0 0 50px;height:50px;display:flex;align-items:center;gap:14px;padding:0 16px;
+  background:linear-gradient(0deg,#223354,#1a2a44);border-top:1px solid var(--border2);z-index:18;
+  box-shadow:0 -2px 12px rgba(0,0,0,.4);
+}
+#ctrl .lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+#ctrl .demo-tag{font-size:10px;color:var(--amber);border:1px solid var(--amber);border-radius:4px;padding:1px 6px;opacity:.8}
+.slider-wrap{display:flex;align-items:center;gap:9px}
+input[type=range]{width:150px;accent-color:var(--cyan);cursor:pointer}
+.cbtn{
+  background:#1e4278;border:1px solid var(--border2);color:var(--txt);border-radius:6px;
+  padding:7px 12px;font-size:12px;cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:6px;transition:all .12s;
+}
+.cbtn:hover{background:#3a6abf;border-color:var(--cyan)}
+.cbtn.on{background:var(--cyan);color:#04141f;border-color:var(--cyan);font-weight:600}
+.cbtn.warn{border-color:var(--amber)} .cbtn.warn:hover{background:#5a4012}
+.cbtn.alm{border-color:var(--red)} .cbtn.alm:hover{background:#5a1818}
+.cbtn.reset{margin-left:auto;border-color:var(--border2)}
+.flex{display:flex} .ac{align-items:center} .jb{justify-content:space-between} .gap{gap:10px}
+.note{font-size:11px;color:var(--muted);line-height:1.7}
+.kv{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #1a2a40;font-size:12px}
+.kv:last-child{border:none}
+.kv .k{color:var(--muted)} .kv .v{font-variant-numeric:tabular-nums;color:#dbe9f7}
+h4.sec{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin:4px 0 8px;font-weight:600}
+.diffbar{background:linear-gradient(90deg,rgba(255,157,77,.13),transparent);border-left:3px solid var(--orange);padding:8px 12px;border-radius:0 6px 6px 0;font-size:12px;color:#ffe0c2;margin-bottom:10px}
+.diffbar b{color:var(--orange)}
+.srcbar{display:flex;align-items:center;gap:8px;background:linear-gradient(90deg,rgba(46,120,224,.10),transparent);border-left:3px solid #2e78e0;padding:6px 12px;border-radius:0 5px 5px 0;font-size:11.5px;color:#9fc0e0;margin-bottom:10px}
+.srcbar .tag{font-size:9px;font-weight:700;letter-spacing:.08em;color:#04141f;background:#2e78e0;border-radius:3px;padding:1px 6px;flex-shrink:0}
+.srcbar b{color:#cfe0ee;font-weight:600}
+#toast{position:fixed;top:62px;right:18px;z-index:50;display:flex;flex-direction:column;gap:8px;pointer-events:none}
+.toast{background:#1e3050;border:1px solid var(--border2);border-left:3px solid var(--cyan);border-radius:6px;padding:9px 14px;font-size:12.5px;color:#dbe9f7;box-shadow:0 6px 20px rgba(0,0,0,.45);opacity:0;transform:translateX(24px);transition:all .25s;max-width:340px;line-height:1.5}
+.toast.show{opacity:1;transform:none}
+.toast.warn{border-left-color:var(--amber)} .toast.alm{border-left-color:var(--red)} .toast.ok{border-left-color:var(--green)}
+@keyframes pulseA{0%,100%{box-shadow:0 0 0 0 rgba(245,166,35,.5)}50%{box-shadow:0 0 0 6px rgba(245,166,35,0)}}
+@keyframes pulseR{0%,100%{box-shadow:0 0 0 0 rgba(255,85,85,.55)}50%{box-shadow:0 0 0 7px rgba(255,85,85,0)}}
+.cbtn.pulse{animation:pulseA 1.1s infinite;border-color:var(--amber);color:#ffd98a}
+.cbtn.pulse.alm{animation:pulseR 1.1s infinite;border-color:var(--red);color:#ff9b9b}
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <div id="logo">
+    <div class="mark">HTSG</div>
+    <div>
+      <div class="t1">锅炉高温应变·管系位移安全监测系统</div>
+      <div class="t2">HIGH-TEMP STRAIN GAUGE SURVEILLANCE</div>
+    </div>
+  </div>
+  <div class="spacer"></div>
+  <div class="unit-sel">
+    <span class="led g" id="unitLed"></span>
+    <select id="unitSel" onchange="setUnit(this.value)">
+      <option value="1">1#锅炉机组</option>
+      <option value="2">2#锅炉机组</option>
+    </select>
+  </div>
+  <div class="tb-stat"><span class="led g" id="acqLed"></span>采集 Acheron</div>
+  <div class="tb-stat"><span class="led g" id="anaLed"></span>分析 Mondo</div>
+  <div class="tb-stat"><span class="led c"></span>DCS · OPC-UA</div>
+  <div class="tb-stat" id="globalStat"><span class="led g" id="globalLed"></span><span id="globalTxt">系统正常</span></div>
+  <div id="clock">------ --:--:--</div>
+</div>
+
+<div id="nav"></div>
+<div id="main"></div>
+
+<div id="ctrl">
+  <span class="demo-tag">演示控制</span>
+  <div class="slider-wrap">
+    <span class="lbl">机组负荷</span>
+    <input type="range" id="loadSlider" min="20" max="100" value="75" oninput="setLoad(this.value)">
+    <span id="loadVal" style="min-width:74px;color:var(--cyan);font-weight:600">495 MW</span>
+  </div>
+  <button class="cbtn warn" id="btnThermal" onclick="fireThermalShock()">🔥 温度阶跃</button>
+  <button class="cbtn" id="btnCycle" onclick="toggleDeepCycle()">⚙ 深调循环</button>
+  <button class="cbtn warn" id="btnCrack" onclick="stepCrack()">🛠 焊缝裂纹 +</button>
+  <button class="cbtn alm" id="btnSeize" onclick="toggleSeize()">🔒 支吊架卡涩</button>
+  <button class="cbtn reset" onclick="resetSim()">↺ 复位</button>
+</div>
+<div id="toast"></div>
+
+<script>
+/* =====================================================================
+   HTSG 锅炉高温应变·管系位移安全监测系统 — 前端仿真演示
+   业主: 京能(锡林郭勒)发电有限公司 660MW 超超临界褐煤机组(B&W)
+   采集 Acheron · 分析 Mondo · 过程数据 DCS(OPC-UA/Modbus)
+   传感器: 高温应变计(>630℃, 50Hz) DYN-S-HT-C-1000 + 应变释放/防护装置
+   所有数据均为前端仿真,仅供产品演示。
+   ===================================================================== */
+
+/* ---------- 全局配置 ---------- */
+const RATED_MW = 660;
+const BOILER = 'B&WB-2117/29.4-M';          // 锅炉型号
+const E_HOT   = 170000;                       // 12Cr1MoVG 600℃ 弹性模量 MPa
+const ALPHA   = 13.5e-6;                       // 线膨胀系数 1/℃
+const NU      = 0.3;
+const SY_HOT  = 205;                           // 12Cr1MoVG 高温(~600℃)屈服 MPa
+const SALLOW  = 84;                            // GB5310 高温许用应力 MPa(~580℃)
+const ACCEL   = 200;                           // 演示时间加速: 每秒 ≈200 运行小时(蠕变/损伤可见)
+const P92_E   = 165000;                        // P92 主蒸汽管 620℃ E MPa
+const P92_SY  = 230;                           // P92 高温屈服 MPa
+
+// 前墙水冷壁上集箱: 原4大段→改造为8小段, 标高78650→78890(抬高240mm), φ219×50, 12Cr1MoVG
+const HEADERS = ['H1','H2','H3','H4','H5','H6','H7','H8'];
+// 应变测点(KKS风格命名), 类型: weld=管座角焊缝(横向裂纹高发) / endcap=端盖焊缝 / tube=水冷壁光管 / fin=鳍片 / outlet=Φ133引出管
+const WW_SENSORS = [
+  {id:'10HAD11-W', hdr:0, type:'weld',   name:'H1 管座角焊缝',   kt:2.6},
+  {id:'10HAD12-W', hdr:1, type:'weld',   name:'H2 管座角焊缝',   kt:2.7},
+  {id:'10HAD13-W', hdr:2, type:'weld',   name:'H3 管座角焊缝',   kt:2.9},
+  {id:'10HAD14-W', hdr:3, type:'weld',   name:'H4 管座角焊缝',   kt:3.1},
+  {id:'10HAD15-W', hdr:4, type:'weld',   name:'H5 管座角焊缝',   kt:3.0},
+  {id:'10HAD16-W', hdr:5, type:'weld',   name:'H6 管座角焊缝',   kt:2.8},
+  {id:'10HAD17-W', hdr:6, type:'weld',   name:'H7 管座角焊缝',   kt:2.7},
+  {id:'10HAD18-W', hdr:7, type:'weld',   name:'H8 管座角焊缝',   kt:2.6},
+  {id:'10HAD14-E', hdr:3, type:'endcap', name:'H4 端盖环焊缝',   kt:2.2},
+  {id:'10HAD15-E', hdr:4, type:'endcap', name:'H5 端盖环焊缝',   kt:2.2},
+  {id:'10HAD14-O', hdr:3, type:'outlet', name:'H4 Φ133 引出管',  kt:1.9},
+  {id:'10HAD15-O', hdr:4, type:'outlet', name:'H5 Φ133 引出管',  kt:1.9},
+  {id:'10HAD13-T', hdr:2, type:'tube',   name:'H3 水冷壁光管',   kt:1.3},
+  {id:'10HAD16-T', hdr:5, type:'tube',   name:'H6 水冷壁光管',   kt:1.3},
+  {id:'10HAD14-F', hdr:3, type:'fin',    name:'H4 鳍片(膜式壁)', kt:1.6},
+  {id:'10HAD15-F', hdr:4, type:'fin',    name:'H5 鳍片(膜式壁)', kt:1.6},
+];
+// 主蒸汽管道—汽轮机高压缸 法兰应变测点(四象限): 颈部轴向εz(反算弯矩) + 法兰环环向εθ(翘曲/密封)
+// 周向 0°上 / 90°右 / 180°下 / 270°左
+const FLANGE_QUAD = ['0° 上','90° 右','180° 下','270° 左'];
+// 管系位移测点(拉丝位移0-300mm/倾角传感器), 含吊杆载荷
+const PIPE_NODES = [
+  {id:'MS-P1', name:'主蒸汽管 立管段',  base:18},
+  {id:'MS-P2', name:'主蒸汽管 弯头前',  base:26},
+  {id:'MS-P3', name:'汽机入口 法兰颈',  base:31},
+  {id:'RH-P1', name:'再热热段 水平段',  base:22},
+];
+const HANGERS = [
+  {id:'HG-01', name:'吊杆#1 主蒸汽立管', rated:62},
+  {id:'HG-02', name:'吊杆#2 主蒸汽弯头', rated:58},
+  {id:'HG-03', name:'恒力弹簧吊#3 水平段', rated:74},
+  {id:'HG-04', name:'吊杆#4 汽机近端',   rated:45},
+];
+const HAS_EXPANSION_JOINT = false;   // 主汽法兰: 无膨胀节(法兰硬扛)→ 演示弯矩/翘曲随温度抬升
+
+/* ---------- 仿真状态 ---------- */
+const S = {
+  t:0, unit:1,
+  loadPct:75,
+  thermalT:-99,            // 温度阶跃/热冲击触发时刻
+  deepCycle:false,         // 深调循环(快速变负荷)
+  crackPct:0,              // 焊缝裂纹萌生程度(驱动 H4 管座应力集中上升)
+  seize:false,             // 支吊架卡涩(膨胀受阻→法兰弯矩/猫爪侧推上升)
+  ww:{},                   // 水冷壁各测点 {strain,stress,temp,pctYield,...}
+  field:[],                // 应变场云图栅格
+  creep:{},                // 各测点蠕变累计 με
+  weldCrack:{},            // 各焊缝裂纹深度估计 mm
+  flange:{neckZ:[0,0,0,0], ringT:[0,0,0,0], Tq:[0,0,0,0]},  // 四象限应变/温度
+  fIdx:{B:0,Bx:0,By:0,W:0,A:0,R:0,dT:0},                     // 法兰诊断指标
+  pipe:{},                 // 管系位移
+  hanger:{},               // 吊杆载荷
+  expAbs:0, expDiff:0, catClawLat:0,   // 缸体绝对膨胀/胀差/猫爪侧推
+  proc:{},                 // DCS 过程数据
+  alarms:[],
+  fatigue:0,               // 集箱疲劳累计损伤(深调循环)
+  creepLife:0,             // 蠕变寿命损耗
+  cycleCount:0,            // 深调循环计数
+  hist:{},
+  log:[],
+  uptime:412,
+};
+function pushLog(src,lv,msg){
+  const d=new Date();
+  S.log.unshift({t:d.toLocaleTimeString('zh-CN',{hour12:false}), src, lv, msg});
+  if(S.log.length>200) S.log.pop();
+}
+function initState(){
+  WW_SENSORS.forEach(s=>{ S.ww[s.id]={strain:0,stress:0,temp:0,pctYield:0,ph:Math.random()*6.28}; S.creep[s.id]=12+Math.random()*30; S.creepRate=S.creepRate||{}; S.creepRate[s.id]=0; S.lmpTr=S.lmpTr||{}; S.lmpTr[s.id]=1e8; S.robinsonD=S.robinsonD||{}; S.robinsonD[s.id]=0.02+Math.random()*0.03; });
+  ALG.base={};
+  // 各焊缝初始裂纹深度(无损检测基线 mm), H4 偏高(深调高发位置)
+  WW_SENSORS.filter(s=>s.type==='weld'||s.type==='endcap').forEach((s,i)=>{ S.weldCrack[s.id]=(s.hdr===3?0.6:0.1+Math.random()*0.2); });
+  PIPE_NODES.forEach(n=> S.pipe[n.id]={disp:n.base, tilt:0});
+  HANGERS.forEach(h=> S.hanger[h.id]={load:h.rated});
+  ALG._rbf=null; ALG.holt={l:null,b:0,sErr:1};
+  S.alg={ rbfConf:0, spe:0, speWorst:{id:'',z:0}, speZ:{}, fc:{fc:0,band:2,slope:0,actual:0}, rul:{med:2.6e5,lo:1e5,hi:4e5,lam:2.6e5,k:3.2}, robinsonMax:0, serviceHrs:412*24 };
+  S.hist={ creep:[], fatigue:[], maxStress:[], flangeB:[], flangeW:[], expAbs:[], wallDT:[], spe:[], fcA:[], fcP:[], catClaw:[] };
+  for(let i=0;i<120;i++){ const p=i/120;   // 预填波形,进入页面即有动态趋势
+    S.hist.creep.push(38+p*5+1.6*Math.sin(i*0.21));
+    S.hist.fatigue.push(12+p*6+0.6*Math.sin(i*0.18));
+    S.hist.maxStress.push(78+7*Math.sin(i*0.16));
+    S.hist.flangeB.push(165+16*Math.sin(i*0.13));
+    S.hist.flangeW.push(42+9*Math.sin(i*0.13+1));
+    S.hist.expAbs.push(30+4*Math.sin(i*0.11));
+    S.hist.wallDT.push(18+4*Math.sin(i*0.14));
+    S.hist.spe.push(6+2.5*Math.sin(i*0.22));
+    S.hist.fcA.push(80+6*Math.sin(i*0.15)); S.hist.fcP.push(80+5*Math.sin(i*0.15));
+    S.hist.catClaw.push(30+8*Math.sin(i*0.11+0.5));}
+  S.stressVec={ax:10,lat:2,mag:10,ang:0,expDeficit:0,lastHangDev:0,lastHangDisp:31,lastHangLoad:45};
+  S.stressCause={t:'g',name:'自由膨胀正常',why:'各约束在范围内,缸体沿死点自由膨胀'};
+  S.alarms=[]; S.fatigue=0.18; S.creepLife=0.11; S.log=[];
+  pushLog('系统','INFO','HTSG 高温应变监测系统启动 / Acheron 采集 + Mondo 分析在线');
+  pushLog('OPC-UA','INFO','DCS 过程数据链路建立 (节点 ns=2, KKS 标识)');
+  pushLog('传感器','INFO','高温应变计 16 路 / 法兰四象限 8 路 / 拉丝位移 4 路 自检通过');
+}
+
+/* ---------- 物理量换算 ---------- */
+// 总应变(με) → 应力(MPa): σ = E·ε
+function strToStress(ueMech, E){ return (E||E_HOT) * ueMech*1e-6; }
+// 厚壁集箱 内外壁温差 ΔT 引起的热应力(二次应力): σ_th = E·α·ΔT / (2(1-ν))
+function thermalStress(dT){ return E_HOT*ALPHA*dT/(2*(1-NU)); }
+
+/* =====================================================================
+   算法引擎 (数字孪生四层) —— 真实可计算的轻量实现
+   ① 场映射/重构: RBF(多二次)插值 [代理 PINN/iFEM]
+   ② 蠕变本构: Norton-Bailey 在线积分 + Larson-Miller(LMP) + Robinson 累积
+   ③ 异常检测: PCA/SPE 多维不协同(残差Q统计) [代理 Isolation Forest]
+   ④ 预测/寿命: Holt 线性趋势预测+预测带 [代理 LSTM] + Weibull/Bayes RUL
+   ===================================================================== */
+// 高斯消元解线性方程组 A x = b
+function solveLin(A,b){
+  const n=b.length;b=b.slice();A=A.map(r=>r.slice());
+  for(let p=0;p<n;p++){ let mx=p; for(let i=p+1;i<n;i++)if(Math.abs(A[i][p])>Math.abs(A[mx][p]))mx=i;
+    [A[p],A[mx]]=[A[mx],A[p]];[b[p],b[mx]]=[b[mx],b[p]];
+    const piv=A[p][p]||1e-9;
+    for(let i=p+1;i<n;i++){const f=A[i][p]/piv;for(let j=p;j<n;j++)A[i][j]-=f*A[p][j];b[i]-=f*b[p];}
+  }
+  const x=new Array(n).fill(0);
+  for(let i=n-1;i>=0;i--){let s=b[i];for(let j=i+1;j<n;j++)s-=A[i][j]*x[j];x[i]=s/(A[i][i]||1e-9);}
+  return x;
+}
+// 测点在水冷壁面归一化坐标 (x=集箱跨度, y=高度方向)
+const ROW_Y={outlet:0.16,endcap:0.30,weld:0.50,fin:0.63,tube:0.80};
+const SENSOR_XY = WW_SENSORS.map(s=>[ (s.hdr+0.5)/8, ROW_Y[s.type] ]);
+const ALG = {
+  // ---- ① RBF 多二次插值场重构 ----
+  _rbf:null, _eps:0.12, _ridge:0.0002,
+  rbfFit(vals){ const C=SENSOR_XY, n=C.length, c=this._eps;
+    const phi=(a,b)=>{const dx=a[0]-b[0],dy=a[1]-b[1];return Math.sqrt(dx*dx+dy*dy+c*c);};
+    const M=[]; for(let i=0;i<n;i++){M.push([]);for(let j=0;j<n;j++)M[i].push(phi(C[i],C[j]));M[i][i]+=this._ridge;}
+    this._rbf={w:solveLin(M,vals),phi,C}; return this._rbf; },
+  rbfEval(x,y){ const R=this._rbf; if(!R)return 0; let s=0; for(let j=0;j<R.C.length;j++)s+=R.w[j]*R.phi([x,y],R.C[j]); return s; },
+  // 留一交叉验证 → 重构置信度(%)
+  rbfLOO(vals){ const C=SENSOR_XY,n=C.length,c=this._eps;
+    const phi=(a,b)=>{const dx=a[0]-b[0],dy=a[1]-b[1];return Math.sqrt(dx*dx+dy*dy+c*c);};
+    let se=0,meanV=vals.reduce((a,b)=>a+Math.abs(b),0)/n;
+    for(let k=0;k<n;k++){ const idx=[...Array(n).keys()].filter(i=>i!==k);
+      const M=idx.map(i=>idx.map(j=>phi(C[i],C[j])+(i===j?this._ridge:0)));
+      const w=solveLin(M,idx.map(i=>vals[i]));
+      let pred=0; idx.forEach((i,jj)=>pred+=w[jj]*phi(C[k],C[i]));
+      se+=(pred-vals[k])**2; }
+    const rmse=Math.sqrt(se/n);                                   // 留一交叉验证 RMSE
+    return Math.max(0,Math.min(100, 100*(1-rmse/(meanV+1e-6)))); }, // 相对精度(%)
+  // ---- ② Norton-Bailey 蠕变本构 ε̇c = A σ^n t^m (时间硬化, 演示加速) ----
+  nbA:2.7e-11, nbN:5.0, nbM:-0.55, nbTref:773,
+  nbRate(sigma,Tc,tHr){ const T=Tc+273;
+    const tempAcc=Math.exp(12*(1 - this.nbTref/T));               // 阿伦尼乌斯型温度加速
+    return this.nbA*Math.pow(Math.max(1,sigma),this.nbN)*Math.pow(Math.max(1,tHr),this.nbM)*tempAcc; }, // με/h
+  // Larson-Miller: 断裂寿命 tr (h);  LMP = a - b·log10(σ),  P=T(C+log10 tr)/1000
+  lmpC:20,
+  lmp(sigma){ return 24.8 - 2.35*Math.log10(Math.max(5,sigma)); },
+  ruptureHrs(sigma,Tc){ const T=Tc+273; const ex=this.lmp(sigma)*1000/T - this.lmpC; return Math.pow(10, Math.min(12,Math.max(0,ex))); },
+  // ---- ③ PCA/SPE 多维不协同 (残差 Q 统计) ----
+  // 健康基线: 各测点应力对负荷的慢自适应期望; 残差标准化平方和=SPE
+  base:{}, baseInit(id,v){ this.base[id]={mu:v,var:49}; },
+  // 均值慢自适应(健康学习,故障时基线跟不上→残差累积);方差较快学习正常波动幅度
+  speUpdate(ids){ let spe=0,worst={id:'',z:0}; const zs={};
+    ids.forEach(id=>{ const o=S.ww[id]; const b=this.base[id]||(this.base[id]={mu:o.stress,var:49});
+      const z=(o.stress-b.mu)/Math.sqrt(b.var); zs[id]=z; spe+=z*z; if(Math.abs(z)>Math.abs(worst.z))worst={id,z};
+      // 鲁棒学习: 仅在"受控"(|z|<2.5)样本上更新基线,持续故障不被基线吸收 → SPE 维持高位
+      const aMu=0.0025, aVar=0.02, e=o.stress-b.mu;
+      if(Math.abs(z)<2.5){ b.mu+=aMu*e; b.var=Math.max(36,(1-aVar)*b.var+aVar*e*e); } });
+    return {spe, worst, zs, k:ids.length}; },
+  // ---- ④ Holt 线性趋势预测 + 预测带 (代理 LSTM) ----
+  holt:{l:null,b:0,sErr:4},
+  holtStep(y,h){ const H=this.holt, al=0.18, be=0.05;
+    if(H.l===null){H.l=y;H.b=0;return {fc:y,band:4,slope:0,breach:false,innov:0};}
+    const pred1=H.l+H.b;                          // 一步超前预测
+    const err=y-pred1; const sd=Math.sqrt(H.sErr);
+    const breach = err>2.2*sd && err>4;           // 实测显著高于预测(只关注上行突增)
+    const lp=H.l; H.l=al*y+(1-al)*pred1; H.b=be*(H.l-lp)+(1-be)*H.b;
+    H.sErr=0.93*H.sErr+0.07*err*err;
+    return {fc:H.l+h*H.b, band:2*sd+4, slope:H.b, breach, innov:err}; },
+  // ---- Weibull + 贝叶斯 RUL ----
+  wbK:3.2, wbLam0:2.6e5,   // 形状/初始尺度(h)
+  rul(D, creepRate){
+    // 贝叶斯: 实测蠕变速率高于额定 → 收缩尺度 λ(寿命变短)
+    const nomRate=0.6, lam=this.wbLam0*Math.max(0.25, nomRate/Math.max(nomRate,creepRate));
+    const q=(p)=>lam*Math.pow(-Math.log(1-p),1/this.wbK)*(1-Math.min(0.98,D)); // 分位数×剩余比例
+    return {med:q(0.5), lo:q(0.1), hi:q(0.9), lam, k:this.wbK}; },
+};
+
+/* ---------- 仿真更新 ---------- */
+function updateSim(dt){
+  S.t += dt;
+  const lf = S.loadPct/100;          // 机组负荷仅由滑块手动设定,不自动滑动
+  // 深调循环: 不改动负荷,仅叠加快速变负荷的交变热应力并累计循环次数(疲劳)
+  if(S.deepCycle){
+    const c = Math.sin(S.t*0.5);
+    if(updateSim._lastC!==undefined && updateSim._lastC*c<0) S.cycleCount++;
+    updateSim._lastC=c;
+  }
+  // 平滑抖动(确定性正弦,非每帧随机)→ 数值缓慢漂移,DOM 与画布数字均不闪烁
+  let _ji=0; const jit=(a)=>{ _ji++; return 1+a*0.5*Math.sin(S.t*(0.45+0.08*(_ji%7))+_ji*0.9); };
+
+  // 温度阶跃/热冲击包络: 触发后内外壁温差骤升再衰减(深调变负荷/启停的典型热冲击)
+  const tsSince = S.t - S.thermalT;
+  const shock = tsSince>=0 && tsSince<40 ? Math.exp(-tsSince*0.10)*(tsSince<1.5?tsSince/1.5:1) : 0;
+  // 低负荷热偏差: 超低负荷(<45%)火焰中心偏移/各屏吸热不均→水冷壁壁温偏差与内外温差加大
+  const lowLoadDT = lf<0.45 ? Math.pow((0.45-lf)/0.45,1.2)*22 : 0;
+  // 深调快速变负荷的速率项(壁温响应滞后→瞬态温差)
+  const rate = S.deepCycle ? Math.abs(Math.cos(S.t*0.16))*0.16*14 : 0;
+
+  /* ===== 应用1: 水冷壁高温应变场 (多因素: 负荷+工质流量+蒸汽流量→壁温/热应力) ===== */
+  const wwFlowPct = Math.max(0.25, lf*(1+0.002*Math.sin(S.t*0.5)));   // 水冷壁工质流量(相对额定)
+  const steamPct  = Math.max(0.20, lf);                                  // 过热蒸汽流量(相对额定)
+  const flowDef   = Math.max(0, 0.5 - wwFlowPct)*42;                     // 低流量→换热恶化,壁温/温差附加升高
+  S._wwFlowPct=wwFlowPct; S._steamPct=steamPct;
+  const wallTwork = 435 - (1-lf)*18 + flowDef*0.55;            // 工质温度 ℃(受工质流量影响)
+  const baseWallDT = 14 + (1-lf)*4;                            // 稳态内外壁温差
+  const wallDT = baseWallDT + lowLoadDT + shock*48 + rate + flowDef*0.4 + 2.6*Math.sin(S.t*0.85) + 1.2*Math.sin(S.t*0.33);   // 内外壁温差 ℃(含波动)
+  const sTh = thermalStress(wallDT);            // 热应力 MPa(膜+弯的二次应力)
+  let maxStress=0, maxPctY=0, maxId='';
+  WW_SENSORS.forEach(s=>{
+    const o=S.ww[s.id];
+    o.temp = wallTwork + 30 + (s.type==='weld'?6:0) - (s.hdr-3.5)*1.1 + shock*10 + 0.8*Math.sin(S.t*0.5+o.ph); // 金属温度 ℃
+    // 机械应力(自重+约束+内压分离)随负荷温和变化
+    const mech = (28 + 26*lf)*jit(0.03);
+    // 热应力按几何应力集中 kt 放大(管座焊趾), H4(裂纹高发)再叠加裂纹萌生项
+    const crackBoost = (s.hdr===3 && (s.type==='weld')) ? S.crackPct*0.9 : (s.hdr===3&&s.type==='endcap'? S.crackPct*0.3:0);
+    let stress = mech + sTh*(s.kt/2.0) + crackBoost;
+    stress *= (0.955+0.05*Math.sin(S.t*(0.7+s.kt*0.1)+o.ph) + 0.035*Math.sin(S.t*0.6+o.ph*0.5));  // 含波动,趋势可见起伏
+    o.stress = stress;
+    o.strain = stress/E_HOT*1e6;                 // 反推总应变 με
+    o.pctYield = stress/SY_HOT*100;
+    o.pctAllow = stress/SALLOW*100;
+    if(stress>maxStress){maxStress=stress;maxPctY=o.pctYield;maxId=s.id;}
+    // ② Norton-Bailey 蠕变本构在线积分 + Larson-Miller 断裂寿命 + Robinson 损伤累积
+    const tHr=S.alg.serviceHrs;
+    const rate=ALG.nbRate(stress,o.temp,tHr);          // με/h
+    S.creepRate[s.id]=rate*1000;                        // με/kh (显示)
+    S.creep[s.id]   += rate*dt*ACCEL*(1+shock*1.5);
+    const tr=ALG.ruptureHrs(stress,o.temp); S.lmpTr[s.id]=tr;
+    S.robinsonD[s.id]+= dt*ACCEL/tr;                    // Robinson Σ ti/tr
+  });
+  S.alg.serviceHrs += dt*ACCEL;
+  S.ww._max={stress:maxStress,pctY:maxPctY,id:maxId,dt:wallDT,sTh:sTh,twork:wallTwork};
+
+  // 焊缝裂纹扩展(深调循环疲劳 + 裂纹注入): da/dN ~ 应力幅, H4 管座最敏感
+  WW_SENSORS.filter(s=>s.type==='weld'||s.type==='endcap').forEach(s=>{
+    const o=S.ww[s.id];
+    const growth = (S.deepCycle?0.00006:0.0000015)*Math.pow(o.pctAllow/100,2) + (s.hdr===3?S.crackPct*0.00004:0);
+    S.weldCrack[s.id]=Math.min(8, S.weldCrack[s.id]+growth*(1+shock*3));
+  });
+
+  // ① 应变场重构: RBF 多二次插值(由 16 测点实测应力外推全壁面) + 留一交叉验证置信度
+  buildField();
+
+  // ③ PCA/SPE 多维不协同异常检测(残差 Q 统计)
+  const speIds=WW_SENSORS.map(s=>s.id);
+  const sp=ALG.speUpdate(speIds); S.alg.spe=sp.spe; S.alg.speWorst=sp.worst; S.alg.speZ=sp.zs;
+  // ④ Holt 线性趋势预测(对 H4 管座焊缝应力, 代理 LSTM): 实际超预测带 → 屈服/裂纹扩展
+  const h4=S.ww['10HAD14-W'].stress;
+  const fc=ALG.holtStep(h4, 12);
+  if(fc.breach) S.alg._breachUntil=S.t+2.5;                 // 突增越界后锁存数秒
+  S.alg.fc={fc:fc.fc, band:fc.band, slope:fc.slope, actual:h4, innov:fc.innov, breach: S.t < (S.alg._breachUntil||-9)};
+  // ④ Weibull + 贝叶斯 RUL(以 H4 蠕变速率与最大 Robinson 损伤更新)
+  let rdMax=0,rdId=''; speIds.forEach(id=>{if(S.robinsonD[id]>rdMax){rdMax=S.robinsonD[id];rdId=id;}});
+  S.alg.robinsonMax=rdMax; S.alg.robinsonId=rdId;
+  S.alg.rul=ALG.rul(rdMax, S.creepRate['10HAD14-W']/1000);
+
+  /* ===== 应用2: 管系位移 + 法兰应力 + 猫爪 ===== */
+  // 缸体绝对热膨胀(自死点): 随主蒸汽温度/负荷, 卡涩时膨胀受阻(实测值偏小但内部憋应力)
+  const freeExp = 22 + lf*14;                   // 自由膨胀目标 mm
+  const seizeFactor = S.seize ? 0.62 : 1;       // 卡涩→实测膨胀被约束
+  S.expAbs = freeExp*seizeFactor*jit(0.01) + shock*1.5 + 1.3*Math.sin(S.t*0.8) + 0.6*Math.sin(S.t*0.3);
+  S.expDiff = (4.2 + lf*2.1)*jit(0.02) + (S.seize?2.4:0) + shock*0.8 + 0.45*Math.sin(S.t*0.85);   // 胀差(转子-缸体) mm
+  // 管系位移(拉丝位移传感器): 随热膨胀, 卡涩处位移受限
+  PIPE_NODES.forEach((n,i)=>{
+    const p=S.pipe[n.id];
+    p.disp = n.base*(0.6+0.4*lf)*(S.seize?0.7:1)*jit(0.01) + shock*1.2 + S.expAbs*0.15 + 0.8*Math.sin(S.t*0.8+i*0.9);
+    p.tilt = ((n.base-22)*0.04 + (S.seize?0.6:0.12) + shock*0.3)*jit(0.05) + 0.06*Math.sin(S.t*0.75+i);  // 倾角 °
+  });
+  // 吊杆载荷: 设计冷态预紧, 热态/卡涩→载荷重分配(卡涩吊杆超载, 邻近卸载)
+  HANGERS.forEach((h,i)=>{
+    const hh=S.hanger[h.id];
+    let load = h.rated*(0.92+0.10*lf)*jit(0.02)*(1+0.05*Math.sin(S.t*0.8+i*0.8));
+    if(S.seize){ load *= (i===1? 1.42 : (i===2?0.74:1.05)); }  // #2卡涩超载
+    load += shock*2.5;
+    hh.load=load;
+  });
+
+  // 法兰四象限应变: 颈部轴向 εz(弯矩) + 法兰环环向 εθ(翘曲); 无膨胀节→随温度抬升
+  const tBase = 300 + lf*255;                   // 主蒸汽温度 ℃(P92, 至620)
+  // 缓慢"呼吸"调制(确定性,周期≈40s)→ 趋势可见起伏,但逐帧变化极小不闪烁
+  const breath = 1+0.06*Math.sin(S.t*0.7)+0.03*Math.sin(S.t*0.27);
+  const thrust = (1-(HAS_EXPANSION_JOINT?0.55:0))*(0.4+0.6*lf)*breath;  // 管系热推力系数
+  // 上下温差(保温不均/疏水) — 驱动不对称
+  S.flange.dT = (8 + lf*6 + shock*14 + (S.seize?6:0))*(1+0.05*Math.sin(S.t*0.75));
+  for(let q=0;q<4;q++){
+    // 轴向应变 εz: 弯矩使 0°(上)与180°(下)反相, 90/270 次之; 卡涩/推力放大
+    const dir = [1,0.15,-1,-0.15][q];
+    const bend = (24 + 72*thrust + (S.seize?110:0) + shock*40);
+    S.flange.neckZ[q] = (210 + 175*lf) + dir*bend + 3*Math.sin(S.t*0.6+q*1.7);   // με
+    // 环向应变 εθ: 翘曲使各象限不等, 危险象限(180°下/0°上)随推力+温差扩大
+    const warpDir=[1.0,0.35,0.8,0.3][q];
+    S.flange.ringT[q] = (160+120*lf) + warpDir*(16+48*thrust+(S.seize?105:0)+shock*30)*breath + 2.5*Math.sin(S.t*0.5+q*2.3);
+    S.flange.Tq[q] = tBase + [1,0,-1,0][q]*S.flange.dT*0.5 + Math.sin(S.t*0.4+q*1.1);
+  }
+  // 法兰诊断指标
+  const z=S.flange.neckZ, r=S.flange.ringT;
+  S.fIdx.By = z[0]-z[2];  S.fIdx.Bx = z[1]-z[3];
+  S.fIdx.B = Math.sqrt(S.fIdx.By*S.fIdx.By + S.fIdx.Bx*S.fIdx.Bx);
+  S.fIdx.W = Math.max(...r)-Math.min(...r);
+  S.fIdx.A = S.fIdx.W/(S.fIdx.B+1e-6);
+  S.fIdx.R = S.fIdx.W/(Math.abs(S.flange.dT)+1e-6);
+  S.fIdx.dT = S.flange.dT;
+  S.fIdx.worstQ = r.indexOf(Math.max(...r));
+  // 猫爪侧推力(管系外载经法兰传至缸体→猫爪滑销): 卡涩/弯矩大→侧推上升→失稳风险
+  S.catClawLat = (S.fIdx.B*0.18 + (S.seize?52:0) + shock*15)*jit(0.03);
+  // 汽机自由膨胀度: 由"末吊架(汽机近端 HG-04)形变 + 主汽-汽机法兰形变"联合判定
+  // = 实测缸体膨胀/自由膨胀目标, 经管系约束(法兰弯矩)与末吊架超载修正
+  const lastH=S.hanger['HG-04']; const lastOver=Math.max(0,(lastH.load/45-1))*100;
+  S.lastHangerOver=lastOver;
+  S.freeExpDeg = Math.max(0, Math.min(100, (S.expAbs/freeExp)*100 - Math.max(0,(S.fIdx.B-160))/5 - lastOver*0.4));
+
+  /* 应力方向合成: 末吊架位移 + 法兰位移(弯矩) + 缸体膨胀受阻 → 缸体合成受力方向 + 故障原因 */
+  const expDeficit = Math.max(0, freeExp - S.expAbs);              // 缸体膨胀受阻量 mm
+  const lastHangDev = lastH.load/45 - 1;                            // 末吊架载荷偏差(相对额定)
+  const lastHangDisp = S.pipe['MS-P3'].disp;                        // 汽机入口(末端)位移 mm
+  // 轴向力(沿膨胀轴, 指向死点=阻碍膨胀为正): 膨胀受阻 + 末吊架约束
+  const Faxial = expDeficit*9 + Math.max(0,lastHangDev)*70 + (S.seize?40:8);
+  // 横向力(垂直膨胀轴): 法兰弯矩横向分量 + 末吊架不均
+  const Flat = S.fIdx.Bx*0.10 + lastHangDev*30;
+  S.stressVec = {ax:Faxial, lat:Flat, mag:Math.hypot(Faxial,Flat), ang:Math.atan2(Flat,Faxial),
+                 expDeficit, lastHangDev, lastHangDisp, lastHangLoad:lastH.load};
+  // 故障原因判定(无法自由膨胀)
+  let cause;
+  if(S.seize) cause={t:'r',name:'支吊架卡涩',why:'末吊架(HG-04)超载且缸体膨胀受阻 → 管系热膨胀无法释放,推汽机缸体,猫爪受侧推'};
+  else if(S.fIdx.B>240 && S.fIdx.A<1.2) cause={t:'a',name:'管系外载偏大',why:'法兰弯矩高、支吊架偏差,管系对法兰/缸体施加额外推力'};
+  else if(expDeficit>6 && Math.abs(lastHangDev)<0.15) cause={t:'a',name:'导向/死点卡涩',why:'缸体膨胀明显不足而吊架载荷正常,疑似滑销/导向卡涩'};
+  else cause={t:'g',name:'自由膨胀正常',why:'末吊架、法兰、膨胀三者协调,缸体沿死点自由膨胀'};
+  S.stressCause=cause;
+
+  /* ===== DCS 过程数据 ===== */
+  S.proc = {
+    load: Math.round(RATED_MW*lf),
+    wwFlow: Math.round(1850*S._wwFlowPct),                 // 水冷壁工质流量 t/h
+    msFlow: Math.round(2117*lf*jit(0.01)),                 // 过热蒸汽流量 t/h
+    msTemp: +(605 - (1-lf)*22).toFixed(1)*jit(0.001),       // 过热蒸汽温度 ℃
+    msPress:+((8.5 + 20.9*lf)*jit(0.004)).toFixed(2),       // 主蒸汽压力 MPa(滑压)
+    fwTemp: +(309 - (1-lf)*34).toFixed(1),                  // 给水温度 ℃
+    rhTemp: +(623 - (1-lf)*16).toFixed(1),                  // 再热蒸汽温度 ℃
+    wallT:  +(wallTwork+30).toFixed(1),                     // 水冷壁金属温度 ℃
+    wallDT: +wallDT.toFixed(1),                             // 内外壁温差 ℃
+    furnaceP: +(-0.05 - (1-lf)*0.02).toFixed(3),            // 炉膛负压 kPa
+  };
+
+  // 疲劳/蠕变寿命累计
+  S.fatigue += dt*(0.0000012 + (S.deepCycle?0.000055:0)*Math.pow(S.ww._max.pctY/100,2) + shock*0.00009);
+  S.creepLife += dt*(0.0000008 + Math.pow(Math.max(0,S.ww._max.pctY)/100,3)*0.00004);
+
+  // 历史趋势(滑窗)
+  if(!updateSim._ht)updateSim._ht=0; updateSim._ht+=dt;
+  if(updateSim._ht>0.5){ updateSim._ht=0;
+    const avgCreep = Object.values(S.creep).reduce((a,b)=>a+b,0)/Object.keys(S.creep).length;
+    // 累计量趋势叠加随工况的可见波动(卡片仍用真实累计值,趋势线更直观)
+    pushHist('creep',avgCreep + 1.6*Math.sin(S.t*0.5)); pushHist('fatigue',S.fatigue*100 + 1.1*Math.sin(S.t*0.6)+0.6*Math.sin(S.t*0.23)); pushHist('maxStress',S.ww._max.stress);
+    pushHist('flangeB',S.fIdx.B); pushHist('flangeW',S.fIdx.W); pushHist('expAbs',S.expAbs); pushHist('wallDT',wallDT);
+    pushHist('spe',S.alg.spe); pushHist('fcA',S.alg.fc.actual); pushHist('fcP',S.alg.fc.fc); pushHist('catClaw',S.catClawLat);
+  }
+
+  evalAlarms(shock);
+  S._shock=shock;
+}
+function pushHist(k,v){ const a=S.hist[k]; a.push(v); if(a.length>120)a.shift(); }
+
+/* 应变场重构: RBF 多二次插值, 由 16 个实测测点外推到 FCOLS×FROWS 连续场
+   场量可选: 应力(MPa)/应变(με)/管壁温度(℃); 测点值本身已含 负荷·工质流量·蒸汽流量·壁温 等影响 */
+const FCOLS=22, FROWS=15;
+let FIELD_TYPE='stress';   // stress | strain | temp
+const FIELD_META={stress:{unit:'MPa',k:'stress'}, strain:{unit:'με',k:'strain'}, temp:{unit:'℃',k:'temp'}};
+function setFieldType(t){ FIELD_TYPE=t; document.querySelectorAll('#p2_ftbtns .vbtn').forEach(b=>b.classList.toggle('on',b.dataset.t===t)); }
+function buildField(){
+  const meta=FIELD_META[FIELD_TYPE]||FIELD_META.stress;
+  const vals = WW_SENSORS.map(s=>S.ww[s.id][meta.k]);
+  ALG.rbfFit(vals);
+  if(!buildField._tc) buildField._tc=0; buildField._tc+=1;
+  if(buildField._tc%30===0) S.alg.rbfConf=ALG.rbfLOO(WW_SENSORS.map(s=>S.ww[s.id].stress));
+  S.fieldUnit=meta.unit;
+  const f=[];
+  for(let r=0;r<FROWS;r++){ const row=[];
+    for(let c=0;c<FCOLS;c++){
+      const x=(c+0.5)/FCOLS, y=(r+0.5)/FROWS;
+      row.push(ALG.rbfEval(x,y));
+    }
+    f.push(row);
+  }
+  S.field=f;
+}
+
+/* ---------- 报警评估 ---------- */
+function evalAlarms(shock){
+  const A=[];
+  const m=S.ww._max;
+  // 1 水冷壁应力超许用
+  if(m.pctY>=1){ // always evaluate
+    if(m.stress>SY_HOT*0.9) A.push({lv:'r',src:'水冷壁',msg:`${nameOf(m.id)} 应力 ${m.stress.toFixed(0)}MPa 达屈服 ${m.pctY.toFixed(0)}% — 立即检查`});
+    else if(m.stress>SALLOW*1.5) A.push({lv:'a',src:'水冷壁',msg:`${nameOf(m.id)} 应力 ${m.stress.toFixed(0)}MPa 超许用 ${(m.stress/SALLOW*100).toFixed(0)}%`});
+  }
+  // 2 内外壁温差(热冲击)
+  if(m.dt>55) A.push({lv:'r',src:'热应力',msg:`内外壁温差 ${m.dt.toFixed(0)}℃ 过大 — 深调速率/热冲击预警`});
+  else if(m.dt>40) A.push({lv:'a',src:'热应力',msg:`内外壁温差 ${m.dt.toFixed(0)}℃ 偏高`});
+  // 3 焊缝裂纹
+  let maxCrack=0,mcId='';
+  Object.keys(S.weldCrack).forEach(k=>{if(S.weldCrack[k]>maxCrack){maxCrack=S.weldCrack[k];mcId=k;}});
+  if(maxCrack>3) A.push({lv:'r',src:'焊缝',msg:`${nameOf(mcId)} 裂纹深度 ${maxCrack.toFixed(1)}mm 超限 — 停机检修`});
+  else if(maxCrack>1.5) A.push({lv:'a',src:'焊缝',msg:`${nameOf(mcId)} 裂纹深度 ${maxCrack.toFixed(1)}mm 扩展中`});
+  // 4 法兰弯矩/翘曲
+  if(S.fIdx.B>240) A.push({lv:'a',src:'主汽法兰',msg:`法兰颈弯矩指标 B=${S.fIdx.B.toFixed(0)}με 偏高 — 管系外载/支吊架异常`});
+  if(S.fIdx.W>180) A.push({lv:'r',src:'主汽法兰',msg:`法兰翘曲指标 W=${S.fIdx.W.toFixed(0)}με — ${FLANGE_QUAD[S.fIdx.worstQ]} 象限密封风险`});
+  // 5 支吊架/猫爪
+  if(S.seize){ A.push({lv:'r',src:'管系膨胀',msg:`支吊架卡涩 — 膨胀受阻,猫爪侧推 ${S.catClawLat.toFixed(0)}kN,汽机自由膨胀失效`}); }
+  else if(S.catClawLat>40) A.push({lv:'a',src:'猫爪',msg:`猫爪侧推力 ${S.catClawLat.toFixed(0)}kN 升高 — 注意失稳风险`});
+  // 6 胀差
+  if(S.expDiff>8.5) A.push({lv:'a',src:'胀差',msg:`转子-缸体胀差 ${S.expDiff.toFixed(1)}mm 接近报警`});
+  // 7 寿命
+  if(S.fatigue>0.85) A.push({lv:'a',src:'寿命',msg:`集箱疲劳累积损伤 ${(S.fatigue*100).toFixed(0)}% — 接近设计限`});
+  // 8 算法层: PCA/SPE 多维不协同(早期隐蔽预警) + Holt 预测越界
+  if(S.alg && S.alg.spe>60) A.push({lv:'r',src:'算法·SPE',msg:`多维不协同 SPE=${S.alg.spe.toFixed(0)} — ${nameOf(S.alg.speWorst.id)} 脱离健康基线(z=${S.alg.speWorst.z.toFixed(1)}),焊缝早期异常`});
+  else if(S.alg && S.alg.spe>25) A.push({lv:'a',src:'算法·SPE',msg:`SPE=${S.alg.spe.toFixed(0)} 偏高 — ${nameOf(S.alg.speWorst.id)} 应变变动率异常`});
+  if(S.alg && S.alg.fc.breach) A.push({lv:'a',src:'算法·预测',msg:`H4 实测应力 ${S.alg.fc.actual.toFixed(0)}MPa 突增超 Holt 预测带(+${S.alg.fc.innov.toFixed(0)}) — 疑似局部屈服/微裂纹扩展`});
+  if(A.length===0) A.push({lv:'g',src:'系统',msg:'全部测点应力/位移在安全范围,无活动报警'});
+  // 记录新出现的报警到日志
+  A.filter(a=>a.lv!=='g').forEach(a=>{ const key=a.src+a.msg.slice(0,8); if(!evalAlarms._seen)evalAlarms._seen={}; if(!evalAlarms._seen[key]||S.t-evalAlarms._seen[key]>20){evalAlarms._seen[key]=S.t; pushLog(a.src,a.lv==='r'?'ALARM':'WARN',a.msg);} });
+  S.alarms=A;
+  // 顶栏全局状态
+  const worst = A.some(a=>a.lv==='r')?'r':(A.some(a=>a.lv==='a')?'a':'g');
+  const gl=document.getElementById('globalLed'), gt=document.getElementById('globalTxt');
+  if(gl){ gl.className='led '+worst; gt.textContent = worst==='r'?'报警':(worst==='a'?'预警':'系统正常'); }
+}
+function nameOf(id){ const s=WW_SENSORS.find(x=>x.id===id); return s?s.name:id; }
+
+/* ---------- Canvas 工具 ---------- */
+function dpiFit(cv){
+  const r=cv.getBoundingClientRect();
+  const dpr=window.devicePixelRatio||1;
+  if(r.width<2) return null;
+  cv.width=r.width*dpr; cv.height=(cv.clientHeight||r.height)*dpr;
+  const ctx=cv.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0);
+  return {ctx,w:r.width,h:cv.clientHeight||r.height};
+}
+function grid(ctx,x,y,w,h,nx,ny){
+  ctx.save();
+  ctx.fillStyle='#16233c'; ctx.fillRect(x,y,w,h);
+  ctx.strokeStyle='#243a5a'; ctx.lineWidth=1;
+  for(let i=0;i<=nx;i++){const gx=x+w*i/nx;ctx.beginPath();ctx.moveTo(gx,y);ctx.lineTo(gx,y+h);ctx.stroke();}
+  for(let i=0;i<=ny;i++){const gy=y+h*i/ny;ctx.beginPath();ctx.moveTo(x,gy);ctx.lineTo(x+w,gy);ctx.stroke();}
+  ctx.strokeStyle='#2a4060';ctx.strokeRect(x,y,w,h);
+  ctx.restore();
+}
+function txt(ctx,s,x,y,col,size,align){ctx.fillStyle=col||'#7aa0c8';ctx.font=(size||10)+'px Consolas,monospace';ctx.textAlign=align||'left';ctx.fillText(s,x,y);}
+// 热力色标 (低应力蓝→绿→黄→红)
+function heat(v){
+  v=Math.min(1,Math.max(0,v));
+  const stops=[[26,52,86],[30,110,170],[40,180,150],[120,200,70],[240,200,60],[255,140,40],[230,50,40]];
+  const p=v*(stops.length-1);const i=Math.floor(p);const f=p-i;
+  const a=stops[i],b=stops[Math.min(i+1,stops.length-1)];
+  return `rgb(${a[0]+(b[0]-a[0])*f|0},${a[1]+(b[1]-a[1])*f|0},${a[2]+(b[2]-a[2])*f|0})`;
+}
+function stressColor(pctAllow){ return pctAllow>140?'#ff5555':(pctAllow>90?'#f5a623':(pctAllow>60?'#70b8ff':'#2ecc71')); }
+
+/* 通用趋势线 */
+function drawTrend(cv,series,opts={}){
+  const F=dpiFit(cv); if(!F)return; const {ctx,w,h}=F;
+  const pad={l:opts.l||44,r:opts.r||10,t:10,b:18};
+  const gx=pad.l,gy=pad.t,gw=w-pad.l-pad.r,gh=h-pad.t-pad.b;
+  grid(ctx,gx,gy,gw,gh,8,4);
+  let mn=opts.min, mx=opts.max;
+  if(mn===undefined){mn=Infinity;mx=-Infinity;series.forEach(s=>s.data.forEach(v=>{mn=Math.min(mn,v);mx=Math.max(mx,v);}));}
+  const pd=(mx-mn)*0.12||1; if(opts.min===undefined)mn-=pd; if(opts.max===undefined)mx+=pd;
+  if(opts.bands)opts.bands.forEach(b=>{
+    const y1=gy+gh-(Math.min(b.hi,mx)-mn)/(mx-mn)*gh, y2=gy+gh-(Math.max(b.lo,mn)-mn)/(mx-mn)*gh;
+    ctx.fillStyle=b.color||'rgba(245,166,35,.1)';ctx.fillRect(gx,Math.max(gy,y1),gw,Math.min(gh,y2-y1));
+  });
+  series.forEach(s=>{
+    ctx.beginPath();ctx.strokeStyle=s.color;ctx.lineWidth=s.w||1.5;
+    s.data.forEach((v,i)=>{const px=gx+gw*i/(s.data.length-1);const py=gy+gh-(v-mn)/(mx-mn)*gh;i?ctx.lineTo(px,py):ctx.moveTo(px,py);});
+    ctx.stroke();
+    if(s.fill){ctx.lineTo(gx+gw,gy+gh);ctx.lineTo(gx,gy+gh);ctx.closePath();ctx.fillStyle=s.fill;ctx.fill();}
+  });
+  for(let i=0;i<=4;i++){const val=mx-(mx-mn)*i/4;txt(ctx,val.toFixed(opts.dec!=null?opts.dec:0),gx-4,gy+gh*i/4+3,'#6896be',9,'right');}
+  if(opts.title)txt(ctx,opts.title,gx+6,gy+12,'#7aa0c8',10);
+  // 图例右对齐,避免与标题文字叠堆
+  if(opts.legend){ ctx.font='9px Consolas,monospace';
+    let tw=0; opts.legend.forEach(L=>{tw+=14+ctx.measureText(L.name).width+14;});
+    let lx=gx+gw-tw;
+    opts.legend.forEach(L=>{txt(ctx,'■',lx,gy+11,L.color,11);txt(ctx,L.name,lx+13,gy+11,'#9fc0e0',9);lx+=14+ctx.measureText(L.name).width+14;});}
+}
+
+/* ---------- 演示控制 ---------- */
+function setLoad(v){ S.loadPct=+v; document.getElementById('loadVal').textContent=Math.round(RATED_MW*v/100)+' MW'; }
+function setUnit(v){ S.unit=+v; toast('已切换至 '+v+'#锅炉机组','ok'); pushLog('系统','INFO','监视机组切换: '+v+'#'); }
+function fireThermalShock(){ S.thermalT=S.t; flashBtn('btnThermal'); toast('注入温度阶跃/热冲击 — 内外壁温差骤升,热应力尖峰','warn'); pushLog('演示','INFO','温度阶跃注入(模拟深调变负荷/启停热冲击)'); }
+function toggleDeepCycle(){ S.deepCycle=!S.deepCycle; const b=document.getElementById('btnCycle'); b.classList.toggle('on',S.deepCycle); toast(S.deepCycle?'深度调峰循环 开 — 叠加快速变负荷交变热应力(疲劳累积);负荷仍由滑块手动设定':'深调循环 关',S.deepCycle?'warn':'ok'); pushLog('演示','INFO','深调循环 '+(S.deepCycle?'启动':'停止')); }
+function stepCrack(){ S.crackPct=Math.min(100,S.crackPct+14); flashBtn('btnCrack',S.crackPct>56?'alm':''); toast('H4 管座焊缝裂纹萌生 +,应力集中上升('+S.crackPct+'%)',S.crackPct>56?'alm':'warn'); pushLog('演示','WARN','H4 管座角焊缝裂纹注入,当前 '+S.crackPct+'%'); }
+function toggleSeize(){ S.seize=!S.seize; const b=document.getElementById('btnSeize'); b.classList.toggle('on',S.seize); toast(S.seize?'支吊架卡涩 — 膨胀受阻,法兰弯矩↑,猫爪侧推↑,汽机自由膨胀失效':'支吊架卡涩 解除',S.seize?'alm':'ok'); pushLog('演示',S.seize?'ALARM':'INFO','支吊架卡涩 '+(S.seize?'触发':'解除')); }
+function resetSim(){ S.crackPct=0; S.seize=false; S.deepCycle=false; S.thermalT=-99; S.loadPct=75; document.getElementById('loadSlider').value=75; document.getElementById('loadVal').textContent='495 MW'; document.getElementById('btnCycle').classList.remove('on'); document.getElementById('btnSeize').classList.remove('on'); document.getElementById('btnCrack').classList.remove('pulse','alm'); WW_SENSORS.filter(s=>s.type==='weld'||s.type==='endcap').forEach(s=>S.weldCrack[s.id]=(s.hdr===3?0.6:0.1)); toast('已复位所有演示注入','ok'); pushLog('演示','INFO','演示状态复位'); }
+function flashBtn(id,cls){ const b=document.getElementById(id); b.classList.add('pulse'); if(cls)b.classList.add(cls); setTimeout(()=>{b.classList.remove('pulse');if(cls)b.classList.remove(cls);},1300); }
+function toast(msg,kind){ const w=document.getElementById('toast'); const d=document.createElement('div'); d.className='toast '+(kind||''); d.textContent=msg; w.appendChild(d); requestAnimationFrame(()=>d.classList.add('show')); setTimeout(()=>{d.classList.remove('show'); setTimeout(()=>d.remove(),300);},3200); }
+
+/* ---------- 导航 ---------- */
+const PAGES = [
+  {id:'p1', icon:'▦', name:'系统总览'},
+  {id:'p2', icon:'▥', name:'水冷壁应变场', key:1},
+  {id:'p3', icon:'∿', name:'高温应变测点'},
+  {id:'p4', icon:'⊿', name:'热应力分析'},
+  {id:'p5', icon:'◷', name:'蠕变监测', key:1},
+  {id:'p6', icon:'⚠', name:'焊缝裂纹预警', key:1},
+  {id:'p7', icon:'⊞', name:'寿命评估'},
+  {id:'p8', icon:'⇅', name:'管系位移·膨胀', key:1},
+  {id:'p9', icon:'◎', name:'法兰应力诊断', key:1},
+  {id:'p10',icon:'⊻', name:'猫爪·膨胀分析'},
+  {id:'p11',icon:'⊕', name:'多源融合·过程数据'},
+  {id:'p12',icon:'✓', name:'系统自检'},
+  {id:'p15',icon:'∑', name:'算法引擎·数字孪生', key:1},
+  {id:'p13',icon:'⌨', name:'通信·日志'},
+  {id:'p14',icon:'⚿', name:'系统管理·权限'},
+];
+let activePage='p1';
+function buildNav(){
+  const nav=document.getElementById('nav'); nav.innerHTML='';
+  PAGES.forEach((p,i)=>{
+    const b=document.createElement('button');
+    b.className='navbtn'+(p.id===activePage?' active':''); b.id='nav_'+p.id;
+    b.innerHTML=`<span class="ix">${String(i+1).padStart(2,'0')}</span><span>${p.icon} ${p.name}</span>`;
+    b.onclick=()=>setPage(p.id); nav.appendChild(b);
+  });
+}
+function setPage(id){
+  activePage=id;
+  document.querySelectorAll('.navbtn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('nav_'+id).classList.add('active');
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+const PAGE_SRC = {
+  p1:'<b>16 路高温应变(Acheron 采集)</b> + 法兰四象限/管系位移 + 过程数据(DCS) → 综合安全监视与多类报警',
+  p2:'<b>前墙上集箱 16 路高温应变(Acheron)</b> → RBF 多二次插值场重构(代理 PINN/iFEM) + FE 先验 → 水冷壁应力云图',
+  p15:'<b>数字孪生四层算法</b>: ①RBF场重构 ②Norton-Bailey蠕变+LMP+Robinson ③PCA/SPE异常 ④Holt预测+Weibull/Bayes RUL',
+  p3:'<b>高温应变计 50Hz 动态(Acheron 24-bit)</b> → 各测点总应变/金属温度/热应力-机械应力分解',
+  p4:'<b>实测应变 × ANSYS 有限元</b> → 总应力=热应力+机械应力,各负荷工况壁温/应力分布',
+  p5:'<b>长期应变趋势(Mondo)</b> → Norton 蠕变速率 + Larson-Miller 参数 → 蠕变累积/剩余寿命',
+  p6:'<b>管座焊缝应变集中(Acheron)</b> → 裂纹扩展估计 + 横向裂纹判据 → 焊缝/泄漏预警',
+  p7:'<b>实测应力历程</b> → 雨流计数 + ASME 线性累积(疲劳+蠕变交互)→ 厚壁集箱寿命损耗',
+  p8:'<b>拉丝位移/倾角(Acheron) + 吊杆载荷</b> → 管系位移场 + 汽机绝对膨胀/胀差',
+  p9:'<b>法兰颈轴向εz + 法兰环环向εθ(四象限)</b> → 弯矩B/翘曲W/结构异常A/温梯R 指标',
+  p10:'<b>法兰外载 + 缸体膨胀 + 猫爪滑销</b> → 自由膨胀/猫爪失稳分析',
+  p11:'<b>HTSG 应变量 × 过程数据(流量/温度/压力/负荷)</b> → 多源融合相关性',
+  p12:'<b>高温应变计/释放/防护装置/采集硬件状态(Acheron)</b> → BIT 在线自检',
+  p13:'<b>全部测量与诊断结果</b> → OPC-UA / Modbus(KKS)上送 DCS',
+  p14:'<b>系统管理</b> → RBAC 角色权限矩阵 + 操作审计留痕',
+};
+function buildPages(){
+  const main=document.getElementById('main');
+  main.innerHTML = P1()+P2()+P3()+P4()+P5()+P6()+P7()+P8()+P9()+P10()+P11()+P12()+P15()+P13()+P14();
+  Object.keys(PAGE_SRC).forEach(id=>{const pg=document.getElementById(id);if(pg){const d=document.createElement('div');d.className='srcbar';d.innerHTML='<span class="tag">数据源·算法</span><span>'+PAGE_SRC[id]+'</span>';pg.insertBefore(d,pg.firstChild);}});
+  document.getElementById('p1').classList.add('active');
+}
+
+/* ===================== P1 系统总览 ===================== */
+function P1(){return `
+<div class="page" id="p1">
+  <div class="grid g6" style="margin-bottom:12px" id="p1cards"></div>
+  <div class="grid g3" style="margin-bottom:12px">
+    <div class="card" style="grid-column:span 2">
+      <div class="card-h"><div class="ttl"><span class="dot"></span>监测对象总览 — 锅炉水冷壁 + 主蒸汽管系·汽轮机</div><div class="sub">660MW 超超临界褐煤 · ${BOILER}</div></div>
+      <canvas id="c_overview" style="height:236px"></canvas>
+    </div>
+    <div class="card">
+      <div class="card-h"><div class="ttl"><span class="dot"></span>实时报警</div><span class="badge" id="p1_almcount">0</span></div>
+      <div id="p1_alarms" style="height:236px;overflow:auto"></div>
+    </div>
+  </div>
+  <div class="grid g3">
+    <div class="card">
+      <div class="card-h"><div class="ttl"><span class="dot"></span>DCS 过程数据</div><span class="sub">OPC-UA</span></div>
+      <div id="p1_proc"></div>
+    </div>
+    <div class="card" style="grid-column:span 2">
+      <div class="card-h"><div class="ttl"><span class="dot"></span>关键承压部件状态汇总</div><span class="sub">前墙上集箱 8 段 / 主汽法兰 / 吊杆</span></div>
+      <div style="max-height:200px;overflow:auto"><table><thead><tr><th>部件</th><th>测点</th><th>实测</th><th>应力/许用</th><th>状态</th></tr></thead><tbody id="p1_tbl"></tbody></table></div>
+    </div>
+  </div>
+</div>`;}
+
+/* ===================== P2 水冷壁应变场 ===================== */
+function P2(){return `
+<div class="page" id="p2">
+  <div class="grid g3" style="margin-bottom:12px">
+    <div class="card" style="grid-column:span 2">
+      <div class="card-h"><div class="ttl"><span class="dot"></span>前墙水冷壁场云图 (16测点 RBF 重构)</div>
+        <div id="p2_ftbtns" style="display:flex;gap:6px">
+          <span class="vbtn on" data-t="stress" onclick="setFieldType('stress')">应力场 MPa</span>
+          <span class="vbtn" data-t="strain" onclick="setFieldType('strain')">应变场 με</span>
+          <span class="vbtn" data-t="temp" onclick="setFieldType('temp')">管壁温度场 ℃</span>
+        </div>
+      </div>
+      <canvas id="c_field" style="height:264px"></canvas>
+    </div>
+    <div class="card">
+      <div class="card-h"><div class="ttl"><span class="dot"></span>影响因素 (实时输入)</div><span class="sub">DCS</span></div>
+      <div id="p2_factors"></div>
+      <h4 class="sec" style="margin-top:10px">场统计 / 薄弱位置 TOP5</h4>
+      <div id="p2_stat" style="font-size:11px"></div>
+      <div style="max-height:118px;overflow:auto;margin-top:6px"><table><thead><tr><th>测点</th><th>应力MPa</th><th>%许用</th></tr></thead><tbody id="p2_top"></tbody></table></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-h"><div class="ttl"><span class="dot"></span>16 路高温应变测点矩阵</div><span class="sub">绿=安全 蓝=正常 黄=超许用 红=接近屈服</span></div>
+    <div class="grid g4" id="p2_matrix" style="gap:8px"></div>
+  </div>
+</div>`;}
+
+/* ===================== P3 高温应变测点 ===================== */
+function P3(){return `
+<div class="page" id="p3">
+  <div class="grid g4" id="p3cards" style="margin-bottom:12px"></div>
+  <div class="grid g2" style="margin-bottom:12px">
+    <div class="card">
+      <div class="card-h"><div class="ttl"><span class="dot"></span>管座焊缝测点 实时应变波形</div><span class="sub">50Hz 动态 · 24-bit ADC</span></div>
+      <canvas id="c_strainwave" style="height:170px"></canvas>
+    </div>
+    <div class="card">
+      <div class="card-h"><div class="ttl"><span class="dot"></span>总应力 = 热应力 + 机械应力 (实时分解)</div></div>
+      <canvas id="c_stressdecomp" style="height:170px"></canvas>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-h"><div class="ttl"><span class="dot"></span>16 路高温应变测点 实时表</div><span class="sub">KKS 标识 · 应变(με)/金属温度(℃)/应力(MPa)</span></div>
+    <div style="max-height:230px;overflow:auto"><table><thead><tr><th>KKS测点</th><th>位置</th><th>类型</th><th>Kt</th><th>总应变 με</th><th>金属温度 ℃</th><th>应力 MPa</th><th>%许用</th><th>状态</th></tr></thead><tbody id="p3_tbl"></tbody></table></div>
+  </div>
+</div>`;}
+
+/* ===================== P4 热应力分析 ===================== */
+function P4(){return `
+<div class="page" id="p4">
+  <div class="grid g4" id="p4cards" style="margin-bottom:12px"></div>
+  <div class="grid g2" style="margin-bottom:12px">
+    <div class="card">
+      <div class="card-h"><div class="ttl"><span class="dot"></span>负荷-应力特性曲线</div><span class="sub">实测 vs FE</span></div>
+      <canvas id="c_loadstress" style="height:200px"></canvas>
+    </div>
+    <div class="card">
+      <div class="card-h"><div class="ttl"><span class="dot"></span>内外壁温差 ΔT / 热应力 趋势</div><span class="sub">60s 窗</span></div>
+      <canvas id="c_dttrend" style="height:200px"></canvas>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-h"><div class="ttl"><span class="dot"></span>瞬态热应力分析 (灵活性运行工况)</div></div>
+    <div class="grid g2"><div id="p4_left"></div><div class="note" id="p4_note"></div></div>
+  </div>
+</div>`;}
+
+/* ===================== P5 蠕变监测 ===================== */
+function P5(){return `
+<div class="page" id="p5">
+  <div class="grid g4" id="p5cards" style="margin-bottom:12px"></div>
+  <div class="grid g2" style="margin-bottom:12px">
+    <div class="card">
+      <div class="card-h"><div class="ttl"><span class="dot"></span>蠕变应变累积趋势</div><span class="sub">平均 / 最热测点</span></div>
+      <canvas id="c_creep" style="height:200px"></canvas>
+    </div>
+    <div class="card">
+      <div class="card-h"><div class="ttl"><span class="dot"></span>Larson-Miller 蠕变寿命评估</div><span class="sub">P=T(20+lg t)</span></div>
+      <canvas id="c_lmp" style="height:200px"></canvas>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-h"><div class="ttl"><span class="dot"></span>各测点蠕变状态</div></div>
+    <div style="max-height:210px;overflow:auto"><table><thead><tr><th>KKS测点</th><th>金属温度℃</th><th>应力MPa</th><th>累积蠕变应变 με</th><th>蠕变速率 με/kh</th><th>剩余寿命估计</th><th>状态</th></tr></thead><tbody id="p5_tbl"></tbody></table></div>
+  </div>
+</div>`;}
+
+/* ===================== P6 焊缝裂纹预警 ===================== */
+function P6(){return `
+<div class="page" id="p6">
+  <div class="grid g4" id="p6cards" style="margin-bottom:12px"></div>
+  <div class="grid g3" style="margin-bottom:12px">
+    <div class="card" style="grid-column:span 2">
+      <div class="card-h"><div class="ttl"><span class="dot"></span>前墙上集箱 8 段管座焊缝 裂纹深度</div><span class="sub">无损检测基线 + 在线扩展估计</span></div>
+      <canvas id="c_weldbar" style="height:200px"></canvas>
+    </div>
+    <div class="card">
+      <div class="card-h"><div class="ttl"><span class="dot"></span>横向裂纹判据</div></div>
+      <div class="note">
+        <p>焊缝应力集中 K<sub>t</sub>·σ 超过母材高温疲劳极限 → 萌生横向裂纹。</p>
+        <div class="kv"><span class="k">裂纹深度 &lt; 1.0mm</span><span class="v tag-g">正常·监视</span></div>
+        <div class="kv"><span class="k">1.0 ~ 3.0mm</span><span class="v tag-a">预警·加密检测</span></div>
+        <div class="kv"><span class="k">&gt; 3.0mm 或贯穿</span><span class="v tag-r">报警·停机检修</span></div>
+        <p style="margin-top:8px">壁厚 50mm(集箱)/8mm(管座管腿),贯穿即泄漏。</p>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-h"><div class="ttl"><span class="dot"></span>焊缝裂纹监测明细</div><span class="sub">100%MT/UT 探伤位置在线跟踪</span></div>
+    <div style="max-height:190px;overflow:auto"><table><thead><tr><th>焊缝位置</th><th>类型</th><th>Kt</th><th>焊趾应力 MPa</th><th>裂纹深度 mm</th><th>扩展速率</th><th>预计贯穿</th><th>状态</th></tr></thead><tbody id="p6_tbl"></tbody></table></div>
+  </div>
+</div>`;}
+
+/* ===================== P7 寿命评估 ===================== */
+function P7(){return `
+<div class="page" id="p7">
+  <div class="grid g4" id="p7cards" style="margin-bottom:12px"></div>
+  <div class="grid g2" style="margin-bottom:12px">
+    <div class="card">
+      <div class="card-h"><div class="ttl"><span class="dot"></span>累积损伤趋势</div><span class="sub">疲劳 Df + 蠕变 Dc</span></div>
+      <canvas id="c_damage" style="height:190px"></canvas>
+    </div>
+    <div class="card">
+      <div class="card-h"><div class="ttl"><span class="dot"></span>损伤构成 (深调循环 / 启停 / 蠕变)</div></div>
+      <canvas id="c_damagepie" style="height:190px"></canvas>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-h"><div class="ttl"><span class="dot"></span>3 个厚壁高温集箱 寿命评估表</div><span class="sub">ASME 线性累积损伤 D=Df+Dc</span></div>
+    <table><thead><tr><th>承压部件</th><th>材料</th><th>金属温度℃</th><th>应力幅 MPa</th><th>等效循环</th><th>疲劳 Df</th><th>蠕变 Dc</th><th>累积 D</th><th>剩余寿命</th><th>状态</th></tr></thead><tbody id="p7_tbl"></tbody></table>
+  </div>
+</div>`;}
+
+/* ===================== P8 管系位移·膨胀 ===================== */
+function P8(){return `
+<div class="page" id="p8">
+  <div class="grid g4" id="p8cards" style="margin-bottom:12px"></div>
+  <div class="grid g3" style="margin-bottom:12px">
+    <div class="card" style="grid-column:span 2">
+      <div class="card-h"><div class="ttl"><span class="dot"></span>主蒸汽管系—汽轮机 位移示意</div><span class="sub">死点→自由膨胀方向 · 吊杆 · 法兰</span></div>
+      <canvas id="c_pipe" style="height:236px"></canvas>
+    </div>
+    <div class="card">
+      <div class="card-h"><div class="ttl"><span class="dot"></span>吊杆载荷重分配</div><span class="sub">卡涩→超载/卸载</span></div>
+      <canvas id="c_hanger" style="height:236px"></canvas>
+    </div>
+  </div>
+  <div class="grid g3" style="margin-bottom:12px">
+    <div class="card">
+      <div class="card-h"><div class="ttl"><span class="dot"></span>管系位移测点</div></div>
+      <table><thead><tr><th>测点</th><th>位置</th><th>位移 mm</th><th>倾角 °</th><th>状态</th></tr></thead><tbody id="p8_pipe"></tbody></table>
+    </div>
+    <div class="card">
+      <div class="card-h"><div class="ttl"><span class="dot"></span>吊杆/汽机膨胀</div></div>
+      <table><thead><tr><th>项目</th><th>实测</th><th>设计/允许</th><th>状态</th></tr></thead><tbody id="p8_exp"></tbody></table>
+    </div>
+    <div class="card">
+      <div class="card-h"><div class="ttl"><span class="dot"></span>汽机自由膨胀度判定</div><span class="sub">末吊架 + 法兰</span></div>
+      <canvas id="c_freeexp" style="height:96px"></canvas>
+      <div id="p8_free" class="note" style="margin-top:6px"></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-h"><div class="ttl"><span class="dot"></span>吊架监测目的</div></div>
+    <div class="grid g2 note" style="gap:18px">
+      <div><b class="tag-c">目的一 · 吊架影响主管道安全</b><br>监测各吊杆/恒力弹簧吊载荷重分配:吊架卡涩、失载或超载会使主蒸汽管道承受异常弯矩与附加应力,危及管道与焊缝安全。载荷偏离设计值即预警。</div>
+      <div><b class="tag-c">目的二 · 判定汽轮机自由膨胀</b><br>以<b>最后一个吊架(汽机近端 HG-04)的形变</b>与<b>主蒸汽管–汽轮机法兰的形变</b>联合分析:末吊架位移/载荷异常 + 法兰弯矩抬升 → 管系"推"汽机、自由膨胀受阻,据此给出膨胀受阻的<b>原因与位移数据</b>。</div>
+    </div>
+  </div>
+</div>`;}
+
+/* ===================== P9 法兰应力诊断 ===================== */
+function P9(){return `
+<div class="page" id="p9">
+  <div class="grid g4" id="p9cards" style="margin-bottom:12px"></div>
+  <div class="grid g3" style="margin-bottom:12px">
+    <div class="card">
+      <div class="card-h"><div class="ttl"><span class="dot"></span>法兰四象限应变 (极坐标)</div><span class="sub">0°上/90°右/180°下/270°左</span></div>
+      <canvas id="c_flange" style="height:220px"></canvas>
+    </div>
+    <div class="card">
+      <div class="card-h"><div class="ttl"><span class="dot"></span>弯矩 B / 翘曲 W 趋势</div><span class="sub">60s 窗</span></div>
+      <canvas id="c_bwtrend" style="height:220px"></canvas>
+    </div>
+    <div class="card">
+      <div class="card-h"><div class="ttl"><span class="dot"></span>在线诊断逻辑</div></div>
+      <div id="p9_diag" class="note"></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-h"><div class="ttl"><span class="dot"></span>四象限应变明细 + 诊断指标</div></div>
+    <div class="grid g2">
+      <table><thead><tr><th>象限</th><th>颈部εz με</th><th>法兰环εθ με</th><th>温度℃</th></tr></thead><tbody id="p9_quad"></tbody></table>
+      <table><tbody id="p9_idx"></tbody></table>
+    </div>
+  </div>
+</div>`;}
+
+/* ===================== P10 猫爪·膨胀分析 ===================== */
+function P10(){return `
+<div class="page" id="p10">
+  <div class="grid g4" id="p10cards" style="margin-bottom:12px"></div>
+  <div class="card" style="margin-bottom:12px">
+    <div class="card-h"><div class="ttl"><span class="dot"></span>汽轮机猫爪膨胀示意</div><span class="sub">主蒸汽管系 · 法兰 · 缸体 · 猫爪滑销 · 死点</span></div>
+    <canvas id="c_catclaw" style="height:210px"></canvas>
+  </div>
+  <div class="grid g2" style="margin-bottom:12px">
+    <div class="card">
+      <div class="card-h"><div class="ttl"><span class="dot"></span>应力方向合成</div><span class="sub">末吊架 + 法兰横向 + 膨胀阻力 → 合成应力方向</span></div>
+      <canvas id="c_stressdir" style="height:210px"></canvas>
+    </div>
+    <div class="card">
+      <div class="card-h"><div class="ttl"><span class="dot"></span>膨胀-侧推力关联</div><span class="sub">缸体膨胀↓ → 猫爪侧推力↑</span></div>
+      <canvas id="c_expcorr" style="height:210px"></canvas>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-h"><div class="ttl"><span class="dot"></span>无法自由膨胀 · 故障原因判定</div><span class="sub">末吊架位移 + 法兰位移 + 缸体膨胀 → 合成应力方向 → 根因</span></div>
+    <div class="grid g3" style="gap:16px">
+      <table><tbody id="p10_inputs"></tbody></table>
+      <div id="p10_cause" class="note"></div>
+      <div id="p10_eval" class="note"></div>
+    </div>
+  </div>
+</div>`;}
+
+/* ===================== P11 多源融合·过程数据 ===================== */
+function P11(){return `
+<div class="page" id="p11">
+  <div class="grid g2" style="margin-bottom:12px">
+    <div class="card">
+      <div class="card-h"><div class="ttl"><span class="dot"></span>负荷 — 最大应力 相关性</div><span class="sub">深调低负荷区应力上翘</span></div>
+      <canvas id="c_corr" style="height:210px"></canvas>
+    </div>
+    <div class="card">
+      <div class="card-h"><div class="ttl"><span class="dot"></span>过程参数 实时</div></div>
+      <div id="p11_proc"></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-h"><div class="ttl"><span class="dot"></span>数据源健康度 (多源融合)</div></div>
+    <table><thead><tr><th>数据源</th><th>接口</th><th>采样率</th><th>质量</th><th>延迟</th><th>状态</th></tr></thead><tbody id="p11_src"></tbody></table>
+  </div>
+</div>`;}
+
+/* ===================== P12 系统自检 BIT ===================== */
+function P12(){return `
+<div class="page" id="p12">
+  <div class="grid g4" id="p12cards" style="margin-bottom:12px"></div>
+  <div class="grid g2">
+    <div class="card">
+      <div class="card-h"><div class="ttl"><span class="dot"></span>采集/分析硬件 BIT</div></div>
+      <table><thead><tr><th>部件</th><th>型号</th><th>指标</th><th>状态</th></tr></thead><tbody id="p12_hw"></tbody></table>
+    </div>
+    <div class="card">
+      <div class="card-h"><div class="ttl"><span class="dot"></span>传感器在线健康 (16应变+8法兰+4位移)</div></div>
+      <div style="max-height:230px;overflow:auto"><table><thead><tr><th>测点</th><th>类型</th><th>零漂 με</th><th>温度℃</th><th>信噪比</th><th>状态</th></tr></thead><tbody id="p12_sens"></tbody></table></div>
+    </div>
+  </div>
+</div>`;}
+
+/* ===================== P13 通信·日志 ===================== */
+function P13(){return `
+<div class="page" id="p13">
+  <div class="grid g2" style="margin-bottom:12px">
+    <div class="card">
+      <div class="card-h"><div class="ttl"><span class="dot"></span>OPC-UA 上送标签 (→DCS · KKS)</div><span class="sub">ns=2 · Good</span></div>
+      <div style="max-height:240px;overflow:auto"><table><thead><tr><th>KKS标签</th><th>描述</th><th>值</th><th>质量</th></tr></thead><tbody id="p13_opc"></tbody></table></div>
+    </div>
+    <div class="card">
+      <div class="card-h"><div class="ttl"><span class="dot"></span>Modbus 寄存器</div></div>
+      <div style="max-height:240px;overflow:auto"><table><thead><tr><th>寄存器</th><th>描述</th><th>值</th><th>类型</th></tr></thead><tbody id="p13_mb"></tbody></table></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-h"><div class="ttl"><span class="dot"></span>实时事件日志</div><span class="sub">HTSG 仅上送测量/诊断/预警,不参与保护跳闸</span></div>
+    <div id="p13_log" style="max-height:220px;overflow:auto;font-family:Consolas,monospace;font-size:11.5px"></div>
+  </div>
+</div>`;}
+
+/* ===================== P14 系统管理·权限 ===================== */
+function P14(){return `
+<div class="page" id="p14">
+  <div class="grid g2" style="margin-bottom:12px">
+    <div class="card">
+      <div class="card-h"><div class="ttl"><span class="dot"></span>角色-权限矩阵</div></div>
+      <table><thead><tr><th>权限</th><th>运行员</th><th>检修员</th><th>工程师</th><th>管理员</th></tr></thead><tbody id="p14_rbac"></tbody></table>
+    </div>
+    <div class="card">
+      <div class="card-h"><div class="ttl"><span class="dot"></span>在线用户</div></div>
+      <table><thead><tr><th>用户</th><th>角色</th><th>登录</th><th>状态</th></tr></thead><tbody id="p14_users"></tbody></table>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-h"><div class="ttl"><span class="dot"></span>操作审计日志</div></div>
+    <div style="max-height:200px;overflow:auto"><table><thead><tr><th>时间</th><th>用户</th><th>操作</th><th>对象</th><th>结果</th></tr></thead><tbody id="p14_audit"></tbody></table>
+  </div>
+</div>`;}
+
+/* ===================== P15 算法引擎·数字孪生 ===================== */
+function P15(){return `
+<div class="page" id="p15">
+  <div class="grid g4" id="p15cards" style="margin-bottom:12px"></div>
+  <div class="card" style="margin-bottom:12px">
+    <div class="card-h"><div class="ttl"><span class="dot"></span>算法流水线 (实时数据流)</div><span class="sub">机理指导 + 数据驱动</span></div>
+    <canvas id="c_pipeline" style="height:188px"></canvas>
+  </div>
+  <div class="grid g3" style="margin-bottom:12px">
+    <div class="card">
+      <div class="card-h"><div class="ttl"><span class="dot"></span>③ PCA/SPE 多维不协同检测</div><span class="sub">残差 Q 统计</span></div>
+      <canvas id="c_anomaly" style="height:150px"></canvas>
+      <div id="p15_anom" class="note" style="margin-top:6px"></div>
+    </div>
+    <div class="card">
+      <div class="card-h"><div class="ttl"><span class="dot"></span>④ Holt 趋势预测 + 预测带</div><span class="sub">代理 LSTM · H4 应力</span></div>
+      <canvas id="c_forecast" style="height:150px"></canvas>
+      <div id="p15_fc" class="note" style="margin-top:6px"></div>
+    </div>
+    <div class="card">
+      <div class="card-h"><div class="ttl"><span class="dot"></span>④ Weibull + 贝叶斯 RUL</div><span class="sub">剩余寿命概率</span></div>
+      <canvas id="c_rul" style="height:150px"></canvas>
+      <div id="p15_rul" class="note" style="margin-top:6px"></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-h"><div class="ttl"><span class="dot"></span>四层算法 实时输入/输出</div></div>
+    <table><thead><tr><th>层</th><th>算法</th><th>实现</th><th>输入</th><th>输出(实时)</th></tr></thead><tbody id="p15_tbl"></tbody></table>
+  </div>
+</div>`;}
+
+/* =====================================================================
+   渲染层
+   ===================================================================== */
+function mc(label,val,unit,state,trend){
+  return `<div class="metric ${state||''}"><div class="accent"></div><div class="ml">${label}</div><div class="mv">${val}${unit?`<small>${unit}</small>`:''}</div>${trend?`<div class="mtrend">${trend}</div>`:''}</div>`;
+}
+function setHTML(id,h){const e=document.getElementById(id);if(e)e.innerHTML=h;}
+// 文本节流: 画布每帧绘制,数字文本最多每 ~430ms 刷新一次,消除数字闪烁
+let _txtT={};
+function txtOK(ms){ const k=activePage,n=performance.now(); if(_txtT[k]&&n-_txtT[k]<(ms||430))return false; _txtT[k]=n; return true; }
+
+function renderActive(){
+  const p=activePage;
+  if(p==='p1') renderP1();
+  else if(p==='p2') renderP2();
+  else if(p==='p3') renderP3();
+  else if(p==='p4') renderP4();
+  else if(p==='p5') renderP5();
+  else if(p==='p6') renderP6();
+  else if(p==='p7') renderP7();
+  else if(p==='p8') renderP8();
+  else if(p==='p9') renderP9();
+  else if(p==='p10') renderP10();
+  else if(p==='p11') renderP11();
+  else if(p==='p12') renderP12();
+  else if(p==='p15') renderP15();
+  else if(p==='p13') renderP13();
+  else if(p==='p14') renderP14();
+}
+
+/* ---------- P1 ---------- */
+function renderP1(){
+  drawOverview(document.getElementById('c_overview'));   // 动画:每帧绘制
+  // 显示量 EWMA 平滑(每帧更新),数字文本节流到 ~450ms 刷新,消除闪烁
+  const D=renderP1._s||(renderP1._s={}); const sm=(k,v)=>{D[k]=D[k]==null?v:D[k]+0.10*(v-D[k]);return D[k];};
+  const m=S.ww._max;
+  const msS=sm('ms',m.stress), dtv=sm('dt',m.dt), fbv=sm('fb',S.fIdx.B), eav=sm('ea',S.expAbs),
+        exd=sm('exd',S.expDiff), h2=sm('h2',S.hanger['HG-02'].load),
+        s14=sm('s14',S.ww['10HAD14-W'].strain), s15=sm('s15',S.ww['10HAD15-W'].strain), s14e=sm('s14e',S.ww['10HAD14-E'].strain);
+  const mc1=Math.max(...Object.values(S.weldCrack));
+  const now=performance.now();
+  if(renderP1._t && now-renderP1._t<450) return;   // 节流文本刷新
+  renderP1._t=now;
+  const pctY=msS/SY_HOT*100, pctA14=s14/1e6*E_HOT/SALLOW*100;
+  setHTML('p1cards',
+    mc('机组负荷',S.proc.load,'MW','', S.deepCycle?'深调循环中':'稳定运行')+
+    mc('水冷壁最大应力',msS.toFixed(0),'MPa', pctY>85?'alm':(msS>SALLOW*1.5?'warn':''), nameOf(m.id))+
+    mc('内外壁温差',dtv.toFixed(0),'℃', dtv>55?'alm':(dtv>40?'warn':''),'热应力驱动')+
+    mc('最大焊缝裂纹',mc1.toFixed(1),'mm', mc1>3?'alm':(mc1>1.5?'warn':''),'前墙上集箱管座')+
+    mc('法兰弯矩 B',fbv.toFixed(0),'με', fbv>240?'warn':'','主汽-汽机')+
+    mc('汽机绝对膨胀',eav.toFixed(1),'mm', S.seize?'alm':'', S.seize?'膨胀受阻':'自由膨胀')
+  );
+  setHTML('p1_alarms', S.alarms.map(a=>`<div class="alm-row ${a.lv}"><span>${a.lv==='r'?'⛔':(a.lv==='a'?'⚠':'✓')}</span><span>${a.msg}</span><span class="src">${a.src}</span></div>`).join(''));
+  document.getElementById('p1_almcount').textContent=S.alarms.filter(a=>a.lv!=='g').length;
+  const P=S.proc;
+  setHTML('p1_proc',[
+    ['机组负荷',P.load+' MW'],['水冷壁工质流量',P.wwFlow+' t/h'],['过热蒸汽流量',P.msFlow+' t/h'],
+    ['主蒸汽压力',P.msPress+' MPa'],['给水温度',P.fwTemp+' ℃'],['再热蒸汽温度',P.rhTemp+' ℃'],
+    ['水冷壁金属温度',P.wallT+' ℃'],['内外壁温差',P.wallDT+' ℃'],['炉膛负压',P.furnaceP+' kPa'],
+  ].map(r=>`<div class="kv"><span class="k">${r[0]}</span><span class="v">${r[1]}</span></div>`).join(''));
+  const rows=[];
+  [['10HAD14-W',s14],['10HAD15-W',s15],['10HAD14-E',s14e]].forEach(([id,sv])=>{const pa=sv/1e6*E_HOT/SALLOW*100;rows.push([nameOf(id),id,sv.toFixed(0)+' με',pa.toFixed(0)+'%',badge(pa,90,140)]);});
+  rows.push(['主汽法兰弯矩','MS-FLANGE',fbv.toFixed(0)+' με',(fbv/240*100).toFixed(0)+'%',badge(fbv,240,320)]);
+  rows.push(['吊杆#2载荷','HG-02',h2.toFixed(0)+' kN',(h2/58*100).toFixed(0)+'%',badge(h2,82,110)]);
+  rows.push(['汽机胀差','EXP-DIFF',exd.toFixed(1)+' mm','≤8.5mm',badge(exd,7,8.5)]);
+  setHTML('p1_tbl',rows.map(r=>`<tr><td>${r[0]}</td><td class="mono" style="font-size:10px;color:var(--muted)">${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td>${r[4]}</td></tr>`).join(''));
+}
+function badge(v,warn,alm){ return v>=alm?'<span class="pill r">报警</span>':(v>=warn?'<span class="pill a">预警</span>':'<span class="pill g">正常</span>'); }
+
+/* ---------- P2 水冷壁应变场 ---------- */
+function renderP2(){
+  drawField(document.getElementById('c_field'));
+  if(!txtOK())return;
+  const m=S.ww._max, P=S.proc;
+  setHTML('p2_factors',[
+    ['机组负荷',P.load+' MW'],['水冷壁工质流量',P.wwFlow+' t/h'],['过热蒸汽流量',P.msFlow+' t/h'],
+    ['管壁金属温度',P.wallT+' ℃'],['内外壁温差',P.wallDT+' ℃'],['主蒸汽压力',P.msPress+' MPa'],
+  ].map(r=>`<div class="kv"><span class="k">${r[0]}</span><span class="v">${r[1]}</span></div>`).join(''));
+  setHTML('p2_stat',[
+    ['场峰值',m.stress.toFixed(0)+' MPa @ '+nameOf(m.id)],['占许用 / 屈服',(m.stress/SALLOW*100).toFixed(0)+'% / '+m.pctY.toFixed(0)+'%'],['热应力分量',m.sTh.toFixed(0)+' MPa'],
+  ].map(r=>`<div class="kv"><span class="k">${r[0]}</span><span class="v">${r[1]}</span></div>`).join(''));
+  const top=[...WW_SENSORS].map(s=>({s,o:S.ww[s.id]})).sort((a,b)=>b.o.stress-a.o.stress).slice(0,5);
+  setHTML('p2_top',top.map(x=>`<tr><td>${x.s.name}</td><td>${x.o.stress.toFixed(0)}</td><td style="color:${stressColor(x.o.pctAllow)}">${x.o.pctAllow.toFixed(0)}%</td></tr>`).join(''));
+  setHTML('p2_matrix',WW_SENSORS.map(s=>{const o=S.ww[s.id];const col=stressColor(o.pctAllow);
+    return `<div style="background:#223354;border:1px solid var(--border2);border-left:3px solid ${col};border-radius:6px;padding:7px 9px">
+      <div style="font-size:10px;color:var(--muted)">${s.name}</div>
+      <div style="font-size:17px;font-weight:700;color:${col};font-family:Consolas">${o.strain.toFixed(0)}<small style="font-size:10px;color:var(--muted)"> με</small></div>
+      <div style="font-size:10px;color:var(--muted)">${o.stress.toFixed(0)}MPa · ${o.temp.toFixed(0)}℃ · ${o.pctAllow.toFixed(0)}%许用</div></div>`;}).join(''));
+}
+
+/* ---------- P3 高温应变测点 ---------- */
+function renderP3(){
+  drawStrainWave(document.getElementById('c_strainwave'));
+  drawStressDecomp(document.getElementById('c_stressdecomp'));
+  if(!txtOK())return;
+  const m=S.ww._max;
+  setHTML('p3cards',
+    mc('热应力分量',m.sTh.toFixed(0),'MPa', m.sTh>120?'warn':'','ΔT='+m.dt.toFixed(0)+'℃驱动')+
+    mc('机械应力分量',(28+26*S.loadPct/100).toFixed(0),'MPa','','自重/约束/内压')+
+    mc('最大总应力',m.stress.toFixed(0),'MPa', m.pctY>85?'alm':(m.stress>SALLOW*1.5?'warn':''),nameOf(m.id))+
+    mc('动态响应',S.proc.wallDT>40?'高':'平稳','', S.proc.wallDT>40?'warn':'','应变计 50Hz 带宽')
+  );
+  setHTML('p3_tbl',WW_SENSORS.map(s=>{const o=S.ww[s.id];const tp={weld:'管座焊缝',endcap:'端盖焊缝',outlet:'引出管',tube:'光管',fin:'鳍片'}[s.type];
+    return `<tr><td class="mono" style="font-size:10px">${s.id}</td><td>${s.name}</td><td>${tp}</td><td>${s.kt.toFixed(1)}</td><td>${o.strain.toFixed(0)}</td><td>${o.temp.toFixed(0)}</td><td>${o.stress.toFixed(0)}</td><td style="color:${stressColor(o.pctAllow)}">${o.pctAllow.toFixed(0)}%</td><td>${badge(o.pctAllow,90,140)}</td></tr>`;}).join(''));
+}
+
+/* ---------- P4 热应力分析 ---------- */
+function renderP4(){
+  drawLoadStress(document.getElementById('c_loadstress'));
+  drawTrend(document.getElementById('c_dttrend'),[
+    {data:S.hist.wallDT,color:'#ff9d4d',fill:'rgba(255,157,77,.12)'},
+  ],{title:'内外壁温差 ΔT / ℃',dec:1,bands:[{lo:40,hi:60,color:'rgba(245,166,35,.08)'},{lo:55,hi:80,color:'rgba(255,85,85,.08)'}]});
+  if(!txtOK())return;
+  const m=S.ww._max;
+  setHTML('p4cards',
+    mc('当前内外壁温差',m.dt.toFixed(1),'℃', m.dt>55?'alm':(m.dt>40?'warn':''))+
+    mc('热应力(二次)',m.sTh.toFixed(0),'MPa', m.sTh>120?'warn':'','σ=EαΔT/2(1-ν)')+
+    mc('总应力峰值',m.stress.toFixed(0),'MPa', m.pctY>85?'alm':'')+
+    mc('占屈服',m.pctY.toFixed(0),'%', m.pctY>85?'alm':(m.pctY>60?'warn':''),'SY='+SY_HOT+'MPa')
+  );
+  setHTML('p4_left',[
+    ['工质温度',m.twork.toFixed(0)+' ℃'],['集箱金属温度',S.proc.wallT+' ℃'],['内外壁温差',m.dt.toFixed(1)+' ℃'],
+    ['热应力分量',m.sTh.toFixed(0)+' MPa'],['机械应力分量',(28+26*S.loadPct/100).toFixed(0)+' MPa'],['总应力',m.stress.toFixed(0)+' MPa'],
+  ].map(r=>`<div class="kv"><span class="k">${r[0]}</span><span class="v">${r[1]}</span></div>`).join(''));
+  setHTML('p4_note',`<p><b>瞬态机理</b>：深度调峰快速变负荷/启停时,集箱内壁随工质温度快速变化,外壁滞后,形成<b>内外壁温差 ΔT</b>,产生交变二次热应力。</p>
+    <p style="margin-top:6px">当前${S.deepCycle?'<span class="tag-a">深调循环</span>下 ΔT 随负荷速率脉动':'稳态工况 ΔT 较低'}${S._shock>0.05?'，<span class="tag-r">热冲击进行中</span>':''}。</p>
+    <p style="margin-top:6px">热应力 σ<sub>th</sub> = E·α·ΔT / 2(1-ν) = ${E_HOT/1000}GPa × ${ALPHA*1e6}μ/℃ × ${m.dt.toFixed(0)}℃ / 1.4 ≈ <b>${m.sTh.toFixed(0)} MPa</b>;在管座焊趾经 K<sub>t</sub> 放大后达 <b>${(m.sTh*1.5).toFixed(0)}~${(m.sTh*3).toFixed(0)} MPa</b>,是横向裂纹主因。</p>`);
+}
+
+/* ---------- P5 蠕变监测 ---------- */
+function renderP5(){
+  const hotSeries=S.hist.creep.map(v=>v*1.7);
+  drawTrend(document.getElementById('c_creep'),[
+    {data:hotSeries,color:'#ff5555'},{data:S.hist.creep,color:'#70b8ff'},
+  ],{title:'蠕变应变累积 / με',legend:[{name:'最热测点',color:'#ff5555'},{name:'平均',color:'#70b8ff'}]});
+  drawLMP(document.getElementById('c_lmp'));
+  if(!txtOK())return;
+  const ids=Object.keys(S.creep); const avg=ids.reduce((a,k)=>a+S.creep[k],0)/ids.length;
+  let hotId='',hot=0; ids.forEach(k=>{if(S.creep[k]>hot){hot=S.creep[k];hotId=k;}});
+  setHTML('p5cards',
+    mc('平均累积蠕变',avg.toFixed(0),'με','','16测点')+
+    mc('最热测点蠕变',hot.toFixed(0),'με', hot>800?'warn':'',nameOf(hotId))+
+    mc('蠕变损伤 D(Robinson)',S.alg.robinsonMax.toFixed(3),'', S.alg.robinsonMax>0.7?'alm':(S.alg.robinsonMax>0.4?'warn':''),'Σ tᵢ/tᵣ(LMP)')+
+    mc('集箱金属温度',S.proc.wallT,'℃', S.proc.wallT>490?'warn':'','12Cr1MoVG')
+  );
+  setHTML('p5_tbl',WW_SENSORS.map(s=>{const o=S.ww[s.id];const cr=S.creep[s.id];
+    const rate=S.creepRate[s.id]; const D=S.robinsonD[s.id]; const tr=S.lmpTr[s.id];
+    const yrsLeft=Math.max(0, tr*(1-Math.min(0.98,D))/8760); const st=D>0.7?'r':(D>0.4||cr>700?'a':'g');
+    return `<tr><td class="mono" style="font-size:10px">${s.id}</td><td>${o.temp.toFixed(0)}</td><td>${o.stress.toFixed(0)}</td><td>${cr.toFixed(0)}</td><td>${rate.toFixed(2)}</td><td>${yrsLeft>99?'>99':yrsLeft.toFixed(1)} 年</td><td><span class="pill ${st}">${st==='r'?'关注':(st==='a'?'监视':'正常')}</span></td></tr>`;}).join(''));
+}
+
+/* ---------- P6 焊缝裂纹预警 ---------- */
+function renderP6(){
+  drawWeldBar(document.getElementById('c_weldbar'));
+  if(!txtOK())return;
+  const welds=WW_SENSORS.filter(s=>s.type==='weld'||s.type==='endcap');
+  let mx=0,mxId=''; welds.forEach(s=>{if(S.weldCrack[s.id]>mx){mx=S.weldCrack[s.id];mxId=s.id;}});
+  const cnt={g:0,a:0,r:0}; welds.forEach(s=>{const c=S.weldCrack[s.id];cnt[c>3?'r':(c>1.5?'a':'g')]++;});
+  setHTML('p6cards',
+    mc('最大裂纹深度',mx.toFixed(1),'mm', mx>3?'alm':(mx>1.5?'warn':''),nameOf(mxId))+
+    mc('预警焊缝数',cnt.a,'处', cnt.a>0?'warn':'','1.0~3.0mm')+
+    mc('报警焊缝数',cnt.r,'处', cnt.r>0?'alm':'','>3.0mm')+
+    mc('深调累积循环',S.cycleCount,'次','','疲劳裂纹驱动')
+  );
+  setHTML('p6_tbl',welds.map(s=>{const o=S.ww[s.id];const c=S.weldCrack[s.id];
+    const rate=(S.deepCycle?0.06:0.002)*Math.pow(o.pctAllow/100,2)*(s.hdr===3?3:1);
+    const toThrough=Math.max(0.1,((s.type==='weld'?8:50)-c)/Math.max(0.001,rate)/1000);
+    const st=c>3?'r':(c>1.5?'a':'g');
+    return `<tr><td>${s.name}</td><td>${s.type==='weld'?'管座角焊缝':'端盖环焊缝'}</td><td>${s.kt.toFixed(1)}</td><td>${(o.stress*s.kt/2).toFixed(0)}</td><td style="color:${st==='r'?'#ff5555':(st==='a'?'#f5a623':'#cbd9e8')}">${c.toFixed(2)}</td><td>${rate.toFixed(3)} mm/kh</td><td>${c>1.5?toThrough.toFixed(0)+' kh':'—'}</td><td><span class="pill ${st}">${st==='r'?'停机检修':(st==='a'?'加密检测':'监视')}</span></td></tr>`;}).join(''));
+}
+
+/* ---------- P7 寿命评估 ---------- */
+function renderP7(){
+  drawTrend(document.getElementById('c_damage'),[
+    {data:S.hist.fatigue,color:'#ff9d4d',fill:'rgba(255,157,77,.12)'},
+  ],{title:'累积损伤 D / %',dec:1,bands:[{lo:85,hi:100,color:'rgba(255,85,85,.08)'}]});
+  drawDamagePie(document.getElementById('c_damagepie'));
+  if(!txtOK())return;
+  const D=S.fatigue, Dc=S.creepLife;
+  setHTML('p7cards',
+    mc('集箱累积损伤 D',(D+Dc).toFixed(3),'', (D+Dc)>0.85?'alm':((D+Dc)>0.5?'warn':''),'ASME 线性累积')+
+    mc('疲劳损伤 Df',D.toFixed(3),'', D>0.6?'warn':'','深调循环主导')+
+    mc('蠕变损伤 Dc',Dc.toFixed(3),'', Dc>0.4?'warn':'','高温长期')+
+    mc('等效剩余寿命',Math.max(0,((1-(D+Dc))*100/Math.max(0.5,(D+Dc)*8))).toFixed(1),'年', (D+Dc)>0.85?'alm':'','按当前损伤率')
+  );
+  const headers=[
+    {n:'前墙水冷壁上集箱 H4',mat:'12Cr1MoVG',T:478,amp:142,cyc:S.cycleCount+3200,df:D*0.62,dc:Dc*0.5},
+    {n:'前墙水冷壁上集箱 H5',mat:'12Cr1MoVG',T:472,amp:128,cyc:S.cycleCount+3100,df:D*0.55,dc:Dc*0.46},
+    {n:'顶棚进口集箱',mat:'12Cr1MoV',T:465,amp:96,cyc:S.cycleCount+2800,df:D*0.4,dc:Dc*0.6},
+  ];
+  setHTML('p7_tbl',headers.map(h=>{const d=h.df+h.dc;const st=d>0.85?'r':(d>0.5?'a':'g');
+    return `<tr><td>${h.n}</td><td>${h.mat}</td><td>${h.T}</td><td>${h.amp}</td><td>${h.cyc}</td><td>${h.df.toFixed(3)}</td><td>${h.dc.toFixed(3)}</td><td style="color:${st==='r'?'#ff5555':(st==='a'?'#f5a623':'#2ecc71')}">${d.toFixed(3)}</td><td>${Math.max(0,(1-d)/Math.max(0.05,d*0.12)).toFixed(0)} 年</td><td><span class="pill ${st}">${st==='r'?'接近限值':(st==='a'?'关注':'正常')}</span></td></tr>`;}).join(''));
+}
+
+/* ---------- P8 管系位移 ---------- */
+function renderP8(){
+  drawPipe(document.getElementById('c_pipe'));
+  drawHanger(document.getElementById('c_hanger'));
+  drawGauge(document.getElementById('c_freeexp'), S.freeExpDeg, '自由膨胀度', '%');
+  if(!txtOK())return;
+  setHTML('p8cards',
+    mc('汽机绝对膨胀',S.expAbs.toFixed(1),'mm', S.seize?'alm':'', S.seize?'受阻!':'自由膨胀')+
+    mc('转子-缸体胀差',S.expDiff.toFixed(1),'mm', S.expDiff>8.5?'alm':(S.expDiff>7?'warn':''),'≤8.5mm')+
+    mc('主蒸汽管最大位移',Math.max(...PIPE_NODES.map(n=>S.pipe[n.id].disp)).toFixed(1),'mm','','拉丝位移')+
+    mc('吊杆最大载荷率',(Math.max(...HANGERS.map(h=>S.hanger[h.id].load/h.rated))*100).toFixed(0),'%', S.seize?'alm':'', S.seize?'#2卡涩超载':'均衡')
+  );
+  setHTML('p8_pipe',PIPE_NODES.map(n=>{const p=S.pipe[n.id];const st=p.disp>40?'a':'g';
+    return `<tr><td class="mono" style="font-size:10px">${n.id}</td><td>${n.name}</td><td>${p.disp.toFixed(1)}</td><td>${p.tilt.toFixed(2)}</td><td><span class="pill ${st}">${st==='a'?'偏大':'正常'}</span></td></tr>`;}).join(''));
+  const exp=[
+    ['汽机缸体绝对膨胀',S.expAbs.toFixed(1)+' mm','22~36 mm',S.seize?'r':'g'],
+    ['转子-缸体胀差',S.expDiff.toFixed(1)+' mm','≤8.5 mm',S.expDiff>8.5?'r':(S.expDiff>7?'a':'g')],
+    ...HANGERS.map(h=>[h.name,S.hanger[h.id].load.toFixed(0)+' kN',h.rated+' kN',(S.hanger[h.id].load/h.rated>1.3?'r':(S.hanger[h.id].load/h.rated>1.15?'a':'g'))]),
+  ];
+  setHTML('p8_exp',exp.map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td><span class="pill ${r[3]}">${r[3]==='r'?'异常':(r[3]==='a'?'预警':'正常')}</span></td></tr>`).join(''));
+  const lh=S.hanger['HG-04'], lhOver=(lh.load/45*100).toFixed(0);
+  const deg=S.freeExpDeg;
+  setHTML('p8_free', deg<60
+    ? `<span class="tag-r">⛔ 自由膨胀受阻 ${deg.toFixed(0)}%</span><br>末吊架(汽机近端 HG-04)载荷 ${lh.load.toFixed(0)}kN(${lhOver}%额定)、法兰弯矩 B=${S.fIdx.B.toFixed(0)}με 抬升 → 管系约束汽机膨胀。实测缸体膨胀 ${S.expAbs.toFixed(1)}mm 低于目标。`
+    : `<span class="tag-g">✓ 自由膨胀正常 ${deg.toFixed(0)}%</span><br>末吊架 HG-04 载荷 ${lh.load.toFixed(0)}kN、法兰弯矩 B=${S.fIdx.B.toFixed(0)}με 均正常,缸体沿死点自由膨胀 ${S.expAbs.toFixed(1)}mm。`);
+}
+
+/* ---------- P9 法兰诊断 ---------- */
+function renderP9(){
+  drawFlangePolar(document.getElementById('c_flange'));
+  drawTrend(document.getElementById('c_bwtrend'),[
+    {data:S.hist.flangeB,color:'#70b8ff'},{data:S.hist.flangeW,color:'#f5a623'},
+  ],{title:'法兰弯矩/翘曲 / με',legend:[{name:'B 弯矩',color:'#70b8ff'},{name:'W 翘曲',color:'#f5a623'}]});
+  if(!txtOK())return;
+  const f=S.fIdx;
+  setHTML('p9cards',
+    mc('弯矩指标 B',f.B.toFixed(0),'με', f.B>240?'warn':'','管系外载')+
+    mc('翘曲指标 W',f.W.toFixed(0),'με', f.W>180?'alm':(f.W>120?'warn':''),'密封风险')+
+    mc('结构异常 A=W/B',f.A.toFixed(2),'', f.A>1.2?'alm':'', f.A>1.2?'连接异常':'外载主导')+
+    mc('危险象限',FLANGE_QUAD[f.worstQ],'','warn','εθ 极大')
+  );
+  setHTML('p9_quad',FLANGE_QUAD.map((q,i)=>`<tr><td>${q}</td><td>${S.flange.neckZ[i].toFixed(0)}</td><td style="${i===f.worstQ?'color:#ff5555;font-weight:700':''}">${S.flange.ringT[i].toFixed(0)}</td><td>${S.flange.Tq[i].toFixed(0)}</td></tr>`).join(''));
+  setHTML('p9_idx',[
+    ['弯矩 By=ε0-ε180',f.By.toFixed(0)+' με'],['弯矩 Bx=ε90-ε270',f.Bx.toFixed(0)+' με'],['合成弯矩 B',f.B.toFixed(0)+' με'],
+    ['翘曲 W=max-min εθ',f.W.toFixed(0)+' με'],['结构异常 A=W/B',f.A.toFixed(2)],['上下温差 ΔT',f.dT.toFixed(1)+' ℃'],['温梯指标 R=W/ΔT',f.R.toFixed(1)],
+  ].map(r=>`<tr><td class="k" style="color:var(--muted)">${r[0]}</td><td style="text-align:right;font-family:Consolas">${r[1]}</td></tr>`).join(''));
+  // 诊断逻辑
+  let diag='';
+  if(S.seize){ diag=`<p class="tag-r"><b>⛔ 支吊架卡涩</b></p><p>弯矩 B 显著抬升且随温度单调上升,翘曲 W 同步增大 → 管系热推力被法兰硬扛,密封/螺栓寿命下降。</p><p style="margin-top:6px">${HAS_EXPANSION_JOINT?'膨胀节疑似被支吊架"锁死"':'无膨胀节,支吊架卡涩使法兰直接承担热推力'}。</p>`; }
+  else if(f.A>1.2){ diag=`<p class="tag-a"><b>⚠ 连接件本体异常</b></p><p>B 不高但 W 偏大(A=${f.A.toFixed(2)}↑) → 更像法兰/螺栓/垫片载荷重分配或装配松弛,非单纯外载。</p>`; }
+  else { diag=`<p class="tag-g"><b>✓ 结构状态健康</b></p><p>弯矩 B 与翘曲 W 均在正常范围,A=${f.A.toFixed(2)} 外载主导且稳定。</p><p style="margin-top:6px">危险象限:<b>${FLANGE_QUAD[f.worstQ]}</b>(εθ 最大,优先关注密封)。</p>`; }
+  setHTML('p9_diag',diag);
+}
+
+/* ---------- P10 猫爪 ---------- */
+function renderP10(){
+  drawCatClaw(document.getElementById('c_catclaw'));
+  drawStressDir(document.getElementById('c_stressdir'));
+  drawExpCorr(document.getElementById('c_expcorr'));
+  if(!txtOK())return;
+  const sv=S.stressVec, cz=S.stressCause;
+  setHTML('p10cards',
+    mc('猫爪侧推力',S.catClawLat.toFixed(0),'kN', S.catClawLat>60?'alm':(S.catClawLat>40?'warn':''), S.seize?'膨胀受阻':'正常')+
+    mc('缸体绝对膨胀',S.expAbs.toFixed(1),'mm', S.seize?'alm':'', S.seize?'<目标':'自由')+
+    mc('膨胀受阻量',sv.expDeficit.toFixed(1),'mm', sv.expDeficit>6?'alm':(sv.expDeficit>3?'warn':''), '目标'+(22+S.loadPct/100*14).toFixed(0)+'mm')+
+    mc('合成应力方向',(sv.ang*180/Math.PI).toFixed(0)+'°','', cz.t==='r'?'alm':(cz.t==='a'?'warn':''), cz.name)
+  );
+  // 故障原因输入表
+  setHTML('p10_inputs',[
+    ['末吊架(HG-04)位移',sv.lastHangDisp.toFixed(1)+' mm'],
+    ['末吊架载荷偏差',(sv.lastHangDev*100).toFixed(0)+' %'],
+    ['法兰弯矩 B / 横向 Bx',S.fIdx.B.toFixed(0)+' / '+S.fIdx.Bx.toFixed(0)+' με'],
+    ['缸体绝对膨胀 / 受阻量',S.expAbs.toFixed(1)+' / '+sv.expDeficit.toFixed(1)+' mm'],
+    ['合成应力 大小 / 方向',sv.mag.toFixed(0)+' kN / '+(sv.ang*180/Math.PI).toFixed(0)+'°'],
+  ].map(r=>`<tr><td class="k" style="color:var(--muted)">${r[0]}</td><td style="text-align:right;font-family:Consolas">${r[1]}</td></tr>`).join(''));
+  setHTML('p10_cause',`<p><b>合成方法</b>：末吊架位移/载荷(管系约束)+ 法兰弯矩横向分量(管系推力)+ 缸体膨胀受阻量(轴向)→ 矢量合成得缸体<b>合成应力方向</b>。</p>
+    <p style="margin-top:6px"><b>根因判定</b>：<span class="tag-${cz.t}">${cz.t==='r'?'⛔':(cz.t==='a'?'⚠':'✓')} ${cz.name}</span></p>
+    <p style="margin-top:4px">${cz.why}。</p>
+    <p style="margin-top:6px">应力方向 ${(sv.ang*180/Math.PI).toFixed(0)}°(0°=轴向阻膨/指向死点,90°=横向)：${Math.abs(sv.ang*180/Math.PI)<35?'以<b>轴向阻碍膨胀</b>为主':'含明显<b>横向侧推</b>分量,猫爪偏载风险↑'}。</p>`);
+  let ev='';
+  if(S.seize){ ev=`<p class="tag-r"><b>⛔ 自由膨胀失效</b></p><p>支吊架卡涩使主蒸汽管系热膨胀无法释放,管系"推"汽轮机缸体,侧推力经法兰传至<b>猫爪滑销</b>。</p>
+    <p style="margin-top:6px">实测缸体绝对膨胀 ${S.expAbs.toFixed(1)}mm 显著低于自由膨胀目标,胀差 ${S.expDiff.toFixed(1)}mm 增大,猫爪侧推 <b class="tag-r">${S.catClawLat.toFixed(0)}kN</b> → <b>失稳风险</b>。</p>
+    <p style="margin-top:6px">建议:检查卡涩支吊架/导向,恢复滑销自由度。</p>`; }
+  else { ev=`<p class="tag-g"><b>✓ 自由膨胀正常</b></p><p>缸体沿死点方向自由膨胀 ${S.expAbs.toFixed(1)}mm,猫爪滑销受力均衡,侧推 ${S.catClawLat.toFixed(0)}kN 在安全范围。</p>
+    <p style="margin-top:6px">胀差 ${S.expDiff.toFixed(1)}mm(≤8.5mm),管系未对汽机产生异常推力。</p>${S._shock>0.05?'<p class="tag-a" style="margin-top:6px">⚠ 热冲击瞬态,膨胀短时波动。</p>':''}`; }
+  setHTML('p10_eval',ev);
+}
+
+/* ---------- P11 多源融合 ---------- */
+function renderP11(){
+  drawCorr(document.getElementById('c_corr'));
+  if(!txtOK())return;
+  const P=S.proc;
+  setHTML('p11_proc',[
+    ['机组负荷',P.load+' MW'],['过热蒸汽流量',P.msFlow+' t/h'],['过热蒸汽温度',P.msTemp.toFixed(1)+' ℃'],['主蒸汽压力',P.msPress+' MPa'],
+    ['给水温度',P.fwTemp+' ℃'],['再热蒸汽温度',P.rhTemp+' ℃'],['水冷壁金属温度',P.wallT+' ℃'],['内外壁温差',P.wallDT+' ℃'],['炉膛负压',P.furnaceP+' kPa'],
+  ].map(r=>`<div class="kv"><span class="k">${r[0]}</span><span class="v">${r[1]}</span></div>`).join(''));
+  setHTML('p11_src',[
+    ['高温应变计 ×16','Acheron','1 kHz','Good','12 ms','g'],
+    ['法兰四象限应变 ×8','Acheron','1 kHz','Good','12 ms','g'],
+    ['拉丝位移/倾角 ×8','Acheron','100 Hz','Good','20 ms','g'],
+    ['DCS 过程数据','OPC-UA','1 Hz','Good','120 ms','g'],
+    ['炉膛/壁温热电偶','Modbus','1 Hz','Good','90 ms','g'],
+  ].map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td><span class="tag-g">${r[3]}</span></td><td>${r[4]}</td><td><span class="pill ${r[5]}">在线</span></td></tr>`).join(''));
+}
+
+/* ---------- P12 自检 ---------- */
+function renderP12(){
+  if(!txtOK(800))return;
+  setHTML('p12cards',
+    mc('应变计在线',16,'/16','','>630℃ 高温计')+
+    mc('位移/法兰传感','12','/12','','拉丝+倾角+应变')+
+    mc('采集 Acheron','正常','','','24-bit · 1kHz')+
+    mc('系统运行',S.uptime,'天','','无中断')
+  );
+  const hw=[
+    ['高温应变计','DYN-S-HT-C-1000','>630℃ · 50Hz · 银钎焊','g'],
+    ['应变释放装置','DYN-SRD-010','热膨胀补偿正常','g'],
+    ['应变防护装置','DYN-SPD-090','机械/检修防护','g'],
+    ['采集器 Acheron','24-bit ADC','1 kHz · 多通道直采','g'],
+    ['分析 Mondo','PSD/趋势/CSV','在线','g'],
+    ['实时网交换机','EKI-5536I ×2','环网冗余','g'],
+    ['高速光端机','KOM300A ×2','光纤上送','g'],
+    ['工程师站','T610','在线','g'],
+  ];
+  setHTML('p12_hw',hw.map(r=>`<tr><td>${r[0]}</td><td class="mono" style="font-size:10px">${r[1]}</td><td>${r[2]}</td><td><span class="pill ${r[3]}">正常</span></td></tr>`).join(''));
+  const sens=[];
+  WW_SENSORS.forEach(s=>{const o=S.ww[s.id];sens.push([s.id,{weld:'管座焊缝',endcap:'端盖',outlet:'引出管',tube:'光管',fin:'鳍片'}[s.type],((Math.random()-0.5)*4).toFixed(1),o.temp.toFixed(0),(58+Math.random()*8).toFixed(0)+'dB','g']);});
+  FLANGE_QUAD.forEach((q,i)=>sens.push(['MS-FL-'+['U','R','D','L'][i],'法兰应变',((Math.random()-0.5)*4).toFixed(1),S.flange.Tq[i].toFixed(0),(56+Math.random()*8).toFixed(0)+'dB','g']));
+  setHTML('p12_sens',sens.map(r=>`<tr><td class="mono" style="font-size:10px">${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td>${r[4]}</td><td><span class="pill ${r[5]}">在线</span></td></tr>`).join(''));
+}
+
+/* ---------- P13 通信日志 ---------- */
+function renderP13(){
+  if(!txtOK(700))return;
+  const m=S.ww._max;
+  const opc=[
+    ['10HAD14_W.STRAIN','H4管座焊缝应变',S.ww['10HAD14-W'].strain.toFixed(0)+' με'],
+    ['10HAD14_W.STRESS','H4管座焊缝应力',S.ww['10HAD14-W'].stress.toFixed(0)+' MPa'],
+    ['WW.MAX_STRESS','水冷壁最大应力',m.stress.toFixed(0)+' MPa'],
+    ['WW.WALL_DT','内外壁温差',m.dt.toFixed(1)+' ℃'],
+    ['WW.MAX_CRACK','最大焊缝裂纹',Math.max(...Object.values(S.weldCrack)).toFixed(2)+' mm'],
+    ['HDR.FATIGUE_D','集箱累积损伤',(S.fatigue+S.creepLife).toFixed(3)],
+    ['MSFL.BEND_B','主汽法兰弯矩',S.fIdx.B.toFixed(0)+' με'],
+    ['MSFL.WARP_W','主汽法兰翘曲',S.fIdx.W.toFixed(0)+' με'],
+    ['TURB.EXP_ABS','汽机绝对膨胀',S.expAbs.toFixed(1)+' mm'],
+    ['TURB.EXP_DIFF','转子缸体胀差',S.expDiff.toFixed(1)+' mm'],
+    ['CATCLAW.LAT_F','猫爪侧推力',S.catClawLat.toFixed(0)+' kN'],
+  ];
+  setHTML('p13_opc',opc.map(r=>`<tr><td class="mono" style="font-size:10px;color:var(--cyan)">ns=2;s=${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td><span class="tag-g">Good</span></td></tr>`).join(''));
+  const mb=[
+    ['40001','水冷壁最大应力 ×10',(m.stress*10).toFixed(0),'INT16'],
+    ['40002','内外壁温差 ×10',(m.dt*10).toFixed(0),'INT16'],
+    ['40003','最大裂纹深度 ×100',(Math.max(...Object.values(S.weldCrack))*100).toFixed(0),'INT16'],
+    ['40010','法兰弯矩 B',S.fIdx.B.toFixed(0),'INT16'],
+    ['40011','法兰翘曲 W',S.fIdx.W.toFixed(0),'INT16'],
+    ['40020','汽机绝对膨胀 ×10',(S.expAbs*10).toFixed(0),'INT16'],
+    ['40021','胀差 ×10',(S.expDiff*10).toFixed(0),'INT16'],
+    ['10001','水冷壁应力报警',S.alarms.some(a=>a.src==='水冷壁'&&a.lv!=='g')?'1':'0','COIL'],
+    ['10002','管系膨胀报警',S.seize?'1':'0','COIL'],
+  ];
+  setHTML('p13_mb',mb.map(r=>`<tr><td class="mono" style="font-size:10px">${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td style="color:var(--muted)">${r[3]}</td></tr>`).join(''));
+  setHTML('p13_log',S.log.slice(0,80).map(l=>{const c=l.lv==='ALARM'?'#ff5555':(l.lv==='WARN'?'#f5a623':'#7aa0c8');
+    return `<div style="padding:2px 0;border-bottom:1px solid #1a2a40"><span style="color:#6896be">${l.t}</span> <span style="color:${c}">[${l.lv}]</span> <span style="color:#9fc0e0">${l.src}</span> ${l.msg}</div>`;}).join(''));
+}
+
+/* ---------- P14 RBAC ---------- */
+function renderP14(){
+  const perms=[
+    ['查看监测画面',1,1,1,1],['报警确认',1,1,1,1],['CSV/报表导出',0,1,1,1],
+    ['应变基线设置',0,0,1,1],['报警阈值修改',0,0,1,1],['传感器标定',0,0,1,1],
+    ['用户/权限管理',0,0,0,1],['系统配置',0,0,0,1],
+  ];
+  setHTML('p14_rbac',perms.map(p=>`<tr><td>${p[0]}</td>${[1,2,3,4].map(i=>`<td>${p[i]?'<span class="tag-g">✓</span>':'<span style="color:#3a5278">—</span>'}</td>`).join('')}</tr>`).join(''));
+  setHTML('p14_users',[
+    ['operator01','运行员','08:12','在线'],['maint03','检修员','09:40','在线'],['engineer','工程师','07:55','在线'],
+  ].map(u=>`<tr><td>${u[0]}</td><td>${u[1]}</td><td>${u[2]}</td><td><span class="pill g">${u[3]}</span></td></tr>`).join(''));
+  if(!renderP14._audit){renderP14._audit=[
+    ['08:15:22','engineer','修改报警阈值','水冷壁应力 130%','成功'],
+    ['08:40:10','maint03','确认报警','H4管座焊缝预警','成功'],
+    ['09:02:33','operator01','导出报表','日应变趋势','成功'],
+    ['09:30:48','engineer','应变基线设置','法兰四象限','成功'],
+  ];}
+  setHTML('p14_audit',renderP14._audit.map(a=>`<tr><td class="mono" style="font-size:10px">${a[0]}</td><td>${a[1]}</td><td>${a[2]}</td><td>${a[3]}</td><td><span class="tag-g">${a[4]}</span></td></tr>`).join(''));
+}
+
+/* ---------- P15 算法引擎 ---------- */
+function renderP15(){
+  drawPipeline(document.getElementById('c_pipeline'));
+  drawAnomaly(document.getElementById('c_anomaly'));
+  drawForecast(document.getElementById('c_forecast'));
+  drawRUL(document.getElementById('c_rul'));
+  if(!txtOK())return;
+  const a=S.alg;
+  setHTML('p15cards',
+    mc('RBF 重构置信度',a.rbfConf.toFixed(0),'%', a.rbfConf<70?'warn':'','留一交叉验证 R²')+
+    mc('蠕变损伤 D',a.robinsonMax.toFixed(3),'', a.robinsonMax>0.7?'alm':(a.robinsonMax>0.4?'warn':''),'Robinson · '+nameOf(a.robinsonId))+
+    mc('SPE 异常度',a.spe.toFixed(0),'', a.spe>60?'alm':(a.spe>25?'warn':''), a.spe>25?nameOf(a.speWorst.id):'多维协同')+
+    mc('RUL 中位',(a.rul.med/8760).toFixed(1),'年', (a.rul.med/8760)<3?'alm':'','Weibull k='+a.rul.k)
+  );
+  // 异常贡献
+  const zs=a.speZ||{}; const top=Object.keys(zs).sort((x,y)=>Math.abs(zs[y])-Math.abs(zs[x])).slice(0,3);
+  setHTML('p15_anom', a.spe>25
+    ? `<span class="tag-${a.spe>60?'r':'a'}">⚠ 检出多维不协同</span> 主贡献: ${top.map(id=>nameOf(id)+'(z='+zs[id].toFixed(1)+')').join('、')}。负荷/流量未变而该测点应变变动率脱离基线 → 焊缝早期隐蔽异常。`
+    : `<span class="tag-g">✓ 多维协同正常</span> 各测点应变与负荷/流量协同,SPE=${a.spe.toFixed(0)} 在控制限内。`);
+  setHTML('p15_fc', a.fc.breach
+    ? `<span class="tag-a">⚠ 实测超预测带</span> 实测 ${a.fc.actual.toFixed(0)} > 预测 ${a.fc.fc.toFixed(0)}±${a.fc.band.toFixed(0)}MPa,增速 ${(a.fc.slope*1000).toFixed(1)}m/帧 → 疑似局部屈服/裂纹扩展。`
+    : `<span class="tag-g">✓ 走势符合预测</span> 实测 ${a.fc.actual.toFixed(0)}MPa 在 Holt 预测带内,趋势平稳。`);
+  setHTML('p15_rul', `剩余寿命 RUL(贝叶斯后验): 中位 <b>${(a.rul.med/8760).toFixed(1)} 年</b>,80%区间 [${(a.rul.lo/8760).toFixed(1)}, ${(a.rul.hi/8760).toFixed(1)}] 年。随蠕变速率/Robinson 损伤动态收缩。`);
+  setHTML('p15_tbl',[
+    ['①场映射','RBF 多二次插值','<span class="tag-c">精确</span>','16 应变测点 + 坐标','全壁面应力场('+(FCOLS*FROWS)+'格), 置信 '+a.rbfConf.toFixed(0)+'%'],
+    ['①温度场','PINN/代理模型','<span style="color:#a78bfa">替身</span>','负荷/流量/壁温(DCS)','瞬态温度场 → ΔT '+S.ww._max.dt.toFixed(0)+'℃'],
+    ['②蠕变','Norton-Bailey ε̇=Aσⁿtᵐ','<span class="tag-c">精确</span>','应力场 + 金属温度 + 时间','蠕变速率 '+(S.creepRate['10HAD14-W']).toFixed(2)+' με/kh'],
+    ['②寿命','Larson-Miller + Robinson','<span class="tag-c">精确</span>','σ, T, 运行时间','断裂寿命 tr, 损伤 D='+a.robinsonMax.toFixed(3)],
+    ['③异常','PCA/SPE 残差 Q','<span class="tag-c">精确</span>','16维应变 + 负荷','SPE='+a.spe.toFixed(0)+', 贡献 '+nameOf(a.speWorst.id)],
+    ['④预测','Holt 线性趋势(代理LSTM)','<span style="color:#a78bfa">替身</span>','应变时序','12步预测 '+a.fc.fc.toFixed(0)+'±'+a.fc.band.toFixed(0)+'MPa'],
+    ['④RUL','Weibull + 贝叶斯更新','<span class="tag-c">精确</span>','损伤 D + 蠕变速率','RUL '+(a.rul.med/8760).toFixed(1)+' 年(后验)'],
+  ].map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td style="color:var(--muted);font-size:11px">${r[3]}</td><td>${r[4]}</td></tr>`).join(''));
+}
+
+/* =====================================================================
+   自定义 Canvas 绘图
+   ===================================================================== */
+/* 水平仪表条 (0-100) */
+function drawGauge(cv,val,label,unit){
+  const F=dpiFit(cv); if(!F)return; const {ctx,w,h}=F;
+  ctx.clearRect(0,0,w,h);
+  const bx=10,bw=w-20,by=h*0.46,bh=14;
+  // 区段 红(<60)/黄(60-80)/绿(>80)
+  ctx.fillStyle='rgba(255,85,85,.25)';ctx.fillRect(bx,by,bw*0.6,bh);
+  ctx.fillStyle='rgba(245,166,35,.22)';ctx.fillRect(bx+bw*0.6,by,bw*0.2,bh);
+  ctx.fillStyle='rgba(46,204,113,.22)';ctx.fillRect(bx+bw*0.8,by,bw*0.2,bh);
+  ctx.strokeStyle='#2a4060';ctx.strokeRect(bx,by,bw,bh);
+  const v=Math.max(0,Math.min(100,val));const col=v<60?'#ff5555':(v<80?'#f5a623':'#2ecc71');
+  ctx.fillStyle=col;ctx.fillRect(bx,by,bw*v/100,bh);
+  // 指针
+  const px=bx+bw*v/100;ctx.fillStyle='#eaf4ff';ctx.beginPath();ctx.moveTo(px,by-3);ctx.lineTo(px-4,by-9);ctx.lineTo(px+4,by-9);ctx.closePath();ctx.fill();
+  txt(ctx,label,bx,by-14,'#9fc0e0',10);
+  ctx.fillStyle=col;ctx.font='bold 18px Consolas';ctx.textAlign='right';ctx.fillText(v.toFixed(0)+(unit||''),bx+bw,by+bh+18);
+  txt(ctx,'0',bx,by+bh+13,'#6896be',8);txt(ctx,'100',bx+bw,by+bh+13,'#6896be',8,'right');
+}
+
+/* 总览: 锅炉炉膛(左)+前墙上集箱8段→主蒸汽管道(吊杆)→汽轮机(法兰·猫爪·死点) */
+function drawOverview(cv){
+  const F=dpiFit(cv); if(!F)return; const {ctx,w,h}=F;
+  ctx.clearRect(0,0,w,h);
+  ctx.lineCap='butt';
+  // ===== 锅炉炉膛(填满左侧, 前后墙对冲燃烧) =====
+  const bx=16, by=34, bw=Math.max(150,w*0.30), bh=h-66;
+  ctx.fillStyle='#14202f';ctx.strokeStyle='#3a5278';ctx.lineWidth=1.4;
+  ctx.fillRect(bx,by,bw,bh);ctx.strokeRect(bx,by,bw,bh);
+  txt(ctx,'锅炉炉膛 · 前后墙对冲燃烧',bx,by-10,'#9fc0e0',11);
+  // 火焰中心辉光
+  const gc=ctx.createRadialGradient(bx+bw/2,by+bh*0.6,4,bx+bw/2,by+bh*0.6,bw*0.5);
+  gc.addColorStop(0,'rgba(255,170,70,.28)');gc.addColorStop(1,'rgba(255,110,40,0)');
+  ctx.fillStyle=gc;ctx.fillRect(bx,by,bw,bh);
+  // 对冲燃烧器(左右内壁多层火嘴,朝中心)
+  for(let r=0;r<4;r++){ const fy=by+bh*0.42+r*bh*0.13; const fl=0.5+0.35*Math.sin(S.t*3+r*1.3);
+    ctx.fillStyle='rgba(255,150,55,'+fl+')';
+    ctx.beginPath();ctx.moveTo(bx+8,fy-4);ctx.lineTo(bx+8+20,fy);ctx.lineTo(bx+8,fy+4);ctx.closePath();ctx.fill();
+    ctx.beginPath();ctx.moveTo(bx+bw-8,fy-4);ctx.lineTo(bx+bw-8-20,fy);ctx.lineTo(bx+bw-8,fy+4);ctx.closePath();ctx.fill(); }
+  // 前墙上集箱(顶部横联箱) + 8 段管座焊缝测点(沿宽度方向)
+  ctx.fillStyle='#33507a';ctx.fillRect(bx+4,by+4,bw-8,8);
+  const welds=WW_SENSORS.filter(s=>s.type==='weld');
+  welds.forEach((s,i)=>{const o=S.ww[s.id];const xx=bx+4+(bw-8)*(i+0.5)/8;const yy=by+8;const col=stressColor(o.pctAllow);
+    ctx.fillStyle=col;ctx.beginPath();ctx.arc(xx,yy,4,0,6.3);ctx.fill();
+    if(o.pctAllow>90){ctx.strokeStyle=col;ctx.globalAlpha=.4+.5*Math.sin(S.t*4);ctx.lineWidth=2;ctx.beginPath();ctx.arc(xx,yy,7,0,6.3);ctx.stroke();ctx.globalAlpha=1;}});
+  txt(ctx,'前墙水冷壁上集箱 8段 · 管座焊缝(16应变计)',bx+4,by+26,'#70b8ff',8.5);
+  // ===== 汽轮机(右) =====
+  const cyw=Math.min(124,w*0.19), cyh=54, cyx=w-cyw-48, cyy=h*0.42, fy=cyy+cyh*0.5, baseY=cyy+cyh;
+  // ===== 主蒸汽管道(锅炉顶 → 汽机法兰, 连续连接) =====
+  const py=by+24, cornerX=cyx-40;
+  ctx.strokeStyle=S.seize?'#ff5555':'#70b8ff';ctx.lineWidth=5;ctx.lineCap='round';ctx.lineJoin='round';
+  ctx.beginPath();ctx.moveTo(bx+bw,py);ctx.lineTo(cornerX,py);ctx.lineTo(cornerX,fy);ctx.lineTo(cyx-7,fy);ctx.stroke();
+  ctx.lineCap='butt';
+  // 管道标签置于竖直下行段左侧的空白处,避开顶部吊架/横梁
+  txt(ctx,'主蒸汽管道 P92',cornerX-8,(py+fy)/2,'#9fc0e0',9.5,'right');
+  // 顶部吊架横梁 + 4 吊杆(沿水平段; 末吊杆=汽机近端,用于自由膨胀判定)
+  const beamY=by+8;
+  ctx.strokeStyle='#46618a';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(bx+bw,beamY);ctx.lineTo(cornerX,beamY);ctx.stroke();
+  const hfr=[0.14,0.42,0.68,0.93];
+  hfr.forEach((fr,i)=>{const xx=bx+bw+(cornerX-(bx+bw))*fr;const hh=S.hanger[HANGERS[i].id];const ov=hh.load/HANGERS[i].rated;
+    const col=ov>1.3?'#ff5555':(ov>1.15?'#f5a623':'#8fb0d8');const last=(i===3);
+    ctx.strokeStyle=col;ctx.lineWidth=last?2.4:1.6;
+    ctx.beginPath();ctx.moveTo(xx,py-2);ctx.lineTo(xx,beamY);ctx.stroke();
+    ctx.fillStyle=col;ctx.fillRect(xx-3,beamY-3,6,5);
+    txt(ctx,'吊'+(i+1),xx,py+14,last?'#90ccff':'#7aa0c8',8,'center');});
+  txt(ctx,'吊4=汽机近端(自由膨胀判定)',(bx+bw+cornerX)/2,py+27,'#6896be',8,'center');
+  // 汽轮机缸体
+  ctx.fillStyle='#223354';ctx.strokeStyle=S.seize?'#ff5555':'#3a5278';ctx.lineWidth=1.4;
+  roundRectP(ctx,cyx,cyy,cyw,cyh,8);ctx.fill();ctx.stroke();
+  txt(ctx,'汽轮机高压缸',cyx+cyw/2,cyy-9,'#9fc0e0',10.5,'center');
+  // 法兰(连接点)
+  const fcol=S.fIdx.W>180?'#ff5555':(S.fIdx.B>240?'#f5a623':'#70b8ff');
+  ctx.fillStyle=fcol;ctx.fillRect(cyx-7,fy-10,7,20);
+  txt(ctx,'法兰',cyx-10,fy-14,fcol,8.5,'right');
+  // 台板 + 猫爪滑销 ×3
+  ctx.fillStyle='#1a2a40';ctx.fillRect(cyx-6,baseY+7,cyw+34,6);
+  [0.22,0.5,0.78].forEach(fr=>{const xx=cyx+cyw*fr;ctx.fillStyle=S.seize?'#ff5555':'#6f93bd';ctx.fillRect(xx-9,baseY,18,7);});
+  // 死点(右端固定)
+  ctx.fillStyle='#2ecc71';ctx.fillRect(cyx+cyw+18,baseY-2,6,16);
+  // 膨胀箭头(自死点向左)
+  const exC=S.seize?'#ff5555':'#2ecc71';ctx.strokeStyle=exC;ctx.lineWidth=2.2;
+  const ax0=cyx+cyw*0.5, axl=ax0-26*(S.expAbs/30);
+  ctx.beginPath();ctx.moveTo(ax0,baseY-3);ctx.lineTo(axl,baseY-3);ctx.lineTo(axl+5,baseY-6);ctx.moveTo(axl,baseY-3);ctx.lineTo(axl+5,baseY);ctx.stroke();
+  // 三个底部标注(分行/分列,互不叠堆)
+  txt(ctx,'膨胀 '+S.expAbs.toFixed(0)+'mm'+(S.seize?'(受阻)':''),cyx,baseY+22,exC,8.5);
+  txt(ctx,'死点',cyx+cyw+21,baseY+22,'#2ecc71',8.5,'center');
+  txt(ctx,'猫爪滑销 ×3',cyx+cyw/2,baseY+34,S.seize?'#ff5555':'#8fb0d8',8.5,'center');
+  // 图例
+  txt(ctx,'● 测点应力着色: 绿 安全 / 蓝 正常 / 黄 超许用 / 红 接近屈服',16,h-6,'#6896be',9);
+}
+function roundRectP(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
+
+/* 应变场云图: 双线性插值热力图 + 测点叠加 */
+function drawField(cv){
+  const F=dpiFit(cv); if(!F)return; const {ctx,w,h}=F;
+  const pad={l:54,r:80,t:18,b:24};
+  const gx=pad.l,gy=pad.t,gw=w-pad.l-pad.r,gh=h-pad.t-pad.b;
+  const fld=S.field; if(!fld.length){return;}
+  let mn=1e9,mx=-1e9; fld.forEach(r=>r.forEach(v=>{mn=Math.min(mn,v);mx=Math.max(mx,v);}));
+  const cw=gw/(FCOLS-1), ch=gh/(FROWS-1);
+  // 像素插值
+  const res=3;
+  for(let py=0;py<gh;py+=res){ for(let px=0;px<gw;px+=res){
+    const fx=px/gw*(FCOLS-1), fy=py/gh*(FROWS-1);
+    const x0=Math.floor(fx),y0=Math.floor(fy),x1=Math.min(FCOLS-1,x0+1),y1=Math.min(FROWS-1,y0+1);
+    const tx=fx-x0,ty=fy-y0;
+    const v=fld[y0][x0]*(1-tx)*(1-ty)+fld[y0][x1]*tx*(1-ty)+fld[y1][x0]*(1-tx)*ty+fld[y1][x1]*tx*ty;
+    ctx.fillStyle=heat((v-mn)/(mx-mn+1e-6));ctx.fillRect(gx+px,gy+py,res+1,res+1);
+  }}
+  ctx.strokeStyle='#2a4060';ctx.strokeRect(gx,gy,gw,gh);
+  // 8 集箱分隔
+  for(let i=1;i<8;i++){const xx=gx+gw*i/8;ctx.strokeStyle='rgba(20,35,60,.5)';ctx.setLineDash([2,3]);ctx.beginPath();ctx.moveTo(xx,gy);ctx.lineTo(xx,gy+gh);ctx.stroke();ctx.setLineDash([]);}
+  for(let i=0;i<8;i++)txt(ctx,'H'+(i+1),gx+gw*(i+0.5)/8,gy+gh+14,'#7aa0c8',9,'center');
+  txt(ctx,'↑ 上集箱',gx-50,gy+12,'#6896be',9);txt(ctx,'管座焊缝带',gx-50,gy+gh*0.55,'#f5a623',9);txt(ctx,'↓ 光管段',gx-50,gy+gh-4,'#6896be',9);
+  // 测点叠加
+  WW_SENSORS.forEach(s=>{const o=S.ww[s.id];const col=s.hdr;const cx=gx+gw*(col+0.5)/8;
+    const cyy=s.type==='weld'?gy+gh*0.5:(s.type==='endcap'?gy+gh*0.35:(s.type==='outlet'?gy+gh*0.18:(s.type==='fin'?gy+gh*0.62:gy+gh*0.8)));
+    ctx.fillStyle='#0e1d33';ctx.beginPath();ctx.arc(cx,cyy,3.5,0,6.3);ctx.fill();
+    ctx.strokeStyle=stressColor(o.pctAllow);ctx.lineWidth=2;ctx.stroke();});
+  // 色标
+  const lx=gx+gw+16,lw=14,lh=gh;
+  for(let i=0;i<lh;i++){ctx.fillStyle=heat(1-i/lh);ctx.fillRect(lx,gy+i,lw,1);}
+  ctx.strokeStyle='#2a4060';ctx.strokeRect(lx,gy,lw,lh);
+  txt(ctx,mx.toFixed(0),lx+lw+3,gy+8,'#9fc0e0',9);txt(ctx,((mn+mx)/2).toFixed(0),lx+lw+3,gy+lh/2,'#9fc0e0',9);txt(ctx,mn.toFixed(0),lx+lw+3,gy+lh,'#9fc0e0',9);
+  txt(ctx,S.fieldUnit||'MPa',lx+lw+3,gy-4,'#6896be',8);
+}
+
+/* 实时应变波形(50Hz 动态): 几个管座焊缝测点 */
+function drawStrainWave(cv){
+  const F=dpiFit(cv); if(!F)return; const {ctx,w,h}=F;
+  const pad={l:46,r:8,t:8,b:18};const gx=pad.l,gy=pad.t,gw=w-pad.l-pad.r,gh=h-pad.t-pad.b;
+  grid(ctx,gx,gy,gw,gh,10,4);
+  const ids=['10HAD14-W','10HAD15-W','10HAD13-T'];const cols=['#ff5555','#f5a623','#70b8ff'];
+  ids.forEach((id,k)=>{const o=S.ww[id];ctx.beginPath();ctx.strokeStyle=cols[k];ctx.lineWidth=1.3;
+    for(let i=0;i<gw;i++){const tt=S.t-0.4+i/gw*0.4;
+      const v=o.strain + 18*Math.sin(tt*2*Math.PI*1.2+o.ph) + 8*Math.sin(tt*2*Math.PI*50)*( S._shock>0.05?2:1) + (Math.random()-0.5)*4;
+      const py=gy+gh-(v/2200)*gh; i?ctx.lineTo(gx+i,py):ctx.moveTo(gx+i,py);}
+    ctx.stroke();});
+  let lx=gx+6;['H4管座','H5管座','H3光管'].forEach((n,k)=>{txt(ctx,'■',lx,gy+12,cols[k],11);txt(ctx,n,lx+11,gy+12,'#9fc0e0',9);lx+=12+ctx.measureText(n).width+16;});
+  txt(ctx,'με',gx-4,gy+10,'#7aa0c8',9,'right');txt(ctx,'400ms',gx+gw-2,gy+gh+13,'#6896be',8,'right');
+}
+
+/* 总应力=热+机械 堆叠 */
+function drawStressDecomp(cv){
+  const F=dpiFit(cv); if(!F)return; const {ctx,w,h}=F;
+  const pad={l:46,r:8,t:14,b:30};const gx=pad.l,gy=pad.t,gw=w-pad.l-pad.r,gh=h-pad.t-pad.b;
+  grid(ctx,gx,gy,gw,gh,8,4);
+  const ids=['10HAD14-W','10HAD15-W','10HAD11-W','10HAD13-T','10HAD14-F'];
+  const bw=gw/ids.length*0.5;
+  const maxS=Math.max(...ids.map(id=>S.ww[id].stress))*1.15||200;
+  ids.forEach((id,i)=>{const o=S.ww[id];const s=WW_SENSORS.find(x=>x.id===id);
+    const mech=28+26*S.loadPct/100;const th=Math.max(0,o.stress-mech);
+    const cx=gx+gw*(i+0.5)/ids.length;
+    const mh=mech/maxS*gh, th_h=th/maxS*gh;
+    ctx.fillStyle='#2e78e0';ctx.fillRect(cx-bw/2,gy+gh-mh,bw,mh);
+    ctx.fillStyle='#ff9d4d';ctx.fillRect(cx-bw/2,gy+gh-mh-th_h,bw,th_h);
+    txt(ctx,o.stress.toFixed(0),cx,gy+gh-mh-th_h-4,'#cbd9e8',9,'center');
+    txt(ctx,s.name.slice(0,2),cx,gy+gh+12,'#7aa0c8',8.5,'center');});
+  // 许用线
+  const ay=gy+gh-SALLOW/maxS*gh;ctx.strokeStyle='rgba(245,166,35,.6)';ctx.setLineDash([4,3]);ctx.beginPath();ctx.moveTo(gx,ay);ctx.lineTo(gx+gw,ay);ctx.stroke();ctx.setLineDash([]);txt(ctx,'许用 '+SALLOW,gx+gw-2,ay-3,'#f5a623',8,'right');
+  txt(ctx,'■ 机械应力',gx+6,gy+11,'#2e78e0',9);txt(ctx,'■ 热应力',gx+78,gy+11,'#ff9d4d',9);txt(ctx,'MPa',gx-4,gy+10,'#7aa0c8',9,'right');
+}
+
+/* 负荷-应力特性曲线 */
+function drawLoadStress(cv){
+  const F=dpiFit(cv); if(!F)return; const {ctx,w,h}=F;
+  const pad={l:44,r:10,t:14,b:24};const gx=pad.l,gy=pad.t,gw=w-pad.l-pad.r,gh=h-pad.t-pad.b;
+  grid(ctx,gx,gy,gw,gh,8,4);
+  // U形: 低负荷热偏差大→应力高; 中负荷低; 高负荷略升
+  const f=(lp)=>{const lf=lp/100;const low=lf<0.45?Math.pow((0.45-lf)/0.45,1.2)*22:0;return 28+26*lf+thermalStress(14+(1-lf)*4+low)*0.9;};
+  ['#3a5278','#70b8ff'].forEach((col,k)=>{ctx.beginPath();ctx.strokeStyle=col;ctx.lineWidth=k?2:1.4;if(k)ctx.setLineDash([]);else ctx.setLineDash([4,3]);
+    for(let lp=20;lp<=100;lp++){const v=f(lp)*(k?1:0.92);const px=gx+gw*(lp-20)/80;const py=gy+gh-v/260*gh;lp===20?ctx.moveTo(px,py):ctx.lineTo(px,py);}ctx.stroke();});
+  ctx.setLineDash([]);
+  // 当前工作点
+  const cpx=gx+gw*(S.loadPct-20)/80, cpy=gy+gh-f(S.loadPct)/260*gh;
+  ctx.fillStyle='#ff5555';ctx.beginPath();ctx.arc(cpx,cpy,4,0,6.3);ctx.fill();
+  ctx.strokeStyle='#ff5555';ctx.globalAlpha=.4+.4*Math.sin(S.t*4);ctx.lineWidth=2;ctx.beginPath();ctx.arc(cpx,cpy,7,0,6.3);ctx.stroke();ctx.globalAlpha=1;
+  for(let lp=20;lp<=100;lp+=20)txt(ctx,lp+'%',gx+gw*(lp-20)/80,gy+gh+14,'#6896be',9,'center');
+  txt(ctx,'应力MPa',gx-4,gy+10,'#7aa0c8',9,'right');
+  txt(ctx,'■ 实测',gx+6,gy+11,'#70b8ff',9);txt(ctx,'┈ FE',gx+58,gy+11,'#3a5278',9);txt(ctx,'● 当前 '+S.loadPct+'%',gx+100,gy+11,'#ff5555',9);
+  txt(ctx,'深调低负荷区应力上翘',gx+gw-2,gy+gh-6,'#f5a623',8.5,'right');
+}
+
+/* Larson-Miller */
+function drawLMP(cv){
+  const F=dpiFit(cv); if(!F)return; const {ctx,w,h}=F;
+  const pad={l:44,r:10,t:14,b:24};const gx=pad.l,gy=pad.t,gw=w-pad.l-pad.r,gh=h-pad.t-pad.b;
+  grid(ctx,gx,gy,gw,gh,8,4);
+  // LMP 主曲线: 应力 vs P=T(20+lg t)/1000, 12Cr1MoVG 蠕变断裂曲线(示意)
+  ctx.beginPath();ctx.strokeStyle='#70b8ff';ctx.lineWidth=2;
+  for(let i=0;i<=gw;i++){const P=18+i/gw*5; const stress=Math.max(20,420-(P-18)*72);const px=gx+i;const py=gy+gh-(stress)/420*gh;i?ctx.lineTo(px,py):ctx.moveTo(px,py);}
+  ctx.stroke();
+  // 当前工作点(由最热测点温度/应力计算 P)
+  let hot=0,hotId='';Object.keys(S.creep).forEach(k=>{if(S.creep[k]>hot){hot=S.creep[k];hotId=k;}});
+  const o=S.ww[hotId]||S.ww['10HAD14-W'];const Tk=(o.temp+273);const tHrs=412*24;const P=Tk*(20+Math.log10(tHrs))/1000;
+  const px=gx+Math.min(gw,Math.max(0,(P-18)/5*gw)), py=gy+gh-o.stress/420*gh;
+  ctx.fillStyle='#ff5555';ctx.beginPath();ctx.arc(px,py,4,0,6.3);ctx.fill();
+  txt(ctx,'当前 P='+P.toFixed(1),px+6,py-4,'#ff9b9b',9);
+  for(let i=0;i<=4;i++){txt(ctx,(18+i*5/4).toFixed(1),gx+gw*i/4,gy+gh+14,'#6896be',9,'center');}
+  txt(ctx,'应力MPa',gx-4,gy+10,'#7aa0c8',9,'right');txt(ctx,'LMP=T(20+lg t)/1000',gx+gw-2,gy+11,'#9fc0e0',9,'right');
+  txt(ctx,'蠕变断裂曲线(12Cr1MoVG)',gx+6,gy+gh-6,'#70b8ff',8.5);
+}
+
+/* 焊缝裂纹柱状 */
+function drawWeldBar(cv){
+  const F=dpiFit(cv); if(!F)return; const {ctx,w,h}=F;
+  const pad={l:44,r:10,t:16,b:34};const gx=pad.l,gy=pad.t,gw=w-pad.l-pad.r,gh=h-pad.t-pad.b;
+  grid(ctx,gx,gy,gw,gh,8,4);
+  const welds=WW_SENSORS.filter(s=>s.type==='weld');const bw=gw/welds.length*0.55;const maxC=8;
+  // 阈线
+  [[1,'#2ecc71'],[1.5,'#f5a623'],[3,'#ff5555']].forEach(([v,c])=>{const yy=gy+gh-v/maxC*gh;ctx.strokeStyle=c;ctx.globalAlpha=.5;ctx.setLineDash([4,3]);ctx.beginPath();ctx.moveTo(gx,yy);ctx.lineTo(gx+gw,yy);ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1;txt(ctx,v+'mm',gx+gw-2,yy-2,c,8,'right');});
+  welds.forEach((s,i)=>{const c=S.weldCrack[s.id];const cx=gx+gw*(i+0.5)/welds.length;const bh=c/maxC*gh;
+    const col=c>3?'#ff5555':(c>1.5?'#f5a623':'#2ecc71');
+    ctx.fillStyle=col;ctx.fillRect(cx-bw/2,gy+gh-bh,bw,bh);
+    txt(ctx,c.toFixed(1),cx,gy+gh-bh-4,col,9,'center');
+    txt(ctx,'H'+(i+1),cx,gy+gh+13,'#7aa0c8',9,'center');});
+  txt(ctx,'裂纹深度 mm',gx-4,gy+10,'#7aa0c8',9,'right');
+  txt(ctx,'管座壁厚 8mm 贯穿即泄漏',gx+6,gy+gh+27,'#6896be',8.5);
+}
+
+/* 损伤构成饼 */
+function drawDamagePie(cv){
+  const F=dpiFit(cv); if(!F)return; const {ctx,w,h}=F;
+  const cx=w*0.36,cy=h/2,r=Math.min(w*0.26,h*0.38);
+  const parts=[['深调循环疲劳',0.52,'#ff9d4d'],['启停大循环',0.18,'#f5a623'],['高温蠕变',0.22,'#70b8ff'],['稳态运行',0.08,'#3a5278']];
+  let a=-Math.PI/2;parts.forEach(p=>{const ang=p[1]*Math.PI*2;ctx.beginPath();ctx.moveTo(cx,cy);ctx.arc(cx,cy,r,a,a+ang);ctx.closePath();ctx.fillStyle=p[2];ctx.fill();ctx.strokeStyle='#16233c';ctx.lineWidth=2;ctx.stroke();a+=ang;});
+  ctx.fillStyle='#16233c';ctx.beginPath();ctx.arc(cx,cy,r*0.5,0,6.3);ctx.fill();
+  let ly=cy-parts.length*9;parts.forEach(p=>{ctx.fillStyle=p[2];ctx.fillRect(w*0.66,ly,11,11);txt(ctx,p[0]+' '+(p[1]*100).toFixed(0)+'%',w*0.66+16,ly+9,'#9fc0e0',10);ly+=20;});
+}
+
+/* 管系位移示意 */
+function drawPipe(cv){
+  const F=dpiFit(cv); if(!F)return; const {ctx,w,h}=F;
+  ctx.clearRect(0,0,w,h);
+  const y0=h*0.35;
+  // 锅炉顶(左)
+  ctx.fillStyle='#223354';ctx.strokeStyle='#3a5278';ctx.fillRect(14,y0-22,46,44);ctx.strokeRect(14,y0-22,46,44);txt(ctx,'锅炉',24,y0+4,'#9fc0e0',10);
+  // 主蒸汽管(随膨胀位移)
+  const tx=w-150;
+  ctx.strokeStyle=S.seize?'#ff5555':'#70b8ff';ctx.lineWidth=6;ctx.lineCap='round';
+  ctx.beginPath();ctx.moveTo(60,y0);ctx.lineTo(110,y0);ctx.lineTo(110,y0+44);ctx.lineTo(tx,y0+44);ctx.stroke();
+  txt(ctx,'主蒸汽管道 P92 · DN ('+(S.seize?'膨胀受阻':'热膨胀')+')',120,y0-8,'#9fc0e0',9.5);
+  // 吊杆 + 载荷
+  HANGERS.slice(0,3).forEach((hg,i)=>{const fr=[0.3,0.58,0.85][i];const xx=110+(tx-110)*fr;const hh=S.hanger[hg.id];const ov=hh.load/hg.rated;
+    const col=ov>1.3?'#ff5555':(ov>1.15?'#f5a623':'#6896be');
+    ctx.strokeStyle=col;ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(xx,y0+44);ctx.lineTo(xx,y0+10);ctx.stroke();
+    ctx.fillStyle=col;ctx.beginPath();ctx.moveTo(xx,y0+6);ctx.lineTo(xx-5,y0-2);ctx.lineTo(xx+5,y0-2);ctx.closePath();ctx.fill();
+    txt(ctx,hg.id,xx-12,y0-6,'#6896be',8);txt(ctx,hh.load.toFixed(0)+'kN',xx-12,y0+60,col,8.5);});
+  // 位移测点(拉丝)
+  PIPE_NODES.forEach((n,i)=>{const fr=[0.18,0.45,0.92,0.7][i];const xx=110+(tx-110)*Math.min(0.95,fr);const p=S.pipe[n.id];
+    ctx.fillStyle='#2ecc71';ctx.beginPath();ctx.arc(xx,y0+44,3.5,0,6.3);ctx.fill();
+    // 位移箭头
+    ctx.strokeStyle='#2ecc71';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(xx,y0+52);ctx.lineTo(xx+p.disp*0.4,y0+52);ctx.stroke();
+    txt(ctx,p.disp.toFixed(0)+'mm',xx-6,y0+70,'#7aa0c8',8);});
+  // 汽轮机
+  ctx.fillStyle='#223354';ctx.strokeStyle='#3a5278';ctx.lineWidth=1.4;roundRectP(ctx,tx,y0+10,110,60,8);ctx.fill();ctx.stroke();
+  txt(ctx,'汽轮机',tx+34,y0+44,'#9fc0e0',11);
+  // 法兰
+  ctx.fillStyle=S.fIdx.W>180?'#ff5555':'#70b8ff';ctx.fillRect(tx-6,y0+34,6,20);
+  txt(ctx,'拉丝位移传感器 0–300mm/0.1mm · 倾角 ±30°/0.005°',14,h-8,'#6896be',8.5);
+}
+
+/* 吊杆载荷条 */
+function drawHanger(cv){
+  const F=dpiFit(cv); if(!F)return; const {ctx,w,h}=F;
+  const pad={l:80,r:40,t:14,b:18};const gx=pad.l,gy=pad.t,gw=w-pad.l-pad.r,gh=h-pad.t-pad.b;
+  const n=HANGERS.length;const bh=gh/n*0.55;
+  HANGERS.forEach((hg,i)=>{const hh=S.hanger[hg.id];const ov=hh.load/hg.rated;const yy=gy+gh*(i+0.5)/n;
+    const col=ov>1.3?'#ff5555':(ov>1.15?'#f5a623':'#2ecc71');
+    // 额定参考
+    ctx.fillStyle='#223354';ctx.fillRect(gx,yy-bh/2,gw,bh);
+    ctx.fillStyle=col;ctx.fillRect(gx,yy-bh/2,gw*Math.min(1.4,ov)/1.4,bh);
+    txt(ctx,hg.id,gx-6,yy+3,'#9fc0e0',9.5,'right');
+    txt(ctx,hh.load.toFixed(0)+'kN ('+(ov*100).toFixed(0)+'%)',gx+gw*Math.min(1.4,ov)/1.4+4,yy+3,col,9);});
+  // 100% 线
+  const lx=gx+gw/1.4;ctx.strokeStyle='rgba(245,166,35,.6)';ctx.setLineDash([3,3]);ctx.beginPath();ctx.moveTo(lx,gy);ctx.lineTo(lx,gy+gh);ctx.stroke();ctx.setLineDash([]);txt(ctx,'额定',lx,gy+10,'#f5a623',8,'center');
+}
+
+/* 法兰四象限极坐标 */
+function drawFlangePolar(cv){
+  const F=dpiFit(cv); if(!F)return; const {ctx,w,h}=F;
+  const cx=w/2,cy=h/2+4,R=Math.min(w,h)*0.34;
+  // 法兰环
+  ctx.strokeStyle='#3a5278';ctx.lineWidth=1;ctx.beginPath();ctx.arc(cx,cy,R,0,6.3);ctx.stroke();ctx.beginPath();ctx.arc(cx,cy,R*0.55,0,6.3);ctx.stroke();
+  const ang=[-Math.PI/2,0,Math.PI/2,Math.PI];// 0上 90右 180下 270左
+  const maxT=Math.max(...S.flange.ringT);
+  // 环向应变(翘曲)分布多边形
+  ctx.beginPath();S.flange.ringT.forEach((v,i)=>{const rr=R*0.55+ (v/maxT)*R*0.42;const a=ang[i];const x=cx+Math.cos(a)*rr,y=cy+Math.sin(a)*rr;i?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.closePath();
+  ctx.fillStyle='rgba(245,166,35,.18)';ctx.fill();ctx.strokeStyle='#f5a623';ctx.lineWidth=1.6;ctx.stroke();
+  // 象限点 + 弯矩方向
+  FLANGE_QUAD.forEach((q,i)=>{const a=ang[i];const danger=i===S.fIdx.worstQ;
+    const rr=R*0.55+(S.flange.ringT[i]/maxT)*R*0.42;const x=cx+Math.cos(a)*rr,y=cy+Math.sin(a)*rr;
+    ctx.fillStyle=danger?'#ff5555':'#70b8ff';ctx.beginPath();ctx.arc(x,y,danger?5:3.5,0,6.3);ctx.fill();
+    txt(ctx,q,cx+Math.cos(a)*(R+14),cy+Math.sin(a)*(R+14),danger?'#ff5555':'#9fc0e0',9,'center');});
+  // 弯矩矢量(By,Bx)
+  const sc=R*0.4/Math.max(60,Math.abs(S.fIdx.B));
+  ctx.strokeStyle='#70b8ff';ctx.lineWidth=2.2;ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(cx+S.fIdx.Bx*sc,cy+S.fIdx.By*sc);ctx.stroke();
+  ctx.fillStyle='#70b8ff';ctx.beginPath();ctx.arc(cx,cy,3,0,6.3);ctx.fill();
+  txt(ctx,'弯矩矢量 B='+S.fIdx.B.toFixed(0),cx,h-6,'#70b8ff',9,'center');
+  txt(ctx,'环向εθ(翘曲)',cx,12,'#f5a623',9,'center');
+}
+
+/* 猫爪膨胀示意(铺满画布: 左=主蒸汽管系→法兰侧推, 中右=宽缸体+猫爪, 右端=死点) */
+function drawCatClaw(cv){
+  const F=dpiFit(cv); if(!F)return; const {ctx,w,h}=F;
+  ctx.clearRect(0,0,w,h);
+  const exp=S.expAbs, pad=20;
+  const baseY=h-38, baseH=14;
+  // 基础/台板(通宽)
+  ctx.fillStyle='#16233c';ctx.fillRect(pad,baseY,w-2*pad,baseH);
+  ctx.strokeStyle='#3a5278';ctx.lineWidth=1.2;ctx.strokeRect(pad,baseY,w-2*pad,baseH);
+  ctx.strokeStyle='#243a5a';ctx.lineWidth=1;for(let x=pad+4;x<w-pad-2;x+=14){ctx.beginPath();ctx.moveTo(x,baseY+baseH);ctx.lineTo(x+10,baseY);ctx.stroke();}
+  txt(ctx,'基础/台板',pad+4,baseY+baseH-4,'#6896be',8);
+  // 几何: 缸体从左侧 1/3 起,宽,铺满至右端死点
+  const legH=28, cylH=58, cylBottom=baseY-legH, cylTop=cylBottom-cylH, axisY=cylTop+cylH/2;
+  const deadX=w-pad-16, cylRight=deadX-12, cylX=Math.round(w*0.30), cylW=cylRight-cylX;
+  const pipeX=pad+36, elbowY=axisY;
+  // 主蒸汽管系(左侧下行→水平→法兰, 填充左侧)
+  ctx.strokeStyle=S.seize?'#ff5555':'#70b8ff';ctx.lineWidth=7;ctx.lineCap='round';ctx.lineJoin='round';
+  ctx.beginPath();ctx.moveTo(pipeX,24);ctx.lineTo(pipeX,elbowY);ctx.lineTo(cylX-7,elbowY);ctx.stroke();ctx.lineCap='butt';
+  txt(ctx,'主蒸汽管系',pipeX-6,18,'#9fc0e0',9.5);
+  // 法兰
+  const ffc=S.fIdx.W>180?'#ff5555':(S.fIdx.B>240?'#f5a623':'#70b8ff');
+  ctx.fillStyle=ffc;ctx.fillRect(cylX-7,elbowY-12,7,24);txt(ctx,'法兰',cylX-10,elbowY-16,ffc,8.5,'right');
+  // 转子中心线(贯穿)
+  ctx.strokeStyle='#8aa8cf';ctx.setLineDash([7,5]);ctx.lineWidth=1.2;
+  ctx.beginPath();ctx.moveTo(cylX+8,axisY);ctx.lineTo(cylRight+18,axisY);ctx.stroke();ctx.setLineDash([]);
+  // 猫爪 ×3
+  [0.2,0.5,0.8].forEach(fr=>{const xx=cylX+cylW*fr;
+    ctx.fillStyle='#2a4060';ctx.fillRect(xx-24,baseY-5,48,5);
+    ctx.fillStyle=S.seize?'#e8604f':'#6f93bd';ctx.strokeStyle='#46618a';ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(xx-14,cylBottom);ctx.lineTo(xx+14,cylBottom);ctx.lineTo(xx+19,baseY-5);ctx.lineTo(xx-19,baseY-5);ctx.closePath();ctx.fill();ctx.stroke();
+    const aL=18*Math.min(1,exp/28);ctx.strokeStyle=S.seize?'#ff8a7a':'#2ecc71';ctx.lineWidth=1.6;
+    ctx.beginPath();ctx.moveTo(xx+aL/2,baseY-1);ctx.lineTo(xx-aL/2,baseY-1);ctx.lineTo(xx-aL/2+6,baseY-4);ctx.moveTo(xx-aL/2,baseY-1);ctx.lineTo(xx-aL/2+6,baseY+2);ctx.stroke();});
+  // 缸体(金属渐变, 宽)
+  const g=ctx.createLinearGradient(0,cylTop,0,cylBottom);
+  g.addColorStop(0,'#42608a');g.addColorStop(.5,'#5d7aa4');g.addColorStop(1,'#2b405e');
+  ctx.fillStyle=g;ctx.strokeStyle=S.seize?'#ff5555':'#7693bc';ctx.lineWidth=1.8;
+  roundRectP(ctx,cylX,cylTop,cylW,cylH,9);ctx.fill();ctx.stroke();
+  txt(ctx,'汽轮机高压缸',cylX+cylW/2,axisY+5,'#eaf2ff',12,'center');
+  // 死点(固定锚)
+  ctx.fillStyle='#2ecc71';ctx.fillRect(deadX,cylTop+6,8,baseY-cylTop-6);
+  ctx.strokeStyle='#2ecc71';ctx.lineWidth=1;for(let yy=cylTop+12;yy<baseY;yy+=10){ctx.beginPath();ctx.moveTo(deadX+8,yy);ctx.lineTo(deadX+15,yy-6);ctx.stroke();}
+  txt(ctx,'死点',deadX+4,cylTop-7,'#2ecc71',9,'center');
+  // 膨胀尺寸(自死点向左; 标注抬高,避免与"死点"叠字)
+  const exC=S.seize?'#ff5555':'#2ecc71';ctx.strokeStyle=exC;ctx.lineWidth=2;
+  const e0=cylRight-8, e1=e0-54*Math.min(1.4,exp/26);
+  ctx.beginPath();ctx.moveTo(e0,cylTop-19);ctx.lineTo(e0,cylTop-10);ctx.moveTo(e0,cylTop-14);ctx.lineTo(e1,cylTop-14);ctx.lineTo(e1+6,cylTop-17);ctx.moveTo(e1,cylTop-14);ctx.lineTo(e1+6,cylTop-11);ctx.stroke();
+  txt(ctx,'缸体膨胀 '+exp.toFixed(1)+'mm'+(S.seize?' (受阻!)':''),e1,cylTop-19,exC,9,'left');
+  // 管系侧推力(沿水平管→法兰, 粗细随力)
+  const fcol=S.catClawLat>60?'#ff5555':(S.catClawLat>40?'#f5a623':'#7aa0c8');
+  const sa0=pipeX+18, sa1=cylX-12;
+  ctx.strokeStyle=fcol;ctx.lineWidth=Math.min(11,3+S.catClawLat/11);
+  ctx.beginPath();ctx.moveTo(sa0,elbowY);ctx.lineTo(sa1,elbowY);ctx.stroke();
+  ctx.fillStyle=fcol;ctx.beginPath();ctx.moveTo(sa1+5,elbowY);ctx.lineTo(sa1-9,elbowY-8);ctx.lineTo(sa1-9,elbowY+8);ctx.closePath();ctx.fill();
+  txt(ctx,'管系侧推 '+S.catClawLat.toFixed(0)+'kN',(sa0+sa1)/2,elbowY-9,fcol,9.5,'center');
+  // 底部标签
+  txt(ctx,'猫爪滑销 ×3 (沿台板滑动,吸收缸体膨胀)',pad,h-7,S.seize?'#ff5555':'#8fb0d8',9);
+  txt(ctx,'胀差(转子-缸体) '+S.expDiff.toFixed(1)+'mm',w-pad,h-7,'#9fc0e0',9,'right');
+  if(S.seize){ctx.fillStyle='rgba(255,85,85,'+(0.5+0.3*Math.sin(S.t*5))+')';ctx.font='bold 13px Segoe UI';ctx.textAlign='center';ctx.fillText('⚠ 自由膨胀受阻 · 猫爪失稳风险',w/2,14);}
+}
+
+/* 应力方向合成: 末吊架 + 法兰横向 + 膨胀阻力 → 合成应力方向矢量 */
+function drawStressDir(cv){
+  const F=dpiFit(cv); if(!F)return; const {ctx,w,h}=F;
+  ctx.clearRect(0,0,w,h);
+  const sv=S.stressVec; const cx=w*0.34, cy=h*0.56;
+  const sc=Math.min((w-cx)*0.78,(h*0.34))/Math.max(80,sv.mag);
+  // 坐标轴
+  ctx.strokeStyle='#273a55';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(cx-50,cy);ctx.lineTo(w-12,cy);ctx.moveTo(cx,22);ctx.lineTo(cx,h-26);ctx.stroke();
+  txt(ctx,'轴向(阻碍膨胀→死点)',w-12,cy-5,'#6896be',8.5,'right');txt(ctx,'横向',cx+5,h-28,'#6896be',8.5);
+  // 缸体小图标(原点)
+  ctx.fillStyle='#3a5278';ctx.strokeStyle='#5d7aa4';ctx.lineWidth=1;roundRectP(ctx,cx-17,cy-10,34,20,4);ctx.fill();ctx.stroke();
+  txt(ctx,'缸体',cx,cy+4,'#9fc0e0',8,'center');
+  // 箭头工具(无尖端文字,靠图例说明,避免叠堆)
+  const arr=(vx,vy,col,lw)=>{ if(Math.hypot(vx,vy)<0.6)return; const ex=cx+vx*sc, ey=cy+vy*sc, a=Math.atan2(ey-cy,ex-cx);
+    ctx.strokeStyle=col;ctx.lineWidth=lw;ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(ex,ey);ctx.stroke();
+    ctx.fillStyle=col;ctx.beginPath();ctx.moveTo(ex,ey);ctx.lineTo(ex-11*Math.cos(a-0.42),ey-11*Math.sin(a-0.42));ctx.lineTo(ex-11*Math.cos(a+0.42),ey-11*Math.sin(a+0.42));ctx.closePath();ctx.fill(); };
+  // 三个分量(细)
+  arr(sv.expDeficit*9+(S.seize?40:8),0,'#2ecc71',2.2);
+  arr(Math.max(0,sv.lastHangDev)*70, sv.lastHangDev*9,'#70b8ff',2.2);
+  arr(0, S.fIdx.Bx*0.10,'#f5a623',2.2);
+  // 合成矢量(粗)
+  const rc=S.stressCause.t==='r'?'#ff5555':(S.stressCause.t==='a'?'#f5a623':'#2ecc71');
+  arr(sv.ax, sv.lat, rc,4);
+  txt(ctx,'合成应力 '+sv.mag.toFixed(0)+'kN @ '+(sv.ang*180/Math.PI).toFixed(0)+'°',w/2,h-8,rc,10.5,'center');
+  // 图例(顶部一行)
+  let lx=8;[['膨胀阻力','#2ecc71'],['末吊架','#70b8ff'],['法兰横向','#f5a623'],['合成','rc']].forEach(L=>{const c=L[1]==='rc'?rc:L[1];ctx.fillStyle=c;ctx.fillRect(lx,7,9,9);txt(ctx,L[0],lx+11,15,'#9fc0e0',8.5);lx+=13+ctx.measureText(L[0]).width+10;});
+}
+
+/* 膨胀-侧推力关联(轨迹+参考线: 膨胀↓→侧推↑) */
+function drawExpCorr(cv){
+  const F=dpiFit(cv); if(!F)return; const {ctx,w,h}=F;
+  const pad={l:50,r:14,t:16,b:30};const gx=pad.l,gy=pad.t,gw=w-pad.l-pad.r,gh=h-pad.t-pad.b;
+  grid(ctx,gx,gy,gw,gh,8,4);
+  const X=S.hist.expAbs, Y=S.hist.catClaw, n=Math.min(X.length,Y.length);
+  const xmax=40, ymax=Math.max(150,...Y)*1.08;
+  const PX=v=>gx+gw*Math.min(xmax,Math.max(0,v))/xmax, PY=v=>gy+gh-Math.min(ymax,Math.max(0,v))/ymax*gh;
+  // 受阻区(膨胀<18mm)阴影
+  const xb=PX(18);ctx.fillStyle='rgba(255,85,85,.07)';ctx.fillRect(gx,gy,xb-gx,gh);
+  ctx.strokeStyle='rgba(255,85,85,.45)';ctx.setLineDash([4,3]);ctx.beginPath();ctx.moveTo(xb,gy);ctx.lineTo(xb,gy+gh);ctx.stroke();ctx.setLineDash([]);
+  txt(ctx,'受阻区',gx+6,gy+gh-6,'#ff8a8a',8.5);
+  // 参考关系线(反相关: 膨胀大→侧推小)
+  ctx.strokeStyle='rgba(245,166,35,.55)';ctx.lineWidth=1.6;ctx.setLineDash([6,4]);
+  ctx.beginPath();ctx.moveTo(PX(8),PY(135));ctx.lineTo(PX(38),PY(22));ctx.stroke();ctx.setLineDash([]);
+  txt(ctx,'反相关参考',PX(30),PY(40),'#f5a623',8.5,'center');
+  // 轨迹(近 60 点连线, 渐隐 → 直观看到点在动)
+  const start=Math.max(0,n-60);
+  for(let i=start+1;i<n;i++){ const a=(i-start)/(n-start);
+    ctx.strokeStyle='rgba(112,184,255,'+(0.12+0.7*a)+')';ctx.lineWidth=0.6+1.8*a;
+    ctx.beginPath();ctx.moveTo(PX(X[i-1]),PY(Y[i-1]));ctx.lineTo(PX(X[i]),PY(Y[i]));ctx.stroke();}
+  // 历史点(小)
+  for(let i=start;i<n;i++){const a=(i-start)/(n-start);ctx.fillStyle='rgba(150,200,255,'+(0.15+0.5*a)+')';ctx.beginPath();ctx.arc(PX(X[i]),PY(Y[i]),1.8,0,6.3);ctx.fill();}
+  // 当前点(脉动光晕,大)
+  const cpx=PX(S.expAbs), cpy=PY(S.catClawLat);
+  const gl=ctx.createRadialGradient(cpx,cpy,0,cpx,cpy,12);gl.addColorStop(0,'rgba(255,90,90,.85)');gl.addColorStop(1,'rgba(255,90,90,0)');
+  ctx.fillStyle=gl;ctx.beginPath();ctx.arc(cpx,cpy,12,0,6.3);ctx.fill();
+  ctx.fillStyle='#ff5555';ctx.beginPath();ctx.arc(cpx,cpy,4.5,0,6.3);ctx.fill();
+  txt(ctx,'当前 '+S.expAbs.toFixed(0)+'mm/'+S.catClawLat.toFixed(0)+'kN',cpx+ (cpx>gx+gw*0.6?-6:8),cpy-8,'#ff9b9b',8.5, cpx>gx+gw*0.6?'right':'left');
+  // 轴
+  for(let v=0;v<=40;v+=10)txt(ctx,v,PX(v),gy+gh+14,'#6896be',8.5,'center');
+  for(let v=0;v<=ymax;v+=50)txt(ctx,v,gx-4,PY(v)+3,'#6896be',8,'right');
+  txt(ctx,'侧推力 kN ↑',gx-4,gy+10,'#9fc0e0',9,'right');txt(ctx,'缸体绝对膨胀 mm →',gx+gw,gy+gh+26,'#9fc0e0',9,'right');
+}
+
+/* 负荷-应力相关性散点 */
+function drawCorr(cv){
+  const F=dpiFit(cv); if(!F)return; const {ctx,w,h}=F;
+  const pad={l:44,r:10,t:14,b:24};const gx=pad.l,gy=pad.t,gw=w-pad.l-pad.r,gh=h-pad.t-pad.b;
+  grid(ctx,gx,gy,gw,gh,8,4);
+  if(!drawCorr._pts)drawCorr._pts=[];
+  drawCorr._pts.push({l:S.loadPct,s:S.ww._max.stress});if(drawCorr._pts.length>160)drawCorr._pts.shift();
+  drawCorr._pts.forEach((p,i)=>{const px=gx+gw*(p.l-20)/80;const py=gy+gh-p.s/260*gh;
+    ctx.fillStyle='rgba(112,184,255,'+(0.2+0.6*i/drawCorr._pts.length)+')';ctx.beginPath();ctx.arc(px,py,2.5,0,6.3);ctx.fill();});
+  // 拟合趋势曲线(负荷-最大应力机理模型, U形): 低负荷热偏差↑ 中负荷低 高负荷略升
+  const f=(lp)=>{const lf=lp/100;const low=lf<0.45?Math.pow((0.45-lf)/0.45,1.2)*22:0;return 28+26*lf+thermalStress(14+(1-lf)*4+low)*0.9;};
+  ctx.beginPath();ctx.strokeStyle='#f5a623';ctx.lineWidth=2;
+  for(let lp=20;lp<=100;lp++){const v=f(lp);const px=gx+gw*(lp-20)/80;const py=gy+gh-v/260*gh;lp===20?ctx.moveTo(px,py):ctx.lineTo(px,py);}
+  ctx.stroke();
+  // 沿曲线流动的高亮光点(动态展示负荷-应力关系)
+  const sp=60+40*Math.sin(S.t*0.5);
+  const spx=gx+gw*(sp-20)/80, spy=gy+gh-f(sp)/260*gh;
+  const glow=ctx.createRadialGradient(spx,spy,0,spx,spy,11);
+  glow.addColorStop(0,'rgba(255,224,138,.9)');glow.addColorStop(1,'rgba(255,224,138,0)');
+  ctx.fillStyle=glow;ctx.beginPath();ctx.arc(spx,spy,11,0,6.3);ctx.fill();
+  ctx.fillStyle='#ffe08a';ctx.beginPath();ctx.arc(spx,spy,3,0,6.3);ctx.fill();
+  // 当前工作点
+  const cpx=gx+gw*(S.loadPct-20)/80,cpy=gy+gh-S.ww._max.stress/260*gh;
+  ctx.fillStyle='#ff5555';ctx.beginPath();ctx.arc(cpx,cpy,4,0,6.3);ctx.fill();
+  for(let lp=20;lp<=100;lp+=20)txt(ctx,lp+'%',gx+gw*(lp-20)/80,gy+gh+14,'#6896be',9,'center');
+  txt(ctx,'最大应力MPa',gx-4,gy+10,'#7aa0c8',9,'right');txt(ctx,'机组负荷 →',gx+gw,gy+gh+22,'#7aa0c8',9,'right');
+  txt(ctx,'● 实测散点  ',gx+6,gy+11,'#70b8ff',8.5);txt(ctx,'— 拟合曲线(低负荷上翘)',gx+66,gy+11,'#f5a623',8.5);
+}
+
+/* 算法流水线数据流图 */
+function drawPipeline(cv){
+  const F=dpiFit(cv); if(!F)return; const {ctx,w,h}=F;
+  ctx.clearRect(0,0,w,h);
+  const a=S.alg;
+  // 输入源(左) → 4层 → 预警(右)
+  const lanes=[
+    {x:0.02,w:0.13,t:'输入',sub:['流量/温度','压力/负荷(DCS)','16路应变(Acheron)'],col:'#2e78e0'},
+    {x:0.17,w:0.17,t:'①场映射/重构',sub:['RBF 插值','PINN 代理','置信 '+a.rbfConf.toFixed(0)+'%'],col:'#70b8ff'},
+    {x:0.36,w:0.17,t:'②蠕变本构',sub:['Norton-Bailey','Larson-Miller','Robinson D='+a.robinsonMax.toFixed(2)],col:'#2ecc71'},
+    {x:0.55,w:0.17,t:'③异常检测',sub:['PCA / SPE','SPE='+a.spe.toFixed(0),a.spe>25?'⚠不协同':'协同正常'],col:a.spe>25?'#f5a623':'#a78bfa'},
+    {x:0.74,w:0.17,t:'④预测/寿命',sub:['Holt(代理LSTM)','Weibull/Bayes','RUL '+(a.rul.med/8760).toFixed(1)+'年'],col:'#ff9d4d'},
+  ];
+  const boxY=h*0.16, boxH=h*0.6;
+  lanes.forEach((L,i)=>{const bx=L.x*w, bw=L.w*w;
+    ctx.fillStyle='#16233c';ctx.strokeStyle=L.col;ctx.lineWidth=1.4;roundRectP(ctx,bx,boxY,bw-6,boxH,6);ctx.fill();ctx.stroke();
+    txt(ctx,L.t,bx+6,boxY+16,L.col,i?10.5:11,'left');
+    L.sub.forEach((s,k)=>txt(ctx,s,bx+6,boxY+34+k*15,'#9fc0e0',9.5));
+    // 流动箭头
+    if(i<lanes.length-1){const ax=bx+bw-6, ax2=lanes[i+1].x*w;const my=boxY+boxH/2;
+      ctx.strokeStyle='#3a5278';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(ax,my);ctx.lineTo(ax2,my);ctx.stroke();
+      // 流动光点
+      const fp=(S.t*0.6+i*0.25)%1; const px=ax+(ax2-ax)*fp;
+      ctx.fillStyle=L.col;ctx.beginPath();ctx.arc(px,my,3,0,6.3);ctx.fill();
+      ctx.fillStyle='#3a5278';ctx.beginPath();ctx.moveTo(ax2,my);ctx.lineTo(ax2-5,my-3);ctx.lineTo(ax2-5,my+3);ctx.closePath();ctx.fill();}
+  });
+  txt(ctx,'机理模型(偏微分方程/本构) + 数据驱动(统计/AI) 融合 · 蓝绿橙=精确计算 · 紫=PINN/LSTM 演示替身',w/2,h-6,'#6896be',9,'center');
+}
+
+/* SPE 异常趋势 + 控制限 */
+function drawAnomaly(cv){
+  const F=dpiFit(cv); if(!F)return; const {ctx,w,h}=F;
+  const pad={l:34,r:8,t:10,b:16};const gx=pad.l,gy=pad.t,gw=w-pad.l-pad.r,gh=h-pad.t-pad.b;
+  grid(ctx,gx,gy,gw,gh,8,4);
+  const d=S.hist.spe; const mx=Math.max(80, ...d)*1.1;
+  // 控制限
+  [[25,'#f5a623'],[60,'#ff5555']].forEach(([v,c])=>{const yy=gy+gh-v/mx*gh;ctx.strokeStyle=c;ctx.globalAlpha=.6;ctx.setLineDash([4,3]);ctx.beginPath();ctx.moveTo(gx,yy);ctx.lineTo(gx+gw,yy);ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1;});
+  ctx.beginPath();ctx.strokeStyle='#a78bfa';ctx.lineWidth=1.6;
+  d.forEach((v,i)=>{const px=gx+gw*i/(d.length-1);const py=gy+gh-Math.min(v,mx)/mx*gh;i?ctx.lineTo(px,py):ctx.moveTo(px,py);});
+  ctx.stroke();ctx.lineTo(gx+gw,gy+gh);ctx.lineTo(gx,gy+gh);ctx.closePath();ctx.fillStyle='rgba(167,139,250,.12)';ctx.fill();
+  txt(ctx,'SPE',gx-4,gy+9,'#7aa0c8',9,'right');txt(ctx,'控制限 25/60',gx+gw-2,gy+10,'#9fc0e0',8.5,'right');
+}
+
+/* Holt 预测: 实测 vs 预测 + 预测带 */
+function drawForecast(cv){
+  const F=dpiFit(cv); if(!F)return; const {ctx,w,h}=F;
+  const pad={l:38,r:8,t:10,b:16};const gx=pad.l,gy=pad.t,gw=w-pad.l-pad.r,gh=h-pad.t-pad.b;
+  grid(ctx,gx,gy,gw,gh,8,4);
+  const A=S.hist.fcA, P=S.hist.fcP; let mn=1e9,mx=-1e9;
+  A.concat(P).forEach(v=>{mn=Math.min(mn,v);mx=Math.max(mx,v);}); const pd=(mx-mn)*0.2||10;mn-=pd;mx+=pd;
+  const Y=v=>gy+gh-(v-mn)/(mx-mn)*gh;
+  // 预测带
+  const band=S.alg.fc.band;
+  ctx.beginPath();P.forEach((v,i)=>{const px=gx+gw*i/(P.length-1);i?ctx.lineTo(px,Y(v+band)):ctx.moveTo(px,Y(v+band));});
+  for(let i=P.length-1;i>=0;i--){const px=gx+gw*i/(P.length-1);ctx.lineTo(px,Y(P[i]-band));}
+  ctx.closePath();ctx.fillStyle='rgba(255,157,77,.12)';ctx.fill();
+  // 预测线
+  ctx.beginPath();ctx.strokeStyle='#ff9d4d';ctx.lineWidth=1.3;ctx.setLineDash([4,3]);
+  P.forEach((v,i)=>{const px=gx+gw*i/(P.length-1);i?ctx.lineTo(px,Y(v)):ctx.moveTo(px,Y(v));});ctx.stroke();ctx.setLineDash([]);
+  // 实测线
+  ctx.beginPath();ctx.strokeStyle='#70b8ff';ctx.lineWidth=1.7;
+  A.forEach((v,i)=>{const px=gx+gw*i/(A.length-1);i?ctx.lineTo(px,Y(v)):ctx.moveTo(px,Y(v));});ctx.stroke();
+  txt(ctx,'■实测',gx+4,gy+9,'#70b8ff',9);txt(ctx,'┈预测带',gx+50,gy+9,'#ff9d4d',9);txt(ctx,'MPa',gx-4,gy+9,'#7aa0c8',8,'right');
+}
+
+/* Weibull RUL 概率密度 */
+function drawRUL(cv){
+  const F=dpiFit(cv); if(!F)return; const {ctx,w,h}=F;
+  const pad={l:30,r:8,t:10,b:18};const gx=pad.l,gy=pad.t,gw=w-pad.l-pad.r,gh=h-pad.t-pad.b;
+  grid(ctx,gx,gy,gw,gh,8,4);
+  const R=S.alg.rul; const k=R.k, lam=R.lam*(1-Math.min(0.98,S.alg.robinsonMax));
+  const xmaxYr=Math.max(8, R.hi/8760*1.3);
+  // Weibull pdf
+  let pk=0;const pts=[];
+  for(let i=0;i<=gw;i++){const tYr=i/gw*xmaxYr; const t=tYr*8760;
+    const pdf=(k/lam)*Math.pow(t/lam,k-1)*Math.exp(-Math.pow(t/lam,k)); pts.push(pdf);pk=Math.max(pk,pdf);}
+  ctx.beginPath();ctx.strokeStyle='#70b8ff';ctx.lineWidth=1.7;
+  pts.forEach((v,i)=>{const px=gx+i;const py=gy+gh-v/pk*gh*0.92;i?ctx.lineTo(px,py):ctx.moveTo(px,py);});
+  ctx.stroke();ctx.lineTo(gx+gw,gy+gh);ctx.lineTo(gx,gy+gh);ctx.closePath();ctx.fillStyle='rgba(112,184,255,.12)';ctx.fill();
+  // 中位/区间线
+  [[R.med,'#2ecc71','中位'],[R.lo,'#f5a623','P10'],[R.hi,'#f5a623','P90']].forEach(([v,c,lb])=>{const xx=gx+gw*Math.min(1,(v/8760)/xmaxYr);ctx.strokeStyle=c;ctx.setLineDash([3,3]);ctx.beginPath();ctx.moveTo(xx,gy);ctx.lineTo(xx,gy+gh);ctx.stroke();ctx.setLineDash([]);txt(ctx,lb,xx,gy+9,c,8,'center');});
+  for(let i=0;i<=4;i++)txt(ctx,(xmaxYr*i/4).toFixed(0),gx+gw*i/4,gy+gh+13,'#6896be',8,'center');
+  txt(ctx,'剩余寿命 / 年',gx+gw,gy+gh+13,'#7aa0c8',8.5,'right');
+}
+
+/* =====================================================================
+   主循环 + 启动
+   ===================================================================== */
+function tickClock(){const d=new Date();document.getElementById('clock').textContent=d.toLocaleDateString('zh-CN')+' '+d.toLocaleTimeString('zh-CN',{hour12:false});}
+let _last=performance.now();
+function loop(now){
+  let dt=(now-_last)/1000;_last=now;if(dt>0.1)dt=0.1;
+  updateSim(dt);
+  renderActive();
+  requestAnimationFrame(loop);
+}
+function boot(){
+  initState();
+  buildNav();
+  buildPages();
+  tickClock();setInterval(tickClock,1000);
+  requestAnimationFrame(loop);
+}
+boot();
+</script>
+</body>
+</html>

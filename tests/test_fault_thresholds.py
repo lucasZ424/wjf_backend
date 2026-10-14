@@ -54,7 +54,7 @@ def table(path, start_marker, end_marker):
 
 def expected_fault_rules():
     rules = {}
-    for row in table("docs/默认越限阈值与回差.md", '<a id="fault-defaults"></a>', "合计 304 路"):
+    for row in table("dev-docs/默认越限阈值与回差.md", '<a id="fault-defaults"></a>', "合计 304 路"):
         low, hl, high, hh = (number(c) for c in row[4:8])
         for channel in expand(row[0]):
             rules[channel] = (low, hl, high, hh)
@@ -63,7 +63,7 @@ def expected_fault_rules():
 
 def expected_extremes():
     limits = {}
-    for row in table("docs/默认极值阈值.md", '<a id="extreme-defaults"></a>', "208 路源通道"):
+    for row in table("dev-docs/默认极值阈值.md", '<a id="extreme-defaults"></a>', "208 路源通道"):
         for channel in expand(row[0]):
             limits[channel] = (number(row[2]), number(row[3]))
     return limits

@@ -2,7 +2,7 @@
 
 版本：v1.0｜修订日期：2026-10-13｜状态：通信日志页审核建议已采纳，本轮据修订主设计制定第12节实施任务，尚未实施代码。当前六页为过渡，目标七页未完成。历史执行证据见开发执行记录；完整测试尚未通过，不宣称交付完成。
 
-设计依据：[终版设计](HTSG_V1_终版设计_v1.0.md)。本文只规定拆分、顺序和验收，不覆盖设计。现行设计基线为2026-10-13通信日志页审核处置版；按UTF-8、LF规范化内容计算的SHA-256：`71c0fda6166421e207143395272512a81a94ba9ba27bb0cb0f73e151851a6f88`。第一轮开发基线为2026-10-10收口版`8070026ec917ba0cdeed1fe756ec2b1c2260315742bb8bf261763195f05436fb`，历史执行证据保留。数字孪生页及专属接口已移除；通信页主设计按审核处置收口，本轮只制定实施方案，任务及未验收边界见第12节。历史页面核验基线为`1f852b2`。GitNexus仍未索引本仓库，本次依据参考HTML、当前源码、调用方及测试预期核对。
+设计依据：[终版设计](HTSG_V1_终版设计_v1.0.md)。本文只规定拆分、顺序和验收，不覆盖设计。现行设计基线为2026-10-13通信日志页审核处置版；按UTF-8、LF规范化内容计算的SHA-256：`fa1daff82e95cf0dd4319142aaece52af89fdd4dc55cc3ce11cab6ee0805286a`。第一轮开发基线为2026-10-10收口版`8070026ec917ba0cdeed1fe756ec2b1c2260315742bb8bf261763195f05436fb`，历史执行证据保留。数字孪生页及专属接口已移除；通信页主设计按审核处置收口，本轮只制定实施方案，任务及未验收边界见第12节。历史页面核验基线为`1f852b2`。GitNexus仍未索引本仓库，本次依据参考HTML、当前源码、调用方及测试预期核对。
 
 ## 1. 执行规则
 
@@ -18,11 +18,11 @@
 | 现有入口 | 当前问题 | 处理位置 |
 | --- | --- | --- |
 | Engine.receive/tick/make_frame（旧文件 htsg/engine.py，D45 已删除）、calculate（旧文件 htsg/calculation.py，D45 已删除） | 整秒桶、逐点过期、Frame输入、变化量依赖前帧 | D07—D11 |
-| adapter/订阅handler（旧文件 htsg/adapters.py，D45 已删除）、[every_second](htsg/timing.py) | Modbus逐点读；UA缓存每秒重报且非Good置空 | D07、D12—D18 |
-| [Runtime.emit/writer/calculator](htsg/runtime.py) | 异步帧计算；优先/普通双队列；状态与提交不成组 | D08—D11、D21—D26、D45 |
+| adapter/订阅handler（旧文件 htsg/adapters.py，D45 已删除）、[every_second](../htsg/timing.py) | Modbus逐点读；UA缓存每秒重报且非Good置空 | D07、D12—D18 |
+| [Runtime.emit/writer/calculator](../htsg/runtime.py) | 异步帧计算；优先/普通双队列；状态与提交不成组 | D08—D11、D21—D26、D45 |
 | Store/Router（旧文件 htsg/storage.py，D45 已删除）、schema.sql（旧文件 htsg/schema.sql，D45 已删除） | JSON记录、帧表、预算拆批、应急丢派生 | D05—D06、D19—D26 |
 | FaultState（旧文件 htsg/faults.py，D45 已删除）、Engine.assess | 观察驱动5秒、1.5秒间隔中断、极值替代普通阈值 | D27—D31 |
-| API（旧文件 htsg/api.py，D45 已删除）、research API（旧文件 htsg/research_api.py，D45 已删除）、[app.js](htsg/static/app.js) | 帧快照、旧回溯取值和页面状态 | D32—D44 |
+| API（旧文件 htsg/api.py，D45 已删除）、research API（旧文件 htsg/research_api.py，D45 已删除）、[app.js](../htsg/static/app.js) | 帧快照、旧回溯取值和页面状态 | D32—D44 |
 
 （表中标“已删除”的旧文件在 D45 清除，链接因此改为文字；它们仍在 Capstone G 提交 `7fd4e24` 及之前的 git 历史里。）
 
@@ -30,7 +30,7 @@
 
 ## 3. 模块A：记录、配置与数据库契约
 
-依据：终版第2.3、3、5、10、11、18节。[阈值表](docs/默认越限阈值与回差.md#fault-defaults)、[极值表](docs/默认极值阈值.md#extreme-defaults)。
+依据：终版第2.3、3、5、10、11、18节。[阈值表](默认越限阈值与回差.md#fault-defaults)、[极值表](默认极值阈值.md#extreme-defaults)。
 
 | ID / 优先级 | 小目标、位置、预计行数；依赖 | 细分验收 |
 | --- | --- | --- |

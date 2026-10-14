@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-ENTRY = ["README.md", "HTSG_V1_终版设计_v1.0.md", "HTSG_V1_开发实施方案_v1.0.md", "HTSG_V1_开发执行记录_v0.1.md"]
+ENTRY = ["README.md", "dev-docs/HTSG_V1_终版设计_v1.0.md", "dev-docs/HTSG_V1_开发实施方案_v1.0.md", "dev-docs/HTSG_V1_开发执行记录_v0.1.md"]
 LINK = re.compile(r"(?<!\!)\[[^\]]*\]\(([^)\s]+)\)")
 ANCHOR = re.compile(r'<a\s+(?:id|name)="([^"]+)"')
 

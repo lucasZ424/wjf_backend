@@ -1,14 +1,14 @@
 # HTSG V1 基础后端
 
 <!-- current-contract: 2026-10-08 -->
-现行规定以[终版设计](HTSG_V1_终版设计_v1.0.md)为准；开发的拆分、顺序与验收见[开发实施方案](HTSG_V1_开发实施方案_v1.0.md)，执行事实见[开发执行记录](HTSG_V1_开发执行记录_v0.1.md)。
+现行规定以[终版设计](dev-docs/HTSG_V1_终版设计_v1.0.md)为准；开发的拆分、顺序与验收见[开发实施方案](dev-docs/HTSG_V1_开发实施方案_v1.0.md)，执行事实见[开发执行记录](dev-docs/HTSG_V1_开发执行记录_v0.1.md)。
 <!-- /current-contract -->
 
-完整范围见[现行软件边界](HTSG_V1_软件边界与已知设计方向_v0.2.md)。本期交付的验证数据见[满量测量与容量报告](HTSG_V1_满量测量与容量报告_v0.1.md)，交付清单、订阅参数表与尚未在现场验证的项目见[交付记录](HTSG_V1_交付记录_v0.1.md)。
+有效设计与开发记录见[开发文档索引](dev-docs/README.md)，现行规定以[终版设计](dev-docs/HTSG_V1_终版设计_v1.0.md)为准。本期交付的验证数据见[满量测量与容量报告](dev-docs/HTSG_V1_满量测量与容量报告_v0.1.md)，交付清单、订阅参数表与尚未在现场验证的项目见[交付记录](dev-docs/HTSG_V1_交付记录_v0.1.md)。
 
 ## 是什么
 
-**页面纠偏（2026-10-13，按用户最新指示）：** 目标仍为系统总览、水冷壁应变场、热应力分析、历史查询、系统自检、通信·日志、系统管理·权限七页。此前已移除数字孪生页及其专属接口；2026-10-14 起通信·日志页已实现并验收（执行记录 D44a–D44f），现为七页。本轮按用户授权完成通信页审核处置：采纳审核建议并补充语义限定，回写终版并拟定实施方案；具体选择由助手在授权范围内作出，见[审核处置](HTSG_V1_通信日志页设计审核_v0.1.md#review-disposition)、[终版第15节](HTSG_V1_终版设计_v1.0.md#15-前端页面)及[实施方案状态说明](HTSG_V1_开发实施方案_v1.0.md#page-contract-correction)。当日（10-13）只改文档、未实现通信页、未运行测试。既有错误页面集合的通过记录保留为历史事实；整套**连续**运行仍没有通过记录（分段运行 631 项全过，连续运行会随机挂住，见执行记录 H0、D44f 条目），最终 Capstone H 仍未关闭。
+**页面纠偏（2026-10-13，按用户最新指示）：** 目标仍为系统总览、水冷壁应变场、热应力分析、历史查询、系统自检、通信·日志、系统管理·权限七页。此前已移除数字孪生页及其专属接口；2026-10-14 起通信·日志页已实现并验收（执行记录 D44a–D44f），现为七页。本轮按用户授权完成通信页审核处置：采纳审核建议并补充语义限定，回写终版并拟定实施方案；具体选择由助手在授权范围内作出，见[审核处置](dev-docs/HTSG_V1_通信日志页设计审核_v0.1.md#review-disposition)、[终版第15节](dev-docs/HTSG_V1_终版设计_v1.0.md#15-前端页面)及[实施方案状态说明](dev-docs/HTSG_V1_开发实施方案_v1.0.md#page-contract-correction)。当日（10-13）只改文档、未实现通信页、未运行测试。既有错误页面集合的通过记录保留为历史事实；整套**连续**运行仍没有通过记录（分段运行 631 项全过，连续运行会随机挂住，见执行记录 H0、D44f 条目），最终 Capstone H 仍未关闭。
 
 Windows 单机监测后端和科研前端（七页）。后端主动读取一路 Modbus TCP（8 路 Bridge）和一路 OPC UA 订阅（200 个监控项），在 417 个可查询量（208 路输入、209 路派生量）上运行；浏览器不产生业务数值。热应力是温差—应力的研究代理量，不是实测应力。
 
@@ -52,11 +52,11 @@ py -3.13 -m venv .venv
 
 | 文件 | 用途 |
 | --- | --- |
-| `config/research-sim.json` | 满量研究演示入口：8 路 Bridge＋200 个 OPC UA 点＋209 路派生量，配套独立的现场模拟器，见[模拟现场使用说明](docs/模拟现场使用说明.md)与[通道分配](docs/模拟通道分配.md) |
+| `config/research-sim.json` | 满量研究演示入口：8 路 Bridge＋200 个 OPC UA 点＋209 路派生量，配套独立的现场模拟器，见[模拟现场使用说明](dev-docs/history/模拟现场使用说明.md)与[通道分配](dev-docs/模拟通道分配.md) |
 | `config/development.json` | 最小开发配置：一个 Modbus 源（127.0.0.1:15020）、两个演示点；进程内模拟源已取消 |
 | `config/production.template.json` | 空点表、禁用的真实源；填入现场资料后用 `htsg check --config ...` 校验 |
 
-配置是严格校验的：旧机制的字段（`stale_after`、`aggregation`、`max_age`、`derivative`、`profiles`、捕获窗口类 `limits`、`sources[].timeout`、`simulator` 源）已删除且不再被接受。队列容量在 `limits.ingress`（入口）、`limits.commit_queue`（提交，默认 400 组）、`limits.ws_queue`（每客户端发送，默认 64）。时限与订阅参数在 `timing`，其含义与取值依据见终版设计第 11 节。极值与普通阈值见[默认极值阈值](docs/默认极值阈值.md)、[默认越限阈值与回差](docs/默认越限阈值与回差.md)，热应力模型见[热应力估算模型](docs/热应力估算模型.md)。配置修改后重启生效，系统不提供在线改通道、阈值或配置的入口。
+配置是严格校验的：旧机制的字段（`stale_after`、`aggregation`、`max_age`、`derivative`、`profiles`、捕获窗口类 `limits`、`sources[].timeout`、`simulator` 源）已删除且不再被接受。队列容量在 `limits.ingress`（入口）、`limits.commit_queue`（提交，默认 400 组）、`limits.ws_queue`（每客户端发送，默认 64）。时限与订阅参数在 `timing`，其含义与取值依据见终版设计第 11 节。极值与普通阈值见[默认极值阈值](dev-docs/默认极值阈值.md)、[默认越限阈值与回差](dev-docs/默认越限阈值与回差.md)，热应力模型见[热应力估算模型](dev-docs/热应力估算模型.md)。配置修改后重启生效，系统不提供在线改通道、阈值或配置的入口。
 
 开发简化登录：`dev_admin_login=true` 时可直接输入 `admin:admin`（HTTP 用 `Authorization: Bearer admin:admin`，WebSocket 用同一凭据），只对应现有且有效的 admin 账户；生产模式拒绝启用。
 
@@ -83,7 +83,7 @@ HTTP 传 `Authorization: Bearer <username:token>`，WebSocket 连接后 5 秒内
 
 三个库（正常库、可选的移动库、应急库）都接收完整提交组，不拆组、不丢派生结果。主数据盘达到 95% 后转向移动盘（已启用且绑定校验通过时），移动盘选择跨重启保持、不自动切回；移动盘未启用、不可用或达到 95% 时转应急库；正常目标降到 70% 且写探测成功后退出应急。开发各数据卷保留至少 1 GiB 余量，单批预算 8 MiB，开发写入预算 10 GiB（仅开发阶段），自动清理关闭、满一年不自动删除。
 
-一年容量按满量实测日增长乘 365，另计索引、WAL 与维护峰值并列出磁盘余量，不足不得通过一年留存验收；实测见[满量测量与容量报告](HTSG_V1_满量测量与容量报告_v0.1.md)。运行时 `htsg capacity` 只给情景估算，不是验收。
+一年容量按满量实测日增长乘 365，另计索引、WAL 与维护峰值并列出磁盘余量，不足不得通过一年留存验收；实测见[满量测量与容量报告](dev-docs/HTSG_V1_满量测量与容量报告_v0.1.md)。运行时 `htsg capacity` 只给情景估算，不是验收。
 
 ## 运行管理
 
@@ -103,10 +103,10 @@ git diff --check
 .\.venv\Scripts\python.exe scripts\verify_resilience.py all --out docs/evidence/d47
 ```
 
-测试每个用例新建 `htsg_test_<hex>` 库并在结束时强制删除，浏览器用例用 Playwright 驱动本机 Chrome（`HTSG_EVIDENCE_DIR=docs/evidence/capstone-g` 时保存截图与浏览器日志）。协议用例使用本机临时端口和真实的 Modbus／OPC UA 服务器，不连接实际设备。结果与未验收项记在[开发执行记录](HTSG_V1_开发执行记录_v0.1.md)。
+测试每个用例新建 `htsg_test_<hex>` 库并在结束时强制删除，浏览器用例用 Playwright 驱动本机 Chrome（`HTSG_EVIDENCE_DIR=docs/evidence/capstone-g` 时保存截图与浏览器日志）。协议用例使用本机临时端口和真实的 Modbus／OPC UA 服务器，不连接实际设备。结果与未验收项记在[开发执行记录](dev-docs/HTSG_V1_开发执行记录_v0.1.md)。
 
 离线环境先安装 Python 3.13 x64 并建立 `.venv`，再 `pip install --no-index --find-links D:\HTSG-dev\wheelhouse -r requirements.lock`，最后安装本项目 wheel（`python -m build --wheel --no-isolation --outdir D:\HTSG-dev\wheelhouse`）。
 
 ## 尚未验证
 
-真实的 Acheron 设备与点表、真实 OPC UA 网关实际修订的订阅参数（尤其测点队列被修订为 1、保活晚于协商值一个发布周期的服务器）、独立卷与真实磁盘、一年容量与现场变化速率、现场启动与长稳，都没有在本环境验证；模拟环境的结果不能代替它们，清单见[交付记录](HTSG_V1_交付记录_v0.1.md)。
+真实的 Acheron 设备与点表、真实 OPC UA 网关实际修订的订阅参数（尤其测点队列被修订为 1、保活晚于协商值一个发布周期的服务器）、独立卷与真实磁盘、一年容量与现场变化速率、现场启动与长稳，都没有在本环境验证；模拟环境的结果不能代替它们，清单见[交付记录](dev-docs/HTSG_V1_交付记录_v0.1.md)。
