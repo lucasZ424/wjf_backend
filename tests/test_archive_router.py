@@ -6,10 +6,12 @@ A group split across databases, or retried elsewhere after an unknown commit, wo
 
 from collections import namedtuple
 
+import psycopg
 import pytest
 from owner_support import small_config
 from test_archive_write import CONFIG, RUN, make_group
 
+from htsg import archive_router
 from htsg.archive import WriteOutcome
 from htsg.archive_router import ArchiveRouter
 
@@ -133,3 +135,70 @@ def test_a_commit_that_really_did_not_happen_stays_unknown_and_is_retried_on_the
     second = rig.router.write_group(make_group(config_id=rig.cfg.config_id))  # what the writer does: same group, same target
     assert second.status == "COMMITTED" and second.target == "primary"
     assert rows(rig.primary) == 3 and rig.router.verify("run1/g1") == "primary"
+
+
+def lose_the_reply(rig):
+    """The primary takes the group but its answer is lost, and the check by id cannot be made either (the database is away
+    for that moment): the commit stays unknown.  Returns the real write, for `answer_again`."""
+    real = rig.primary.write_group
+
+    def write(group):
+        real(group)  # it really became durable ...
+        return WriteOutcome("UNKNOWN", "OperationalError")  # ... but nobody was told
+
+    def away(group_id):
+        raise psycopg.OperationalError("the database is away")
+
+    rig.primary.write_group, rig.primary.group_committed = write, away
+    return real
+
+
+def answer_again(rig, real):
+    rig.primary.write_group = real
+    del rig.primary.group_committed  # the class's own method again: the database answers
+
+
+def test_a_group_of_unknown_commit_goes_back_to_its_own_database_even_when_the_disks_now_point_elsewhere(rig):
+    """终版 §5 C3, "retried against the same target": the retry used to route again.  The first attempt became durable in the
+    primary and nobody could tell; before the retry the primary volume filled up, and a NEW group would now go to the
+    emergency database - this one must not, or the same group is stored twice."""
+    group = make_group(config_id=rig.cfg.config_id)
+    real = lose_the_reply(rig)
+    first = rig.router.write_group(group)
+    assert (first.status, first.target) == ("UNKNOWN", "primary") and rig.router.pinned == {group.group_id: "primary"}
+    rig.disks.used["D:/a"] = 0.96  # the route would now say: emergency
+    answer_again(rig, real)
+    second = rig.router.write_group(group)  # what the writer does: the same group again
+    assert (second.status, second.target) == ("ALREADY", "primary")
+    assert rows(rig.primary, "commit_group") == 1 and rows(rig.emergency, "commit_group") == 0, "one copy, in the first database"
+    assert rig.router.pinned == {} and rig.router.mode == "PRIMARY", "released with the confirmation; the route was not touched"
+    later = rig.router.write_group(make_group(order=2, config_id=rig.cfg.config_id))
+    assert (later.target, rig.router.mode) == ("emergency", "EMERGENCY"), "other groups follow the disks as before"
+
+
+def test_a_group_of_unknown_commit_is_not_sent_elsewhere_while_its_database_keeps_failing_to_say(rig):
+    group = make_group(config_id=rig.cfg.config_id)
+    real = lose_the_reply(rig)
+    assert rig.router.write_group(group).status == "UNKNOWN"
+    rig.disks.used["D:/a"] = 0.96
+    for _ in range(3):  # still away: every attempt is unknown again, none of them goes anywhere else
+        again = rig.router.write_group(group)
+        assert (again.status, again.target) == ("UNKNOWN", "primary")
+    assert rows(rig.emergency, "commit_group") == 0 and rig.router.pinned == {group.group_id: "primary"}
+    answer_again(rig, real)
+    assert rig.router.write_group(group).status == "ALREADY" and rig.router.pinned == {}
+
+
+def test_only_a_group_of_unknown_commit_is_remembered(rig):
+    assert rig.router.write_group(make_group(config_id=rig.cfg.config_id)).durable and rig.router.pinned == {}
+    rig.primary.write_group = lambda group: WriteOutcome("FAILED", "OperationalError")  # certain: rolled back, nothing is there
+    failed = rig.router.write_group(make_group(order=2, config_id=rig.cfg.config_id))
+    assert failed.status == "FAILED" and rig.router.pinned == {}, "a failure that is certain needs no memory"
+
+
+def test_the_memory_of_groups_of_unknown_commit_is_bounded_and_forgets_the_oldest_first(rig, monkeypatch):
+    monkeypatch.setattr(archive_router, "PINNED_LIMIT", 2)
+    lose_the_reply(rig)
+    for order in (1, 2, 3):
+        assert rig.router.write_group(make_group(order=order, config_id=rig.cfg.config_id)).status == "UNKNOWN"
+    assert list(rig.router.pinned) == ["run1/g2", "run1/g3"]

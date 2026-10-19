@@ -206,19 +206,20 @@ async def test_a_slow_device_costs_one_timeout_of_0_8s_and_is_not_retried_inside
 
 
 async def test_one_timeout_keeps_the_connection_three_in_a_row_reconnect(server):
+    """Timeouts are made by withholding requests exactly - one, then three - and not by delaying every answer for a while: a
+    late answer is tagged by the pymodbus server with the id of the NEWEST request and could pass as the answer to one nobody
+    answered, so the number of timeouts depended on the moment the test happened to switch the delay off again."""
     async with Bench(server, FAST) as bench:
         await bench.until(lambda: bench.acquirer.outcomes[-3:] == ["OK"] * 3)
-        server.delay = 0.6
+        server.withhold = 1
         await bench.until(lambda: "TIMEOUT" in bench.acquirer.outcomes)
-        server.delay = 0
         await bench.until(lambda: bench.acquirer.outcomes[-2:] == ["OK", "OK"])
         assert bench.acquirer.gen == 1 and not bench.events[1:], "a single timeout keeps the live connection"
-        server.delay = 0.6
+        server.withhold = 3
         await bench.until(lambda: bench.acquirer.gen == 2)
-        server.delay = 0
         await bench.until(lambda: bench.acquirer.outcomes[-2:] == ["OK", "OK"])
     assert ("source_down", 1, "TIMEOUTS") in bench.events
-    assert bench.acquirer.outcomes.count("TIMEOUT") >= 4
+    assert bench.acquirer.outcomes.count("TIMEOUT") == 4, "one, then three in a row - exactly the ones that were withheld"
 
 
 async def test_device_exceptions_and_extreme_values_are_not_a_network_disconnect(server):

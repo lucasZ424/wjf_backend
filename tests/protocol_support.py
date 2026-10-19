@@ -28,14 +28,20 @@ class FieldModbus:
         self.port = port or free_port()
         self.values = list(values or [0.5 + 0.01 * i for i in range(8)])
         self.delay = 0.0  # seconds every request is held (injects timeouts)
+        self.withhold = 0  # the next this-many requests are never answered - not even late - until the server is stopped
         self.exception = False  # answer with a Modbus exception instead of data
         self.requests = []  # (start_address, count) of every request seen
+        self.release = asyncio.Event()
         self.server = None
 
     async def action(self, function_code, start_address, address, count, registers, set_values):
         from pymodbus.constants import ExcCodes
 
         self.requests.append((address, count))
+        if self.withhold:
+            self.withhold -= 1
+            await self.release.wait()  # a late answer would be tagged with the id of the NEWEST request: it is never given
+            return ExcCodes.DEVICE_FAILURE  # only after the server is stopped; nobody is waiting for it then
         if self.delay:
             await asyncio.sleep(self.delay)
         if self.exception:
@@ -50,6 +56,7 @@ class FieldModbus:
         from pymodbus.server import ModbusTcpServer
         from pymodbus.simulator import DataType, SimData, SimDevice
 
+        self.release = asyncio.Event()
         device = SimDevice(
             1, simdata=SimData(0, values=[0] * 16, datatype=DataType.REGISTERS), action=self.action
         )
@@ -57,6 +64,76 @@ class FieldModbus:
         await self.server.serve_forever(background=True)
 
     async def stop(self):
+        self.release.set()
+        if self.server:
+            await self.server.shutdown()
+            self.server = None
+
+    def source(self, **kw):
+        return Source(id="mb", kind="modbus", enabled=True, host="127.0.0.1", port=self.port, interval=1, **kw)
+
+
+def device_points(devices=(1, 2)):
+    """Two float32 inputs per device: one read request per device, so a round has as many requests as devices."""
+    return [
+        Point(id=f"d{d}_{name}", source="mb", unit="mV/V", address=2 * i, device_id=d, data_type="float32",
+              extreme_low=-30, extreme_high=30)
+        for d in devices
+        for i, name in enumerate("ab")
+    ]  # fmt: skip
+
+
+class FieldModbusDevices:
+    """Several slaves on ONE real pymodbus TCP server, each holding eight float32 values at registers 0-15.
+
+    Each slave is set (`mode[device]`, changeable at any time) to answer normally (OK), to never answer (SILENT: the
+    request is held until `release`) or to answer with a protocol exception (EXCEPTION).  A silent slave never answers
+    at all: the pymodbus server tags a late answer with the transaction id of the NEWEST request, so one that came
+    late could pass as the answer to a request that has not been answered."""
+
+    OK, SILENT, EXCEPTION = "OK", "SILENT", "EXCEPTION"
+
+    def __init__(self, devices=(1, 2), port=None):
+        self.port = port or free_port()
+        self.mode = dict.fromkeys(devices, self.OK)
+        self.values = {d: [0.5 + 0.01 * i + d for i in range(8)] for d in devices}
+        self.requests = []  # (device_id, address, count) of every request seen
+        self.release = asyncio.Event()
+        self.server = None
+
+    def _action_of(self, device):
+        async def action(function_code, start_address, address, count, registers, set_values):
+            from pymodbus.constants import ExcCodes
+
+            self.requests.append((device, address, count))
+            mode = self.mode[device]
+            if mode == self.SILENT:
+                await self.release.wait()
+                return ExcCodes.DEVICE_FAILURE  # only after the server is stopped; nobody is waiting for it then
+            if mode == self.EXCEPTION:
+                return ExcCodes.DEVICE_FAILURE
+            words = []
+            for v in self.values[device]:
+                words += list(struct.unpack(">HH", struct.pack(">f", v)))
+            registers[: len(words)] = words  # the block is addressed absolutely
+            return None
+
+        return action
+
+    async def start(self):
+        from pymodbus.server import ModbusTcpServer
+        from pymodbus.simulator import DataType, SimData, SimDevice
+
+        self.release = asyncio.Event()
+        devices = [
+            SimDevice(d, simdata=SimData(0, values=[0] * 16, datatype=DataType.REGISTERS), action=self._action_of(d))
+            for d in self.mode
+        ]
+        self.server = ModbusTcpServer(devices, address=("127.0.0.1", self.port))
+        await self.server.serve_forever(background=True)
+
+    async def stop(self):
+        self.release.set()
         if self.server:
             await self.server.shutdown()
             self.server = None
@@ -85,9 +162,10 @@ def timing(**over):
 class FieldUa:
     """A real asyncua server with writable values and quality (no mocks of the client path)."""
 
-    def __init__(self, names, port=None):
+    def __init__(self, names, port=None, *, keepalive_adapter=True):
         self.port = port or free_port()
         self.names = list(names)
+        self.keepalive_adapter = keepalive_adapter
         self.nodes = {}
         self.server = None
 
@@ -98,8 +176,12 @@ class FieldUa:
     async def start(self):
         from asyncua import Server, ua
 
+        from htsg.sim_ua import install_keepalive_adapter
+
         self.server = Server()
         await self.server.init()
+        if self.keepalive_adapter:
+            install_keepalive_adapter(self.server)
         self.server.set_endpoint(self.endpoint)
         self.server.set_security_policy([ua.SecurityPolicyType.NoSecurity])
         index = await self.server.register_namespace("urn:htsg:test")

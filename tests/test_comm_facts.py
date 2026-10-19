@@ -201,6 +201,45 @@ def test_a_request_detail_is_cleaned_before_it_is_logged():
     assert "s3cret" not in entry.detail and "hunter2" not in entry.detail and "no answer from" in entry.detail
 
 
+@pytest.mark.parametrize("outcome", ["TIMEOUT", "CONNECTION"])
+def test_rounds_nobody_answered_do_not_make_a_new_source_valid_the_first_answer_does(outcome):
+    """终版 §11: a source is valid when a device ANSWERED.  A first round that got no answer said nothing about the device, so
+    the source stays WAITING - no first communication is logged and the views say "waiting for the first data", not
+    "valid but without a value" - until a round is answered.  (An answer is valid communication whether it is data or a
+    protocol exception: the next test.)"""
+    b = Bench("modbus")
+    b.generation(1, 101.0)
+    for tick, mono in ((1, 102.0), (2, 103.0)):
+        wall, mono = at(mono)
+        requests = (r.RequestResult(A, "TIMEOUT"),) if outcome == "TIMEOUT" else ()
+        assert b.owner.accept(
+            r.InputBatch("mb", 1, r.KIND_MODBUS_POLL, wall, mono, (), tick=tick, poll_id=f"p{tick}", outcome=outcome, requests=requests)
+        )  # fmt: skip
+        assert b.s.state == "WAITING" and b.s.last_comm_mono is None and "FIRST_COMM" not in events(b.owner)
+    assert b.owner.channel_views()["b1"]["reason"] == "SOURCE_WAITING"
+    mb_round(b, 3, 104.0, r.RequestResult(A, "OK"), r.RequestResult(B, "OK"))
+    assert b.s.state == "VALID" and events(b.owner).count("FIRST_COMM") == 1 and b.s.last_comm_mono == 104.0
+    assert b.owner.channel_views()["b1"]["valid"] is True
+
+
+def test_a_first_round_answered_with_a_protocol_exception_makes_the_source_valid():
+    """An answering device is alive: an exception is valid communication, though not a successful round (终版 §11)."""
+    b = Bench("modbus")
+    b.generation(1, 101.0)
+    mb_round(b, 1, 102.0, r.RequestResult(A, "EXCEPTION", 2))
+    assert b.s.state == "VALID" and events(b.owner).count("FIRST_COMM") == 1 and b.s.last_comm_mono == 102.0
+
+
+def test_a_valid_source_stays_valid_through_a_round_nobody_answered():
+    """The other half of the rule: what was valid once is not made waiting again by one lost round (the third in a row
+    ends the connection, and only the new generation waits again)."""
+    b = Bench("modbus")
+    b.generation(1, 101.0)
+    mb_round(b, 1, 102.0, r.RequestResult(A, "OK"))
+    mb_round(b, 2, 103.0, r.RequestResult(A, "TIMEOUT"))
+    assert b.s.state == "VALID" and b.s.last_comm_mono == 102.0, "the failed round is no communication"
+
+
 # ================================================================ Modbus acquirer (scripted client, stepped)
 
 

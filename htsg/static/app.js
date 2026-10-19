@@ -723,7 +723,7 @@ function commLog(log) {
   return {meta: `<p>${meta.join(" · ")}${incomplete}</p>`, body};
 }
 function commEntry(e) {
-  const detail = [e.scope ? `请求 ${esc(e.scope)}` : "", e.detail ? esc(e.detail) + (e.detail_truncated ? "（已截断）" : "") : ""].filter(Boolean);
+  const detail = [e.scope ? `请求 ${esc(e.scope)}` : "", e.detail ? esc(e.detail) + (e.detail_truncated ? "（已截断）" : "") : e.detail_truncated ? "详情已省略（过长）" : ""].filter(Boolean);
   const when = e.state === "ACTIVE" ? badge("进行中")
     : e.state === "ENDED" ? `${badge("已结束")} ${stampAt(e.ended_time)} · ${esc(commEnd(e.end_reason))}` : "—";
   const last = e.last_comm_time == null ? "此前从未有过有效通信"

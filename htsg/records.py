@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 
 GOOD, BAD, UNCERTAIN = "GOOD", "BAD", "UNCERTAIN"
+MISSING = "MISSING_"  # quality prefix of a failure record: an input a failed Modbus round took away (no value, §5, §14)
 ORIGIN_RECEIVED = "RECEIVED"
 ORIGIN_ASSERTION = "STATE_ASSERTION"
 KIND_MODBUS_POLL = "MODBUS_POLL"
@@ -74,7 +75,8 @@ class RequestResult:
     scope: str  # which request: register kind, device and address range
     outcome: str  # OK | TIMEOUT | EXCEPTION
     code: int | None = None  # the protocol exception code of an EXCEPTION answer
-    detail: str | None = None  # the library's text, if it gave one; the entry point cleans it
+    detail: str | None = None  # the library's text, if it gave one, cleaned and bounded where the result is made
+    truncated: bool = False  # the text was cut - or, as None, left out altogether for its length
 
 
 @dataclass(frozen=True, slots=True)

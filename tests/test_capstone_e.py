@@ -152,7 +152,9 @@ async def test_constant_outage_multiversion_two_sided_and_archive_stop_end_in_a_
             await sc.second(float(t))
         # settle everything so far, then stop the writer's database
         deadline = time.monotonic() + 10
-        while sc.queue.depth and time.monotonic() < deadline:
+        while time.monotonic() < deadline and (
+            sc.queue.depth or set(sc.stored_faults()) != set(sc.confirmed)
+        ):
             await asyncio.sleep(0.01)
         durable = set(sc.stored_faults())
         assert durable == set(sc.confirmed) and len(durable) >= 7, (len(durable), len(sc.confirmed))
@@ -207,6 +209,8 @@ def test_a_recovery_unit_with_1000_faults_and_the_full_baseline_stays_inside_the
         owner.begin_generation(source, 1, WALL0, MONO0)
     items = tuple(r.Item(n, 440.0 if n.startswith("temp_outer") else 480.0 if n.startswith("temp_inner") else PROCESS[n]) for n in UA_NAMES)
     owner.accept(r.InputBatch("ua_field", 1, r.KIND_UA_NOTIFY, 1001.0, 101.0, items, publish_seq=1))
+    for accepted in sink:  # the writer has confirmed what it took (R03b: nothing older of the source is on its way)
+        owner.committed(accepted)
     fault = r.FaultRecord(
         "x", "big", "ua_field", 1, 1, "delta_t_01", "HIGH", 1.0, 1.0, "RESULT", "big/ua_field/b1/r/delta_t_01", 1.0, 57.0,
         cfg.config_id, {"low": -55.0, "high": 55.0, "hysteresis_low": 4.0, "hysteresis_high": 4.0},

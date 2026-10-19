@@ -20,7 +20,7 @@ from .extremes import is_extreme
 from .fault_tracker import FaultTracker
 
 # Source data states.  Only VALID sources contribute usable values.
-#   WAITING  new connection / subscription generation, nothing received yet
+#   WAITING  new connection / subscription generation, nothing received yet (a Modbus round nobody answered is not "received")
 #   VALID    data usable
 #   EXPIRED  OPC UA quiet for the data validity (3 s): data unusable, same generation may recover
 #   RESYNC   definite loss or long silence: a new generation must be built (C1), no Republish
@@ -65,10 +65,21 @@ class SourceState:
     lost_since_wall: float | None = None
     lost_reason: str | None = None
     lost_from_batch_seq: int | None = None
-    lost_seg: int | None = None  # the segment the archive holds open when the loss began; attempts burn numbers
     void_after_order: int | None = None  # groups queued after the first lost one are void until recovery
-    recovery_order: int | None = None
+    recovery_order: int | None = None  # the recovery unit on its way (at most one): until it is confirmed or turned away
+    overflow: tuple | None = None  # (wall, batch_seq, reason, order): lost again while that unit was on its way
     pending: list = field(default_factory=list)  # groups held, bounded, while RECOVERING
+    # what the ARCHIVE holds (R03b): a segment is open there from the confirmation of its SEG_START to the confirmation of its
+    # SEG_END; `closing` keeps the end of every segment left and not yet confirmed: seg -> (reason, end_wall)
+    durable: set = field(default_factory=set)
+    closing: dict = field(default_factory=dict)
+    opening: dict = field(default_factory=dict)  # seg -> order of a SEG_START group that may still become durable
+    inflight: set = field(default_factory=set)  # orders of this source's groups the queue accepted and has not settled
+    shutdown_group: object | None = None  # stable terminal GAP + SEG_END group retried while the writer has no room
+    shutdown_offered: bool = False
+    shutdown_done: bool = False
+    shutdown_failed: bool = False
+    owed_jumps: list = field(default_factory=list)  # CLOCK_JUMP markers seen while LOST (no group could carry them): the next unit or final group does
     watermark_mono: float | None = None
     watermark_wall: float = 0.0
 
@@ -97,6 +108,7 @@ def _sink_none(_):
 
 RUN_SOURCE = "_run"  # carrier "source" of run-level groups (start / end)
 PENDING_LIMIT = 256  # groups held per source while a recovery group is not yet confirmed
+OWED_JUMPS_LIMIT = 16  # clock-jump markers kept per source while its archive is lost: the newest ones
 
 
 class Owner:
@@ -110,6 +122,11 @@ class Owner:
         self.run_events = 0
         self.last_tick_wall, self.last_tick_mono = wall, mono
         self.stopped = False
+        self.shutdown_wall: float | None = None
+        self.shutdown_mono: float | None = None
+        self.run_end_group: rec.CommitGroup | None = None
+        self.run_end_offered = False
+        self.run_end_status: str | None = None  # COMMITTED | REFUSED
         self.on_rebuild = None  # called (source_id, reason) when a new generation must be built
         self.started_wall, self.started_mono = wall, mono
         self.topology = Topology(config)
@@ -179,6 +196,12 @@ class Owner:
 
     def _build(self, kind, source_id, wall, observations=(), results=(), states=(), faults=()):
         self.order += 1
+        states = tuple(states)
+        for st in states:
+            if st.kind == "SEG_START" and st.source_id in self.sources:
+                self.sources[st.source_id].opening[st.seg] = self.order
+            if st.kind == "SEG_END" and st.source_id in self.sources:  # owed to the archive until a commit confirms it
+                self.sources[st.source_id].closing[st.seg] = (st.detail.get("reason"), st.detail.get("end_wall", st.at_wall))
         return rec.CommitGroup(
             rec.group_id(self.run_id, self.order),
             self.order,
@@ -218,29 +241,60 @@ class Owner:
 
     # ------------------------------------------------------------- archive state (C2)
 
+    @staticmethod
+    def _prune_closing(s: SourceState):
+        possible = s.durable | set(s.opening)
+        s.closing = {seg: end for seg, end in s.closing.items() if seg in possible}
+
+    @classmethod
+    def _settle_opening(cls, s: SourceState, group: rec.CommitGroup):
+        for seg, order in list(s.opening.items()):
+            if order == group.order:
+                del s.opening[seg]
+        cls._prune_closing(s)
+
+    def _discard_groups(self, s: SourceState, groups):
+        for group in groups:
+            self._settle_opening(s, group)
+
     def _submit(self, s: SourceState, group: rec.CommitGroup):
         if s.archive == "OK":
+            s.inflight.add(group.order)
             if self.commit(group) is False:  # None (a plain sink) means accepted
+                s.inflight.discard(group.order)
                 self._archive_lost(s, group, "QUEUE_FULL")
         elif s.archive == "LOST":
             self.health["archive_lost_groups"] += 1  # nothing is queued across a gap
+            self._settle_opening(s, group)
         elif len(s.pending) < self.pending_limit:  # RECOVERING: bounded wait for the recovery group
             s.pending.append(group)
         else:
+            self._discard_groups(s, s.pending)
             s.pending.clear()
             self.health["pending_overflows"] += 1
             self._archive_lost(s, group, "PENDING_OVERFLOW")  # re-take the baseline, never grow without limit
 
     def _archive_lost(self, s: SourceState, group: rec.CommitGroup, reason: str):
         """Archive loss for this source: a gap starts; recovery takes a fresh baseline at a batch boundary."""
+        self._settle_opening(s, group)  # this group was refused or never entered the writer: its starts cannot land
         self.health["archive_lost_groups"] += 1
+        if s.archive == "LOST" and s.recovery_order is None:
+            # lost already, and a group that was queued before the loss was noticed is turned away only now: the loss began
+            # no later than that group (a unit on its way would be too late; none is built while such groups are about)
+            s.lost_since_wall = min(s.lost_since_wall, group.built_wall)
+            if group.order < s.void_after_order:
+                s.void_after_order = group.order
         if s.archive != "LOST":
-            s.archive, s.lost_reason = "LOST", reason
-            s.lost_seg = s.seg if s.open_segment else None
-            s.lost_since_wall = min(s.lost_since_wall or group.built_wall, group.built_wall)
-            s.lost_from_batch_seq = s.batch_seq
+            if s.archive == "RECOVERING":  # lost again while the unit is on its way: it is still tracked, the loss before it stands
+                s.overflow = (group.built_wall, s.batch_seq, reason, group.order)
+                s.archive = "LOST"
+            else:
+                s.archive, s.lost_reason = "LOST", reason
+                s.lost_since_wall = min(s.lost_since_wall or group.built_wall, group.built_wall)
+                s.lost_from_batch_seq = s.batch_seq
             if s.void_after_order is None or group.order < s.void_after_order:
                 s.void_after_order = group.order
+            self._discard_groups(s, s.pending)
             s.pending.clear()
             for rule in self.topology.rules:  # change chains must not span the gap
                 if self.result_source[rule.id] == s.id:
@@ -262,13 +316,38 @@ class Owner:
             if st.kind == "WATERMARK":
                 covered = st.detail["covered_wall"]
                 self.confirmed_watermark[st.source_id] = max(self.confirmed_watermark.get(st.source_id, 0.0), covered)
-        if s is not None and s.archive == "RECOVERING" and group.order == s.recovery_order:
-            s.archive, s.recovery_order, s.lost_since_wall, s.lost_reason = "OK", None, None, None
-            s.void_after_order, s.lost_from_batch_seq, s.lost_seg = None, None, None
+        if s is None:
+            if self.run_end_group is not None and group.group_id == self.run_end_group.group_id:
+                self.run_end_status = "COMMITTED"
+            return
+        s.inflight.discard(group.order)
+        if s.owed_jumps:  # the markers this group carried are stored now
+            carried = {st.id for st in group.states if st.kind == "CLOCK_JUMP"}
+            s.owed_jumps = [marker for marker in s.owed_jumps if marker.id not in carried]
+        for st in group.states:  # the archive's own open segments follow what is CONFIRMED, nothing else
+            if st.kind == "SEG_START":
+                s.durable.add(st.seg)
+            elif st.kind == "SEG_END":
+                s.durable.discard(st.seg)
+                s.closing.pop(st.seg, None)
+        self._settle_opening(s, group)
+        if s.shutdown_group is not None and group.group_id == s.shutdown_group.group_id:
+            s.recovery_order = None
+            s.shutdown_group, s.shutdown_offered, s.shutdown_done = None, False, True
+            s.archive = "OK"
+            return
+        if group.order == s.recovery_order:  # the unit on its way is settled
+            again, s.recovery_order, s.overflow = s.overflow, None, None
             self.health["archive_recoveries"] += 1
             held, s.pending = s.pending, []
-            for later in held:  # groups that waited behind the recovery group, in order
-                self._submit(s, later)
+            s.closing = {seg: end for seg, end in s.closing.items() if seg in s.durable}  # ends of segments never stored
+            if again is None:
+                s.archive, s.lost_since_wall, s.lost_reason = "OK", None, None
+                s.void_after_order, s.lost_from_batch_seq = None, None
+                for later in held:  # groups that waited behind the recovery group, in order
+                    self._submit(s, later)
+            else:  # lost again after it: still lost, and the next gap starts where that happened
+                s.lost_since_wall, s.lost_from_batch_seq, s.lost_reason, s.void_after_order = again
 
     def history_status(self, source_id: str) -> dict:
         """What may be claimed about stored history: only up to the CONFIRMED watermark, and only if no gap
@@ -286,26 +365,41 @@ class Owner:
         """A policy refused the whole group (budget, reserve, capacity): it becomes, or extends, a gap."""
         s = self.sources.get(group.source_id)
         if s is None:
+            if self.run_end_group is not None and group.group_id == self.run_end_group.group_id:
+                self.run_end_status = "REFUSED"
             return
-        if s.archive == "RECOVERING" and group.order == s.recovery_order:
-            s.archive, s.recovery_order = "LOST", None  # recovery unit refused: stays unrecovered
+        s.inflight.discard(group.order)
+        self._settle_opening(s, group)
+        if s.shutdown_group is not None and group.group_id == s.shutdown_group.group_id:
+            s.recovery_order = None
+            s.shutdown_group, s.shutdown_offered, s.shutdown_failed = None, False, True
+            return
+        if group.order == s.recovery_order:
+            # the unit on its way was turned away: nothing it carried is stored, and the loss it was built for - from its
+            # first moment, the overflow after it included - is still unrecovered
+            s.archive, s.recovery_order, s.overflow = "LOST", None, None
+            self._discard_groups(s, s.pending)
             s.pending.clear()
         else:
             self._archive_lost(s, group, "REFUSED:" + reason)
 
     def _try_archive_recovery(self, s: SourceState, wall: float, mono: float):
         """At a batch boundary: gap + new segment + retained baseline + first watermark as ONE unit (§5)."""
-        if s.archive != "LOST" or s.state in (RESYNC, EXPIRED):
-            return  # an unsynchronised intake must be fixed by C1 first; the stale cache is no baseline
-        states = [self._gap_state(s, wall, mono)]
-        group = self._segment_group(s, "ARCHIVE_GAP", wall, mono, lead=states, close_old_at=s.lost_since_wall)
+        if s.archive != "LOST" or s.recovery_order is not None or s.inflight or s.state in (RESYNC, EXPIRED):
+            return  # a unit on its way, or groups still on theirs, hold this up; an unsynchronised intake must be fixed by C1 first
+        states = [self._gap_state(s, wall, mono), *s.owed_jumps]
+        group = self._segment_group(s, "ARCHIVE_GAP", wall, mono, lead=states, unit=True)
         self._submit_recovery(s, group)  # archive-only: realtime clients saw these values long ago
 
     def _submit_recovery(self, s: SourceState, group: rec.CommitGroup):
+        self._discard_groups(s, s.pending)
         s.pending.clear()
         s.recovery_order = group.order
+        s.inflight.add(group.order)
         if self.commit(group) is False:
             s.recovery_order = None  # no room yet: stay LOST, try again at the next tick
+            s.inflight.discard(group.order)
+            self._settle_opening(s, group)
             return
         s.archive = "RECOVERING"
 
@@ -313,18 +407,22 @@ class Owner:
         """A group queued behind a lost one must not commit: it would hide the gap and a watermark
         above it would certify history that is missing.  Only the recovery group may pass."""
         s = self.sources.get(group.source_id)
-        return bool(
+        void = bool(
             s is not None
             and s.archive != "OK"
             and s.void_after_order is not None
             and group.order > s.void_after_order
             and group.order != s.recovery_order
         )
+        if void:
+            s.inflight.discard(group.order)  # the queue drops it without a word: it is settled
+            self._settle_opening(s, group)
+        return void
 
     def _gap_state(self, s: SourceState, wall: float, mono: float) -> rec.StateRecord:
         return self._state(
-            s, "GAP", wall, mono, start_wall=s.lost_since_wall, end_wall=wall, reason=s.lost_reason
-        )
+            s, "GAP", wall, mono, start_wall=s.lost_since_wall, end_wall=max(wall, s.lost_since_wall), reason=s.lost_reason
+        )  # a clock stepped back since the loss began must not give a gap that ends before it started
 
     def _watermark_state(self, s: SourceState, wall: float, mono: float):
         """History is certain only as far as communication was proven; never 'now' (§5)."""
@@ -332,18 +430,40 @@ class Owner:
             return None
         return self._state(s, "WATERMARK", wall, mono, seg=s.seg, covered_wall=min(s.last_comm_wall, wall))
 
+    def _durable_ends(self, s: SourceState, reason: str, wall: float, mono: float) -> list[rec.StateRecord]:
+        """SEG_END for every segment the ARCHIVE holds open - not a guess from the segment the owner is in - each at the
+        earlier of the end it was left at and the start of the gap.  A segment left before the gap began keeps the reason
+        it was left with; one the gap cut off says `reason`.  (A cut made for a CLOCK_JUMP always counts as made before: the
+        wall clock has stepped, so two wall times do not say which came first.)  The recovery unit and the final group of a
+        stop both close segments with this, so a segment ends the same way whichever of them does it.  A segment that was
+        never stored gets no end, so that no end is stored without its start."""
+        ends = []
+        for seg in sorted(s.durable):
+            left_reason, left_end = s.closing.get(seg, (None, None))
+            left = left_end is not None and (left_end <= s.lost_since_wall or left_reason == "CLOCK_JUMP")
+            ended = self._state(
+                s, "SEG_END", wall, mono,
+                reason=(left_reason or reason) if left else reason,
+                end_wall=left_end if left else s.lost_since_wall,
+            )  # fmt: skip
+            ends.append(replace(ended, seg=seg))
+        return ends
+
     def _segment_group(
-        self, s: SourceState, reason: str, wall: float, mono: float, *, lead=(), close_old_at=None, batch=None
+        self, s: SourceState, reason: str, wall: float, mono: float, *, lead=(), close_old_at=None, batch=None, unit=False
     ) -> rec.CommitGroup:
         """Cut the valid interval and start a new segment: [lead] + SEG_END + SEG_START + retained baseline
-        (+ the recovery batch and its results) + the first watermark, as one unit."""
+        (+ the recovery batch and its results) + the first watermark, as one unit.
+
+        A recovery `unit` (the archive was lost) closes the segments the ARCHIVE holds open - not a guess from the
+        segment the owner is in - each at the earlier of the end it was left at and the start of the gap; a segment
+        that was never stored gets no end, so that no end is stored without its start."""
         states = list(lead)
-        if s.open_segment:
+        if unit:
+            states.extend(self._durable_ends(s, reason, wall, mono))
+        elif s.open_segment:
             end = wall if close_old_at is None else close_old_at
-            ended = self._state(s, "SEG_END", wall, mono, reason=reason, end_wall=end)
-            if s.lost_seg is not None:  # recovery attempts that were turned away consumed numbers, not segments
-                ended = replace(ended, seg=s.lost_seg)
-            states.append(ended)
+            states.append(self._state(s, "SEG_END", wall, mono, reason=reason, end_wall=end))
         s.seg, s.open_segment = s.seg + 1, True
         states.append(self._state(s, "SEG_START", wall, mono, conn_gen=s.conn_gen, reason=reason))
         base_obs, base_results = self._baseline(s, wall, mono)
@@ -734,25 +854,55 @@ class Owner:
         if batch.outcome in ("OK", "EXCEPTION"):
             states = self._comm(s, batch.wall, batch.mono)
         else:
-            states, s.stable_since = [], None  # a round without an answer ends the stable spell, the state stays VALID
+            states, s.stable_since = [], None  # a round without an answer ends the stable spell; VALID stays VALID, WAITING stays WAITING
         self._log_requests(s, batch)
         s.batch_seq += 1
-        if s.state == WAITING:
+        if s.state == WAITING and batch.outcome in ("OK", "EXCEPTION"):  # only a device that ANSWERED makes the source valid
             s.state = VALID
+        valid = [pid for pid in s.point_ids if self.points[pid].good]  # valid before this round: only these can lose it
         if batch.outcome != "OK":
-            return self._poll_failed(s, batch, states)
+            return self._poll_failed(s, batch, states, valid)
         for pid in s.point_ids:  # only this round's responses count; nothing is borrowed
             ps = self.points[pid]
             ps.good, ps.reason = False, "POLL_MISSING"
         s.last_tick = batch.tick
-        observations, _ = self._ingest(s, batch)
+        observations, touched = self._ingest(s, batch)
+        lost = self._missing(s, batch, [pid for pid in valid if pid not in touched], "UNANSWERED", len(observations))
         for pid in self.tracked_by_source.get(s.id, ()):
             if pid in self.points and not self.points[pid].good:
                 self.tracker.observe(pid, None, batch.mono)
         results = self._recompute(s, batch, list(s.point_ids))
         poll = self._state(s, "POLL", batch.wall, batch.mono, **self._poll_detail(s, batch, observations))
-        self._emit(rec.GROUP_BATCH, s, batch.wall, observations, results, [*states, poll])
+        self._emit(rec.GROUP_BATCH, s, batch.wall, [*observations, *lost], results, [*states, poll])
         return True
+
+    def _missing(self, s: SourceState, batch, pids, cause: str, first_seq: int) -> list[rec.Observation]:
+        """Inputs that were valid and are not any more because of this round: ONE record each, without a value, its
+        quality naming the cause - so that history ends the earlier value here instead of holding it on through the
+        failure (§5, §14).  The record is the input's current observation from now on; `reason` stays the poll's
+        (POLL_*), which is what the live view and the communication page show."""
+        records = []
+        for k, pid in enumerate(pids):
+            obs = rec.Observation(
+                id=rec.observation_id(self.run_id, s.id, s.batch_seq, first_seq + k),
+                run_id=self.run_id,
+                source_id=s.id,
+                conn_gen=s.conn_gen,
+                seg=s.seg,
+                batch_seq=s.batch_seq,
+                item_seq=first_seq + k,
+                point_id=pid,
+                value=None,
+                quality=rec.MISSING + cause,
+                status_code=None,
+                received_wall=batch.wall,
+                received_mono=batch.mono,
+                tick=batch.tick,
+                poll_id=batch.poll_id,
+            )
+            self.points[pid].obs = obs
+            records.append(obs)
+        return records
 
     def _log_requests(self, s: SourceState, batch):
         """Failures are kept per request: a request that answered ends only ITS earlier failure, never another's."""
@@ -764,7 +914,7 @@ class Owner:
             text, truncated = clean_detail(q.detail)
             self.commlog.round_failed(
                 s.id, s.conn_gen, event, reason, batch.wall, batch.mono,
-                scope=q.scope, detail=text, truncated=truncated, comm=self._comm_of(s),
+                scope=q.scope, detail=text, truncated=q.truncated or truncated, comm=self._comm_of(s),
             )  # fmt: skip
 
     def _poll_detail(self, s, batch, observations):
@@ -783,17 +933,18 @@ class Owner:
             "responses": responses,
         }
 
-    def _poll_failed(self, s: SourceState, batch, states) -> bool:
+    def _poll_failed(self, s: SourceState, batch, states, valid) -> bool:
         for pid in s.point_ids:
             ps = self.points[pid]
             ps.good, ps.reason = False, "POLL_" + batch.outcome
         s.last_tick = batch.tick
+        lost = self._missing(s, batch, valid, batch.outcome, 0)
         for pid in self.tracked_by_source.get(s.id, ()):
             if pid in self.points:
                 self.tracker.observe(pid, None, batch.mono)
         results = self._recompute(s, batch, list(s.point_ids))
         poll = self._state(s, "POLL", batch.wall, batch.mono, **self._poll_detail(s, batch, ()))
-        self._emit(rec.GROUP_BATCH, s, batch.wall, (), results, [*states, poll])
+        self._emit(rec.GROUP_BATCH, s, batch.wall, lost, results, [*states, poll])
         return True
 
     # -------------------------------------------------------------- recovery
@@ -856,10 +1007,10 @@ class Owner:
         s.state = VALID
         self.health["recoveries"] += 1
         lead = list(states)
-        lost = s.archive == "LOST"
+        lost = s.archive == "LOST" and s.recovery_order is None and not s.inflight  # one unit at a time, behind nothing older
         if lost:
             lead.append(self._gap_state(s, batch.wall, batch.mono))
-        group = self._segment_group(s, "RECOVERY", batch.wall, batch.mono, lead=lead, batch=batch)
+        group = self._segment_group(s, "RECOVERY", batch.wall, batch.mono, lead=lead, batch=batch, unit=lost)
         self._publish(group)
         if lost:
             self._submit_recovery(s, group)
@@ -869,12 +1020,15 @@ class Owner:
 
     # ------------------------------------------------------------- run lifecycle
 
-    def _run_group(self, wall: float, mono: float, kind: str, extra_states=(), **detail):
+    def _make_run_group(self, wall: float, mono: float, kind: str, extra_states=(), **detail):
         self.run_events += 1
         record = rec.StateRecord(
             rec.state_id(self.run_id, RUN_SOURCE, self.run_events), self.run_id, RUN_SOURCE, 0, kind, wall, mono, detail
         )
-        group = self._build(rec.GROUP_STATE, RUN_SOURCE, wall, states=[record, *extra_states])
+        return self._build(rec.GROUP_STATE, RUN_SOURCE, wall, states=[record, *extra_states])
+
+    def _run_group(self, wall: float, mono: float, kind: str, extra_states=(), **detail):
+        group = self._make_run_group(wall, mono, kind, extra_states, **detail)
         if self.commit(group) is False:  # run-level facts are tiny; the writer queue drains them first
             self.health["run_group_rejected"] = self.health.get("run_group_rejected", 0) + 1
         return group
@@ -890,20 +1044,89 @@ class Owner:
         self._run_group(wall, mono, "RUN_START", config_id=self.config_id, started_wall=self.started_wall)
 
     def shutdown(self, wall: float, mono: float):
-        """Normal stop, called after everything accepted has been processed: close segments, end the run."""
+        """Begin a normal stop after intake is drained.  RUN_END is deliberately separate: it may be submitted only
+        after every source's accepted records and terminal archive facts have settled (R04/Q03)."""
         if self.stopped:
             return
-        self.stopped = True
+        self.stopped, self.shutdown_wall, self.shutdown_mono = True, wall, mono
         for s in self.sources.values():
             if s.open_segment:
                 s.open_segment = False
-                self._emit(
-                    rec.GROUP_STATE,
-                    s,
-                    wall,
-                    states=[self._state(s, "SEG_END", wall, mono, reason="SHUTDOWN", end_wall=wall)],
-                )
-        self._run_group(wall, mono, "RUN_END", reason="NORMAL", ended_wall=wall)
+                end = self._state(s, "SEG_END", wall, mono, reason="SHUTDOWN", end_wall=wall)
+                if s.archive == "LOST":
+                    if end.seg in s.durable or end.seg in s.opening:
+                        s.closing[end.seg] = ("SHUTDOWN", wall)
+                else:
+                    self._emit(rec.GROUP_STATE, s, wall, states=[end])
+        if self.shutdown_progress():
+            self.submit_run_end()
+
+    def _terminal_group(self, s: SourceState) -> rec.CommitGroup:
+        wall, mono = self.shutdown_wall, self.shutdown_mono
+        states = [self._gap_state(s, wall, mono), *s.owed_jumps, *self._durable_ends(s, "ARCHIVE_GAP", wall, mono)]
+        return self._build(rec.GROUP_RECOVERY, s.id, wall, states=states)
+
+    def shutdown_progress(self) -> bool:
+        """Advance archive-only shutdown work without waiting for I/O.  The runtime calls this while the writer runs."""
+        if not self.stopped:
+            return False
+        for s in self.sources.values():
+            if s.shutdown_done or s.shutdown_failed:
+                continue
+            if s.archive == "LOST" and s.recovery_order is None and not s.inflight:
+                if s.shutdown_group is None:
+                    s.shutdown_group = self._terminal_group(s)
+                if not s.shutdown_offered:
+                    s.recovery_order = s.shutdown_group.order
+                    s.inflight.add(s.shutdown_group.order)
+                    if self.commit(s.shutdown_group) is False:
+                        s.recovery_order = None
+                        s.inflight.discard(s.shutdown_group.order)
+                    else:
+                        s.shutdown_offered = True
+                        s.archive = "RECOVERING"
+                continue
+            self._prune_closing(s)
+            if (
+                s.archive == "OK"
+                and not s.pending
+                and not s.inflight
+                and s.recovery_order is None
+                and not s.durable
+                and not s.opening
+                and not s.closing
+            ):
+                s.shutdown_done = True
+        return all(s.shutdown_done for s in self.sources.values()) and not any(s.shutdown_failed for s in self.sources.values())
+
+    def submit_run_end(self) -> bool:
+        """Offer one stable RUN_END group after source shutdown has settled; a full queue retries this same object."""
+        if not self.shutdown_progress() or any(s.shutdown_failed for s in self.sources.values()):
+            return False
+        if self.run_end_group is None:
+            self.run_end_group = self._make_run_group(
+                self.shutdown_wall, self.shutdown_mono, "RUN_END", reason="NORMAL", ended_wall=self.shutdown_wall
+            )
+        if not self.run_end_offered:
+            if self.commit(self.run_end_group) is False:
+                self.health["run_group_rejected"] = self.health.get("run_group_rejected", 0) + 1
+                return False
+            self.run_end_offered = True
+        return True
+
+    def shutdown_failed_sources(self) -> list[str]:
+        """Sources whose final group the archive turned away: the run can no longer be registered as ended normally."""
+        return sorted(s.id for s in self.sources.values() if s.shutdown_failed)
+
+    def shutdown_settled(self) -> bool:
+        """Every source is done or has failed: nothing more is going to happen to any of them."""
+        return all(s.shutdown_done or s.shutdown_failed for s in self.sources.values())
+
+    def run_end_state(self) -> str:
+        """NOT_QUEUED (not built, or the queue never took it) | UNCONFIRMED (offered, no answer) | COMMITTED | REFUSED."""
+        if self.run_end_status is not None:
+            return self.run_end_status
+        return "UNCONFIRMED" if self.run_end_offered else "NOT_QUEUED"
 
     def _clock_jump(self, wall: float, mono: float, delta: float):
         """Wall clock and monotonic clock disagree by more than 2 s: open a new segment per source (§11).
@@ -918,13 +1141,17 @@ class Owner:
             marker = self._state(
                 s, "CLOCK_JUMP", wall, mono, delta=delta, wall_before=self.last_tick_wall, wall_after=wall
             )
-            if s.open_segment and s.archive == "OK":
+            if s.open_segment and s.archive != "LOST":
+                # OK, or RECOVERING - then the cut waits behind the unit in `pending`, so that the segment the unit opens cannot
+                # end up holding both halves of the stepped clock
                 group = self._segment_group(
                     s, "CLOCK_JUMP", wall, mono, lead=[marker], close_old_at=self.last_tick_wall
                 )
                 self._publish(group)
                 self._submit(s, group)
             else:
+                if s.archive == "LOST":  # nothing is queued across a gap: the unit that ends it, or the final group, carries the marker
+                    s.owed_jumps = [*s.owed_jumps, marker][-OWED_JUMPS_LIMIT:]
                 self._emit(rec.GROUP_STATE, s, wall, states=[marker])
 
     def _watermarks(self, wall: float, mono: float):

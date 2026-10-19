@@ -32,7 +32,12 @@ class Runtime:
     def __init__(self, config, router, accounts=None, *, run_id=None):
         self.config, self.router, self.accounts = config, router, accounts
         self.run_id = run_id or uuid4().hex
-        self.health = {"accounts": None, "fatal": None, "maintenance_max_seconds": 0.0, "unwritten_at_stop": None}
+        # What the stop ended with, as facts and not as a total (细则 8.1): `shutdown_incomplete` is False only when the end of the
+        # run was CONFIRMED - it does not say nothing was lost: faults still in memory at the stop are not carried (细则 11 M).
+        self.health = {
+            "accounts": None, "fatal": None, "maintenance_max_seconds": 0.0,
+            "shutdown_incomplete": None, "run_end_status": None, "failed_sources": None, "unsettled_queue_items": None,
+        }  # fmt: skip
         self.failed, self.wake = asyncio.Event(), asyncio.Event()
         self.queue = CommitQueue(
             router, config.limits.commit_queue,
@@ -107,9 +112,10 @@ class Runtime:
             task.add_done_callback(self._done)
 
     def _done(self, task: asyncio.Task):
-        if self.running and not task.cancelled():
-            error = task.exception()
-            self.health["fatal"] = f"{task.get_name()}: {type(error).__name__ if error else 'UNEXPECTED_EXIT'}"
+        if self.running:  # while running, a core task that ends is a failure - a cancel from outside as well
+            error = None if task.cancelled() else task.exception()
+            what = "CANCELLED" if task.cancelled() else type(error).__name__ if error else "UNEXPECTED_EXIT"
+            self.health["fatal"] = f"{task.get_name()}: {what}"
             log.error("core task ended: %s", self.health["fatal"], exc_info=error)
             self.failed.set()
 
@@ -157,11 +163,29 @@ class Runtime:
         await self._end([t for name, t in named.items() if name.startswith("acquire ")])  # no more input
         await self._end([named[n] for n in ("owner loop", "maintenance") if n in named])
         self.ingress.drain()  # everything the protocols delivered is processed before the run ends
+        deadline = time.monotonic() + STOP_WRITE_WAIT
         self.owner.shutdown(time.time(), time.monotonic())
-        self.health["unwritten_at_stop"] = await self.queue.stop(STOP_WRITE_WAIT)
+        while time.monotonic() < deadline:
+            self.owner.shutdown_progress()
+            if self.owner.shutdown_failed_sources():
+                if self.owner.shutdown_settled():  # the run cannot be ended any more, but the other sources get their final groups
+                    break
+            else:
+                self.owner.submit_run_end()
+                if self.owner.run_end_status in ("COMMITTED", "REFUSED"):
+                    break
+            await asyncio.sleep(0.05)
+        remaining = max(0.0, deadline - time.monotonic())
+        queued = await self.queue.stop(remaining)
+        self.health.update(
+            shutdown_incomplete=self.owner.run_end_status != "COMMITTED",
+            run_end_status=self.owner.run_end_state(),
+            failed_sources=self.owner.shutdown_failed_sources(),
+            unsettled_queue_items=queued,  # queue items only: a group may be in the queue AND counted by its source
+        )
         if "archive writer" in named:
             try:
-                await asyncio.wait_for(named["archive writer"], STOP_WRITE_WAIT)
+                await asyncio.wait_for(named["archive writer"], max(0.001, deadline - time.monotonic()))
             except (TimeoutError, asyncio.CancelledError):
                 await self._end([named["archive writer"]])
         self.router.close()

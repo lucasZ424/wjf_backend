@@ -32,7 +32,7 @@ async def test_a_steady_full_scale_run_leaves_nothing_unexplained_and_no_backlog
     assert steady["backlog_left_after_seconds"] is not None and steady["backlog_left_after_seconds"] < 5
     assert steady["groups_per_second"] > 0.5 and steady["rows_per_second"] > 50, "the simulated plant changes every input every second"
     assert steady["committed_groups"] >= steady["published_groups"] - 2, "what was published was written, not just shown"
-    assert lab.runtime.health["unwritten_at_stop"] == 0
+    assert lab.runtime.health["shutdown_incomplete"] is False
     assert lab.runtime.health["maintenance_max_seconds"] < 2 and steady["maintenance_max_seconds"] == round(lab.runtime.health["maintenance_max_seconds"], 3)
 
 

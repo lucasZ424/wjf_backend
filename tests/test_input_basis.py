@@ -49,7 +49,9 @@ def test_modbus_basis_is_this_round_only_and_a_missing_input_is_reported_not_bor
     assert ok["complete"] and [x["batch_seq"] for x in ok["inputs"]["b1"]["rows"]] == [1]
     na = basis(store, result_id(rec, "s2"))  # s2 became NOT_AVAILABLE in round 2
     assert na["result"]["status"] == "NOT_AVAILABLE" and na["result"]["batch_seq"] == 2
-    assert na["inputs"]["b2"]["rows"] == [] and na["missing"] == ["b2"] and na["complete"] is False
+    # R07: the unanswered input has a failure record of its own for round 2; it is still missing, and round 1's value is not borrowed
+    assert [(x["batch_seq"], x["quality"]) for x in na["inputs"]["b2"]["rows"]] == [(2, "MISSING_UNANSWERED")]
+    assert na["missing"] == ["b2"] and na["complete"] is False
     assert all(x["batch_seq"] == 2 for x in basis(store, result_id(rec, "s1", -1))["inputs"]["b1"]["rows"])
 
 
@@ -101,6 +103,7 @@ def test_values_derived_inside_an_archive_gap_say_that_their_basis_is_incomplete
     cfg = small_config()
     rec = Recorder()
     owner = Owner(cfg, WALL0, MONO0, commit=sink, publish=rec.publish, run_id="run")
+    sink.owner = owner
     for source in ("mb", "ua"):
         owner.begin_generation(source, 1, WALL0, MONO0)
     owner.accept(notify([("ti", 500.0), ("to", 450.0)], wall=1001.0, mono=101.0, seq=1))

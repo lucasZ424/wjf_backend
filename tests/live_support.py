@@ -36,10 +36,8 @@ class Rig:
     """Everything wired as the runtime will wire it, with in-memory commit/publish sinks."""
 
     def __init__(self, timing=None, use_proxy=False):
-        # asyncua's test server sends a keep-alive only after MaxKeepAliveCount+1 idle cycles (one more than
-        # the specification), so a requested count of 2 would really mean 3 s of silence = the data validity.
-        # Count 1 gives the 2 s of silence the design assumes.  A real gateway must be verified on site.
-        self.timing = timing or Timing(ua_keepalive_count=1)
+        # FieldUa installs the project-local server adapter, so the normal contract default can be tested directly.
+        self.timing = timing or Timing()
         self.use_proxy = use_proxy
         self.mb, self.ua = FieldModbus(), FieldUa(UA_NAMES)
         self.proxy = None

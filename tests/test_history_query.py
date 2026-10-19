@@ -70,7 +70,9 @@ def test_an_archive_gap_stops_the_hold_at_the_start_of_the_gap(archive_db_factor
 
     sink = Sink()
     owner, rec = owner_and_groups()
-    owner.commit = sink
+    owner.commit, sink.owner = sink, owner
+    for stored_before in rec.commits:  # what the first sink took (the run, the first segment) is confirmed durable (R03b)
+        owner.committed(stored_before)
     data(owner, 101.0)
     sink.accept = False
     data(owner, 105.0, items=(("ti", 520.0),), seq=2)  # lost
@@ -80,7 +82,7 @@ def test_an_archive_gap_stops_the_hold_at_the_start_of_the_gap(archive_db_factor
     store = archive_db_factory()
     store.initialize(CONFIG)
     store.bind_run("run", CONFIG.config_id, WALL0)
-    for group in [rec.commits[0], *sink.groups]:
+    for group in [*rec.commits, *sink.groups]:
         store.write_group(group)
     result = ask(store, 100, 120)
     flat = [(x["value"], x["origin"], x["until"], x["ended_by"]) for s in spans(result) for x in s["rows"] if x["kind"] == "raw"]
@@ -141,6 +143,69 @@ def test_reaching_the_row_limit_is_reported(archive_db_factory):
     result = h.query([("primary", store)], CHANNELS, at(100)[0], at(110)[0], limit=5)
     assert result["truncated"] and result["channels"]["ti"]["truncated"]
     assert sum(1 for x in spans(result)[0]["rows"] if x["kind"] == "raw") == 5
+
+
+def two_databases(archive_db_factory, rec, place):
+    """The groups of a recorded run, each written to the databases `place(position)` names (0: primary, 1: emergency) - what a
+    run that moved between databases leaves behind."""
+    stores = [archive_db_factory("primary"), archive_db_factory("emergency")]
+    for store in stores:
+        store.initialize(CONFIG)
+        store.bind_run("run", CONFIG.config_id, WALL0)
+    for position, group in enumerate(rec.commits):
+        for index in place(position):
+            assert stores[index].write_group(group).durable, group.group_id
+    return [("primary", stores[0]), ("emergency", stores[1])]
+
+
+def values_of(result, pid="ti"):
+    return [x["value"] for span in spans(result, pid) for x in span["rows"] if x["kind"] == "raw" and not x["held"]]
+
+
+def series(count, step=0.01):
+    owner, rec = owner_and_groups()
+    for n in range(count):
+        data(owner, 101.0 + n * step, items=(("ti", 500.0 + n),), seq=n + 1)
+    return rec, next(i for i, g in enumerate(rec.commits) if g.observations)  # the groups, and where the data begins
+
+
+def test_the_row_limit_is_one_limit_over_all_databases_not_one_per_database(archive_db_factory):
+    """The audit's must-fix 5.  Each database was asked for its first `limit` rows and the answers were joined: a run that
+    had moved between databases showed up to twice the limit, and the channel said nothing about it."""
+    rec, first = series(12)
+    stores = two_databases(archive_db_factory, rec, lambda i: [0 if i < first + 6 else 1])  # six rows in each database
+    result = h.query(stores, CHANNELS, at(100)[0], at(110)[0], limit=8)
+    assert values_of(result) == [500.0 + k for k in range(8)], "the first eight rows of the channel, wherever they are stored"
+    assert result["truncated"] and result["channels"]["ti"]["truncated"], "neither database reached the limit alone; together they did"
+
+
+def test_the_rows_that_remain_are_the_first_ones_of_the_channel_whichever_database_holds_them(archive_db_factory):
+    rec, first = series(15)
+    def place(i):  # rows 0-4 and 10-14 are in the primary, rows 5-9 in the other database
+        return [1 if first + 5 <= i < first + 10 else 0]
+
+    stores = two_databases(archive_db_factory, rec, place)
+    result = h.query(stores, CHANNELS, at(100)[0], at(110)[0], limit=8)
+    assert values_of(result) == [500.0 + k for k in range(8)], "not the first eight of each database joined together"
+    assert result["channels"]["ti"]["truncated"]
+
+
+def test_a_row_stored_in_both_databases_counts_once_toward_the_limit(archive_db_factory):
+    rec, _ = series(12)
+    stores = two_databases(archive_db_factory, rec, lambda i: [0, 1])  # everything in both
+    cut = h.query(stores, CHANNELS, at(100)[0], at(110)[0], limit=8)
+    assert values_of(cut) == [500.0 + k for k in range(8)] and cut["truncated"], "twelve rows, not twenty-four, are over a limit of eight"
+    whole = h.query(stores, CHANNELS, at(100)[0], at(110)[0], limit=12)
+    assert len(values_of(whole)) == 12 and not whole["truncated"], "twelve rows are exactly the limit: nothing is over it"
+
+
+def test_the_value_held_in_from_before_the_window_is_not_a_row_of_it_and_is_never_cut(archive_db_factory):
+    rec, first = series(12, step=1.0)  # one row a second, from 101 to 112
+    stores = two_databases(archive_db_factory, rec, lambda i: [0 if i < first + 6 else 1])
+    result = h.query(stores, CHANNELS, at(105.5)[0], at(120)[0], limit=3)
+    rows = [x for span in spans(result) for x in span["rows"] if x["kind"] == "raw"]
+    assert [(x["value"], x["held"]) for x in rows] == [(504.0, True), (505.0, False), (506.0, False), (507.0, False)]
+    assert result["channels"]["ti"]["truncated"]
 
 
 def test_a_long_series_is_answered_quickly_from_the_point_time_index(archive_db_factory):

@@ -250,6 +250,7 @@ def test_the_recovery_unit_with_1000_faults_and_a_full_baseline_fits_the_group_b
     payload["simulation"]["enabled"] = False
     sink = Accepting()
     owner = Owner(type(research).model_validate(payload), 1000.0, 100.0, commit=sink, run_id="big")
+    sink.owner = owner
     for source in ("mb_field", "ua_field"):
         owner.begin_generation(source, 1, 1000.0, 100.0)
     items = tuple(r.Item(p.id, 480.0 + i * 0.01) for i, p in enumerate(research.points) if p.source == "ua_field")

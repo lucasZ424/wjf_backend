@@ -15,6 +15,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from . import records as rec
+from .commlog import clean_detail
 from .config import Point, Source, Timing
 from .recovery import Backoff
 from .timing import every_second
@@ -153,8 +154,11 @@ class ModbusAcquirer:
                 broken = True
                 break
             except (ModbusIOException, TimeoutError) as error:
+                if asyncio.current_task().cancelling() > 0:  # a cancel mid-request arrives as this error
+                    raise asyncio.CancelledError from error
                 timed_out += 1
-                requests.append(rec.RequestResult(scope, "TIMEOUT", None, str(error)))
+                detail, truncated = clean_detail(str(error))  # the raw text goes no further than this line
+                requests.append(rec.RequestResult(scope, "TIMEOUT", None, detail, truncated))
                 continue
             wall, mono = time.time(), time.monotonic()  # each response keeps its own receive time
             if response.isError():

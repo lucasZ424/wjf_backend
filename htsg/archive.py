@@ -276,21 +276,73 @@ class ArchiveStore:
                 ),
             )
 
-    def reconcile_unfinished_runs(self, current_run_id: str | None = None) -> list[dict]:
+    @staticmethod
+    def _segment_evidence(conn, run_ids) -> dict:
+        """(run, source, seg) -> the later of the segment's last VALID observation (Good, a value, not extreme; a
+        re-stated value counts at the time it was re-stated) and its watermark.  State events, results, faults and
+        bad or missing observations only show that the owner was running, not that the source was talking (§5)."""
+        rows = conn.execute(
+            "SELECT run_id,source_id,seg,max(t) AS t FROM ("
+            "SELECT run_id,source_id,seg,effective_wall AS t FROM observation "
+            "WHERE run_id=ANY(%(runs)s) AND quality=%(good)s AND value IS NOT NULL AND NOT extreme "
+            "UNION ALL SELECT run_id,source_id,seg,covered_wall AS t FROM watermark WHERE run_id=ANY(%(runs)s)"
+            ") e GROUP BY run_id,source_id,seg",
+            {"runs": list(run_ids), "good": rec.GOOD},
+        ).fetchall()
+        return {(x["run_id"], x["source_id"], x["seg"]): x["t"] for x in rows}
+
+    def unfinished_facts(self, current_run_id: str | None = None) -> dict:
+        """What this database says about how runs and segments ended, for closing the unfinished ones across ALL
+        bound databases: the runs and segments it holds an end for, and the evidence of the segments of its own
+        unended runs.  Read only."""
+        with self.session() as conn:
+            # A real RUN_END in any bound database means the run ended there.  ABNORMAL_EXIT is only this database's
+            # crash-reconciliation result; it must not make another database skip its own unfinished rows after a
+            # previous cross-database reconciliation stopped halfway.
+            ended_runs = {
+                x["run_id"]
+                for x in conn.execute(
+                    "SELECT run_id FROM run WHERE ended_wall IS NOT NULL AND end_reason<>'ABNORMAL_EXIT'"
+                ).fetchall()
+            }
+            ended_segments = {
+                (x["run_id"], x["source_id"], x["seg"])
+                for x in conn.execute(
+                    "SELECT run_id,source_id,seg FROM segment "
+                    "WHERE end_wall IS NOT NULL AND end_reason<>'EXIT_TRUNCATED'"
+                ).fetchall()
+            }
+            open_runs = [
+                x["run_id"]
+                for x in conn.execute(
+                    "SELECT run_id FROM run WHERE ended_wall IS NULL AND run_id IS DISTINCT FROM %s", (current_run_id,)
+                ).fetchall()
+            ]
+            evidence = self._segment_evidence(conn, open_runs)
+        return {"ended_runs": ended_runs, "ended_segments": ended_segments, "evidence": evidence}
+
+    def reconcile_unfinished_runs(
+        self, current_run_id: str | None = None, *, ended_runs=frozenset(), ended_segments=frozenset(), evidence=None
+    ) -> list[dict]:
         """Close runs that never recorded an end, using ONLY what is persisted (§5).
 
-        The end is the latest persisted evidence of that run (a watermark, an observation, a state record);
-        no crash time is guessed.  Segments still open are cut at that same evidence.
+        The run's end is the latest persisted evidence of the whole run (a watermark, an observation, a state record);
+        no crash time is guessed.  Each segment still open is cut at ITS OWN evidence - the later of its last valid
+        observation and its watermark, its start when it has neither - never at the run's.  What the other bound
+        databases hold is respected (the router gathers it with `unfinished_facts`): a run or segment that ended in any
+        of them is not closed here, and the evidence of a segment counts wherever it was written.
         """
-        closed = []
+        closed, evidence = [], evidence or {}
         with self.session() as conn:
             runs = conn.execute(
                 "SELECT run_id,started_wall FROM run WHERE ended_wall IS NULL AND run_id IS DISTINCT FROM %s",
                 (current_run_id,),
             ).fetchall()
+            runs = [run for run in runs if run["run_id"] not in ended_runs]
+            own = self._segment_evidence(conn, [run["run_id"] for run in runs])
             for run in runs:
                 rid = run["run_id"]
-                evidence = conn.execute(
+                latest = conn.execute(
                     "SELECT greatest("
                     "%(start)s,"
                     "coalesce((SELECT max(covered_wall) FROM watermark WHERE run_id=%(r)s),0),"
@@ -302,14 +354,25 @@ class ArchiveStore:
                 ).fetchone()["t"]
                 conn.execute(
                     "UPDATE run SET ended_wall=%s,end_reason='ABNORMAL_EXIT',last_evidence_wall=%s WHERE run_id=%s",
-                    (evidence, evidence, rid),
+                    (latest, latest, rid),
                 )
-                cut = conn.execute(
-                    "UPDATE segment SET end_wall=%s,end_reason='EXIT_TRUNCATED' "
+                cut = 0
+                open_segments = conn.execute(
+                    "SELECT source_id,seg,start_wall FROM segment "
                     "WHERE run_id=%s AND end_wall IS NULL AND start_wall IS NOT NULL",
-                    (evidence, rid),
-                ).rowcount
-                closed.append({"run_id": rid, "ended_wall": evidence, "segments_cut": cut})
+                    (rid,),
+                ).fetchall()
+                for segment in open_segments:
+                    key = (rid, segment["source_id"], segment["seg"])
+                    if key in ended_segments:
+                        continue  # it has its end in another database
+                    known = [t for t in (own.get(key), evidence.get(key)) if t is not None]
+                    cut += conn.execute(
+                        "UPDATE segment SET end_wall=%s,end_reason='EXIT_TRUNCATED' "
+                        "WHERE run_id=%s AND source_id=%s AND seg=%s AND end_wall IS NULL",
+                        (max(known, default=segment["start_wall"]), rid, segment["source_id"], segment["seg"]),
+                    ).rowcount
+                closed.append({"run_id": rid, "ended_wall": latest, "segments_cut": cut})
         return closed
 
     # --------------------------------------------------------------------- routing state

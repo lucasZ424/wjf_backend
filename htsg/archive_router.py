@@ -21,6 +21,7 @@ from .archive import ArchiveStore, SchemaError, WriteOutcome
 from .config import Settings
 
 DEV_RESERVE = 1024**3  # development: every data volume keeps at least 1 GiB free
+PINNED_LIMIT = 256  # groups of unknown commit remembered with their database: the writer settles one at a time, so few are live
 
 
 class PolicyRefusal(RuntimeError):
@@ -106,6 +107,7 @@ class ArchiveRouter:
         self.development_growth = 0
         self.budget_sizes: dict[str, int] = {}
         self.last_budget_check = -1e9
+        self.pinned: dict[str, str] = {}  # group id -> the database its UNKNOWN commit was sent to
         self.last_light = self.last_heavy = -1e9
 
     @property
@@ -123,21 +125,54 @@ class ArchiveRouter:
             cleanup_enabled=self.config.storage.cleanup_enabled,
             external_enabled=self.config.storage.external_enabled,
         )
+        readable, unreadable = [], []
         for name, store in self.stores:
             try:
                 store.initialize(self.config)
                 self.health[name] = "OK"
                 self.ready.add(name)
-                self.health[name + "_closed_runs"] = store.reconcile_unfinished_runs(current_run_id)
+                readable.append((name, store))
             except SchemaError as error:  # a legacy / foreign database is never read from or written to
                 self.health[name] = "REFUSED:" + type(error).__name__
+                unreadable.append(name)
             except psycopg.Error:
                 self.health[name] = "UNAVAILABLE"
+                unreadable.append(name)
+        self._close_unfinished_runs(current_run_id, readable, unreadable)
         try:
             self.mode = self.emergency.routing_mode()
             self.external_selected = self.emergency.external_selected()
         except psycopg.Error:
             self.mode = "UNKNOWN"
+
+    def _close_unfinished_runs(self, current_run_id, readable, unreadable):
+        """Close what a crash left open, with what EVERY bound database knows (终版 §5): a run that ended in one of them
+        is not an abnormal exit because the others never heard of its end, and a segment with an end anywhere is not cut.
+        While a bound database cannot be read nothing is closed - the next start does it; there is no retry while running."""
+        facts = {}
+        for name, store in readable:
+            try:
+                facts[name] = store.unfinished_facts(current_run_id)
+            except psycopg.Error:
+                self.health[name] = "UNAVAILABLE"
+                unreadable.append(name)
+        if unreadable:
+            self.health["reconcile"] = "PENDING_UNREADABLE:" + ",".join(unreadable)
+            return
+        self.health.pop("reconcile", None)
+        ended_runs = set().union(*(f["ended_runs"] for f in facts.values()))
+        ended_segments = set().union(*(f["ended_segments"] for f in facts.values()))
+        evidence: dict = {}
+        for f in facts.values():
+            for key, t in f["evidence"].items():
+                evidence[key] = max(t, evidence.get(key, t))
+        for name, store in readable:
+            try:
+                self.health[name + "_closed_runs"] = store.reconcile_unfinished_runs(
+                    current_run_id, ended_runs=ended_runs, ended_segments=ended_segments, evidence=evidence
+                )
+            except psycopg.Error:
+                self.health[name] = "UNAVAILABLE"
 
     # ------------------------------------------------------------------ routing decision
 
@@ -223,6 +258,27 @@ class ArchiveRouter:
             raise PolicyRefusal("DEVELOPMENT_WRITE_BUDGET_EXHAUSTED")
 
     def write_group(self, group: rec.CommitGroup) -> RouteResult:
+        """Write one whole group.  A group whose commit came back UNKNOWN is remembered with its database: whatever the disks
+        say by the time it is tried again, it is asked of THAT database only - the first attempt may have become durable
+        there, and a copy in another database would be the same group stored twice.  The memory ends when the group is
+        confirmed durable, and it is bounded: a group the queue gave up on is forgotten after `PINNED_LIMIT` newer ones."""
+        pinned = self.pinned.get(group.group_id)
+        if pinned is None:
+            result = self._write_routed(group)
+        else:
+            result = self._write_to(pinned, group)  # no route, no policy: the question is only whether it is there
+            if result.durable:
+                self.bytes_written += group_bytes(group)
+        if result.status == "UNKNOWN" and result.target is not None:
+            self.pinned.pop(group.group_id, None)
+            self.pinned[group.group_id] = result.target
+            while len(self.pinned) > PINNED_LIMIT:
+                del self.pinned[next(iter(self.pinned))]
+        elif result.durable:
+            self.pinned.pop(group.group_id, None)
+        return result
+
+    def _write_routed(self, group: rec.CommitGroup) -> RouteResult:
         policy = self.config.storage
         size = group_bytes(group)
         if size > policy.batch_budget_bytes:

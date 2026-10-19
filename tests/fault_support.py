@@ -31,16 +31,21 @@ def fault_config(point_rules=True, derived_rules=True, ua_only=True, buffer_limi
 
 
 class Accepting:
-    """Commit sink that can be told to refuse (an archive outage)."""
+    """Commit sink that can be told to refuse (an archive outage).  An accepted group is confirmed at once, as a writer that
+    keeps up would (R03b: the owner builds a recovery unit only behind nothing older that is still on its way); a recovery
+    unit is left to the test."""
 
     def __init__(self):
         self.accept = True
         self.groups = []
+        self.owner = None
 
     def __call__(self, group):
         if not self.accept:
             return False
         self.groups.append(group)
+        if self.owner is not None and group.kind != r.GROUP_RECOVERY:
+            self.owner.committed(group)
         return True
 
 
@@ -48,6 +53,7 @@ def fault_owner(config=None, sink=None):
     sink = sink if sink is not None else Accepting()
     rec = Recorder()
     owner = Owner(config or fault_config(), WALL0, MONO0, commit=sink, publish=rec.publish, run_id="run")
+    sink.owner = owner
     owner.begin_generation("ua", 1, WALL0, MONO0)
     return owner, sink, rec
 

@@ -176,6 +176,31 @@ def test_a_different_type_or_reason_in_the_same_scope_ends_the_old_entry(clock):
     assert e2.state == "ACTIVE" and len({t.seq, e.seq, e2.seq}) == 3
 
 
+@pytest.mark.parametrize("kind", ["attempt", "round"])
+def test_a_later_omitted_detail_replaces_the_old_detail_and_keeps_the_aggregate_marked_truncated(clock, kind):
+    """R02/Q04: an aggregate's latest failure may be too long to retain; the page must say it was omitted instead of
+    continuing to display an earlier short error as though it described the latest occurrence."""
+    log = CommLog("run")
+    if kind == "attempt":
+        entry = log.attempt_failed("ua", "CONNECT", "REFUSED", *clock(), detail="short")
+        same = log.attempt_failed("ua", "CONNECT", "REFUSED", *clock(), detail=None, truncated=True)
+    else:
+        entry = log.round_failed("mb", 1, "POLL_TIMEOUT", "NO_ANSWER", *clock(), scope="0:16", detail="short")
+        same = log.round_failed(
+            "mb", 1, "POLL_TIMEOUT", "NO_ANSWER", *clock(), scope="0:16", detail=None, truncated=True
+        )
+    assert same is entry and entry.count == 2
+    assert (entry.detail, entry.detail_truncated) == (None, True)
+    if kind == "attempt":
+        latest = log.attempt_failed("ua", "CONNECT", "REFUSED", *clock(), detail="short again")
+    else:
+        latest = log.round_failed(
+            "mb", 1, "POLL_TIMEOUT", "NO_ANSWER", *clock(), scope="0:16", detail="short again"
+        )
+    assert latest is entry and entry.count == 3
+    assert (entry.detail, entry.detail_truncated) == ("short again", False)
+
+
 def test_a_new_generation_or_any_other_event_of_the_source_ends_round_failures_but_not_attempt_failures(clock):
     owner = Owner(small_config(), WALL0, MONO0, run_id="run")
     log = owner.commlog
@@ -287,7 +312,10 @@ def test_the_ingress_cleans_and_cuts_the_text_before_it_queues_it(clock):
     _, ingress, _ = owner_and_ingress()
     ingress.attempt_failed("ua", "CONNECT", "E", "x" * 100_000 + " password=hunter2", *clock())
     text, truncated = ingress.queue[-1].args[3:5]
-    assert len(text) == DETAIL_LIMIT and truncated is True, "the queue holds at most 500 short texts, not 500 huge ones"
+    assert text is None and truncated is True, "the queue holds at most 500 short texts, not 500 huge ones: that one is left out"
+    ingress.attempt_failed("ua", "CONNECT", "E", "x" * 3000, *clock())
+    text, truncated = ingress.queue[-1].args[3:5]
+    assert len(text) == DETAIL_LIMIT and truncated is True, "a text within the clean-whole limit is cut to the limit"
 
 
 def test_details_that_differ_do_not_split_one_failure_into_many(clock):
@@ -338,6 +366,7 @@ def test_a_new_run_starts_with_an_empty_log(clock):
         ("cannot open opc.tcp://admin:s3cret@10.0.0.5:4840/ca", "s3cret"),
         ("cannot open opc.tcp://admin:s3cret@10.0.0.5:4840/ca", "admin"),
         ("cannot open opc.tcp://u:p@ss@host/ca", "ss@"),
+        ("cannot open opc.tcp://u:pw1@pw2@pw3@host/ca", "pw3"),
         ("login failed password=hunter2 for the account", "hunter2"),
         ("login failed password: hunter2 for the account", "hunter2"),
         ("bad request {'password': 'hunter2'}", "hunter2"),
@@ -380,14 +409,29 @@ def test_text_is_cleaned_before_it_is_cut_so_a_cut_cannot_expose_the_start_of_a_
     ids=["one-long-word", "keyword-repeated", "scheme-repeated", "secret-repeated"],
 )
 def test_cleaning_a_huge_or_hostile_message_costs_milliseconds_not_minutes(pathological):
-    """The text is cleaned on the event loop when it is queued: a library message of any size must not stall it."""
+    """The text is cleaned on the event loop when it is queued: a library message of any size must not stall it.  Above
+    the limit it is left out unseen."""
     started = time.monotonic()
     text, truncated = clean_detail(pathological)
-    assert time.monotonic() - started < 2.0 and len(text) <= DETAIL_LIMIT and truncated is True
+    assert time.monotonic() - started < 2.0 and text is None and truncated is True
+
+
+@pytest.mark.parametrize(
+    "hostile",
+    ["token" * 819, "a://" * 1024, "password=" * 455, "a://" * 511 + "@"],
+    ids=["keyword-repeated", "scheme-repeated-no-at-sign", "secret-repeated", "schemes-then-an-at-sign"],
+)
+def test_cleaning_a_hostile_message_of_the_largest_size_that_is_still_cleaned_costs_milliseconds(hostile):
+    """The cleaning itself has to survive what is just under the limit: a URL rule that reaches to the nearest `@` scans
+    on from every `scheme://` when there is none."""
+    assert len(hostile) <= 4096
+    started = time.monotonic()
+    text, _ = clean_detail(hostile)
+    assert time.monotonic() - started < 2.0 and len(text) <= DETAIL_LIMIT
 
 
 def test_long_text_is_cut_to_the_limit_and_says_so_and_short_text_is_not_marked():
-    text, truncated = clean_detail("y" * 5000)
+    text, truncated = clean_detail("y" * 4000)
     assert len(text) == 512 and truncated is True
     assert clean_detail("y" * 512) == ("y" * 512, False)
     assert clean_detail(None) == (None, False)

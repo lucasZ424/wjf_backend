@@ -13,18 +13,23 @@ from htsg.owner import Owner
 
 
 class Sink:
-    """A commit sink that can refuse (a full queue) and remembers what it accepted."""
+    """A commit sink that can refuse (a full queue) and remembers what it accepted.  It stands for a writer that keeps up:
+    an accepted group is confirmed at once (R03b: the owner learns what the archive holds only from confirmations, and builds
+    a recovery unit only when nothing older of the source is still on its way); a recovery unit is left to the test."""
 
     def __init__(self):
         self.accept = True
         self.groups = []
         self.offered = 0
+        self.owner = None
 
     def __call__(self, group):
         self.offered += 1
         if not self.accept:
             return False
         self.groups.append(group)
+        if self.owner is not None and group.kind != r.GROUP_RECOVERY:
+            self.owner.committed(group)
         return True
 
     def kinds(self):
@@ -34,6 +39,7 @@ class Sink:
 def build(config=None):
     sink, rec = Sink(), Recorder()
     owner = Owner(config or ua_only(), WALL0, MONO0, commit=sink, publish=rec.publish, run_id="run")
+    sink.owner = owner
     owner.begin_generation("ua", 1, WALL0, MONO0)
     return owner, sink, rec
 
@@ -153,6 +159,7 @@ def test_an_out_of_sync_intake_is_fixed_by_a_rebuild_first_and_the_stale_cache_i
 def test_the_restatement_computes_nothing_and_cuts_the_change_chain():
     sink, rec = Sink(), Recorder()
     owner = Owner(small_config(), WALL0, MONO0, commit=sink, publish=rec.publish, run_id="run")
+    sink.owner = owner
     for source in ("mb", "ua"):
         owner.begin_generation(source, 1, WALL0, MONO0)
     owner.accept(poll(1, {"b1": 0.6, "b2": 0.6}))

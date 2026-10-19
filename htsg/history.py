@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 
 import psycopg
 
+from .records import MISSING
+
 ROW_LIMIT = 10000  # rows shown per channel; reaching it is reported, never hidden
 INF = math.inf
 
@@ -118,17 +120,47 @@ def read_segment_rows(store, keys) -> list:
 
 
 def _merge_segments(reads: list[StoreRead]) -> dict:
+    """One row per segment from the rows of all databases.  The end is ONE record's: a real end beats a cut made at an
+    exit (`EXIT_TRUNCATED`), the latest end wins among either kind, and its reason is the reason of that same record."""
     merged: dict[tuple, dict] = {}
+    ends: dict[tuple, list] = {}
     for read in reads:
         for seg in read.segments:
             key = (seg["run_id"], seg["source_id"], seg["seg"])
             cur = merged.setdefault(key, {})
             for field_name, value in seg.items():
-                if value is not None and (field_name not in cur or cur[field_name] is None):
+                if field_name not in ("end_wall", "end_reason") and value is not None and cur.get(field_name) is None:
                     cur[field_name] = value
-                elif field_name == "end_wall" and value is not None:
-                    cur[field_name] = max(cur[field_name], value)
+            if seg["end_wall"] is not None:
+                ends.setdefault(key, []).append((seg["end_wall"], seg["end_reason"]))
+    for key, cur in merged.items():
+        found = ends.get(key, [])
+        real = [end for end in found if end[1] != "EXIT_TRUNCATED"]
+        cur["end_wall"], cur["end_reason"] = max(real or found, key=lambda end: end[0], default=(None, None))
     return merged
+
+
+def _ranking(row: dict) -> tuple:
+    """The order the queries rank the rows of a channel in: by effective time, then by identity (a result by its id)."""
+    last = row["item_seq"] if row["kind"] == "raw" else row["id"]
+    return row["effective_wall"], row["run_id"], row["seg"], row["batch_seq"], last
+
+
+def _limit_per_channel(rows: dict, start: float, limit: int, truncated: set):
+    """The limit is per channel over ALL the databases, not per database: each was asked for `limit`+1 rows of the window, so
+    together they may hold up to twice that.  The rows of a channel are those of the union, once each (by stable id), in the
+    order every database ranks them in; what is left over the limit is dropped and the channel is marked truncated.  The
+    value held in from before the window (a row ahead of `start`) is not a row of the window and is never cut."""
+    window: dict[str, list] = {}
+    for row in rows.values():
+        if row["effective_wall"] >= start:
+            window.setdefault(row["point_id"], []).append(row)
+    for pid, found in window.items():
+        if len(found) > limit:
+            found.sort(key=_ranking)
+            for row in found[limit:]:
+                del rows[row["id"]]
+            truncated.add(pid)
 
 
 def assemble(
@@ -156,6 +188,7 @@ def assemble(
         for row in read.rows:
             rows.setdefault(row["id"], row)
         truncated |= read.truncated
+    _limit_per_channel(rows, start, limit, truncated)
     by_channel: dict[str, dict[tuple, list]] = {p: {} for p in channels}
     for row in rows.values():
         key = (row["run_id"], row["source_id"], row["seg"])
@@ -171,6 +204,7 @@ def assemble(
             seg_rows.sort(key=lambda r: (r["batch_seq"], r.get("item_seq", 0), r["id"]))
             info = segments.get(key, {})
             seg_end, mark = info.get("end_wall"), marks.get(key)
+            cut_at_exit = info.get("end_reason") == "EXIT_TRUNCATED"
             out_rows = []
             for i, row in enumerate(seg_rows):
                 t = row["effective_wall"]
@@ -181,6 +215,12 @@ def assemble(
                 until, why = (seg_end, "SEGMENT_END") if seg_end is not None else (None, None)
                 if seg_end is None and last and mark is not None and mark >= t:
                     until, why = mark, "WATERMARK"
+                if cut_at_exit and last:
+                    # a cut made at an exit is no end the source reached: the last sample is held as far as the
+                    # watermark vouches for it, and without one it holds nothing beyond itself; a sample after the
+                    # cut (a bad one is no evidence) is still shown, never held from before its own time
+                    until = max(t, min(seg_end, mark if mark is not None else t))
+                    why = "WATERMARK" if mark is not None else "SEGMENT_END"
                 if not last and (until is None or seg_rows[i + 1]["effective_wall"] <= until):
                     until, why = seg_rows[i + 1]["effective_wall"], "NEXT_CHANGE"
                 for gap in gap_list:
@@ -385,8 +425,9 @@ def input_basis(stores, result_id: str) -> dict:
         entry["rows"] = [dict(r) for r in rows]
         current = [r for r in entry["rows"] if r["batch_seq"] == result["batch_seq"] or entry["mode"] != "THIS_ROUND"]
         entry["batch_end"] = current[-1]["id"] if current else None
-        if not entry["rows"]:
-            out["missing"].append(pid)
+        this_round = [r for r in entry["rows"] if r["batch_seq"] == result["batch_seq"]] if entry["mode"] == "THIS_ROUND" else []
+        if not entry["rows"] or (this_round and all((r["quality"] or "").startswith(MISSING) for r in this_round)):
+            out["missing"].append(pid)  # nothing was found - or this round gave the input only a failure record
         for r in entry["rows"]:
             if r["origin"] == "STATE_ASSERTION":
                 original, _, _ = _first(stores, "SELECT 1 AS found FROM observation WHERE id=%s", (r["orig_id"],))
@@ -426,7 +467,10 @@ def coverage_end(result: dict) -> dict:
         source = channel["source_id"]
         best = None
         for span in channel["segments"]:
-            certain = span["end_wall"] if span["end_wall"] is not None else span["covered_until"]
+            if span["end_reason"] == "EXIT_TRUNCATED":
+                certain = span["covered_until"]  # a cut made at an exit: only the watermark is certain
+            else:
+                certain = span["end_wall"] if span["end_wall"] is not None else span["covered_until"]
             if certain is not None:
                 best = certain if best is None else max(best, certain)
         ends[source] = best if source not in ends or ends[source] is None else max(ends[source], best or 0)

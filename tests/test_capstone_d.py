@@ -100,6 +100,11 @@ def test_killing_the_process_before_inside_or_after_a_commit_leaves_no_half_grou
             "SELECT greatest(coalesce((SELECT max(effective_wall) FROM observation),0),"
             "coalesce((SELECT max(covered_wall) FROM watermark),0)) AS t"
         ).fetchone()["t"]
+        segment_evidence = conn.execute(  # R03a: the segment's OWN evidence - a valid observation or its watermark
+            "SELECT greatest(coalesce((SELECT max(effective_wall) FROM observation "
+            "WHERE seg=1 AND quality='GOOD' AND value IS NOT NULL AND NOT extreme),0),"
+            "coalesce((SELECT max(covered_wall) FROM watermark WHERE seg=1),0)) AS t"
+        ).fetchone()["t"]
     assert run["ended_wall"] is None, "the dead process registered no end"
     # restart: a NEW run in the same databases; the unfinished one is closed at persisted evidence only
     second = run_worker("none", "run2", 0, dsns, wall=2000)
@@ -111,6 +116,6 @@ def test_killing_the_process_before_inside_or_after_a_commit_leaves_no_half_grou
         dup = conn.execute("SELECT count(*) - count(DISTINCT id) AS d FROM observation").fetchone()["d"]
     assert old["end_reason"] == "ABNORMAL_EXIT" and old["ended_wall"] >= last_evidence - 1e-9
     assert old["ended_wall"] <= last_evidence + 5, "no crash time is invented beyond the stored evidence"
-    assert segment["end_reason"] == "EXIT_TRUNCATED" and segment["end_wall"] == old["ended_wall"]
+    assert segment["end_reason"] == "EXIT_TRUNCATED" and segment["end_wall"] == segment_evidence
     assert old["ended_wall"] < new_start, "the old interval cannot reach into the new run"
     assert dup == 0

@@ -19,7 +19,7 @@ from dataclasses import dataclass
 
 LOG_LIMIT = 500  # entries kept in memory: the newest ones, first-in-first-out
 DETAIL_LIMIT = 512  # characters of error detail kept
-SCRUB_INPUT_LIMIT = 8 * DETAIL_LIMIT  # raw text is cut here BEFORE cleaning, so the cost of cleaning has a ceiling
+SCRUB_INPUT_LIMIT = 8 * DETAIL_LIMIT  # raw text above this is left out whole, so the cost of cleaning has a ceiling
 DIAG_LIMIT = 500  # diagnostic facts that may wait at the ordered entry (used by Ingress)
 PHASES = ("CONNECT", "SUBSCRIBE")
 
@@ -28,7 +28,7 @@ ACTIVE, ENDED = "ACTIVE", "ENDED"
 
 # -- error detail: leaves the process only after it has been cleaned (§15.1 原因证据) ---------------------------------
 
-_USERINFO = re.compile(r"(?<![A-Za-z0-9+.-])(?P<scheme>[A-Za-z][A-Za-z0-9+.-]*://)[^/\s]*@")
+_USERINFO = re.compile(r"(?<![A-Za-z0-9+.-])(?P<scheme>[A-Za-z][A-Za-z0-9+.-]*://)[^@]*@(?:[^\s/@]*@)*")
 _BEARER = re.compile(r"(?i)\b(?P<kind>bearer|basic)\s+[A-Za-z0-9._~+/=-]+")
 _SECRET = re.compile(
     r"""(?ix)
@@ -40,7 +40,9 @@ _SECRET = re.compile(
 
 
 def scrub(text: str) -> str:
-    """Remove credentials: user information inside URLs, secret-named values, bearer / basic tokens."""
+    """Remove credentials: in a URL everything from `scheme://` to the nearest `@` (blanks included - a little too much
+    is masked rather than a part of a secret kept) and on to the last `@` of the pieces that follow it with no blank or
+    slash between (a password that holds an unescaped `@`), secret-named values, bearer / basic tokens."""
     text = _USERINFO.sub(lambda m: m.group("scheme") + "***@", text)
     text = _BEARER.sub(lambda m: m.group("kind") + " ***", text)
     return _SECRET.sub(lambda m: m.group("key") + m.group("sep") + "***", text)
@@ -49,18 +51,16 @@ def scrub(text: str) -> str:
 def clean_detail(raw) -> tuple[str | None, bool]:
     """(detail, truncated): scrubbed FIRST, then cut to the limit - a secret cut in half would still show its start.
 
-    A message longer than SCRUB_INPUT_LIMIT is cut before cleaning (to keep the cleaning cheap), back to its last
-    whole word, so no half-secret is left at the end; the part that remains is far longer than what is kept.
+    A message longer than SCRUB_INPUT_LIMIT is left out whole - (None, True) - not cut: the part that is kept could
+    hold the start of a credential whose end is out of sight, and nothing of it is worth that risk.
     """
     if raw is None:
         return None, False
     text = str(raw)
-    cut = len(text) > SCRUB_INPUT_LIMIT
-    if cut:
-        parts = text[:SCRUB_INPUT_LIMIT].rsplit(None, 1)
-        text = parts[0] if len(parts) == 2 else text[:SCRUB_INPUT_LIMIT]
+    if len(text) > SCRUB_INPUT_LIMIT:
+        return None, True
     text = scrub(text)
-    return text[:DETAIL_LIMIT], cut or len(text) > DETAIL_LIMIT
+    return text[:DETAIL_LIMIT], len(text) > DETAIL_LIMIT
 
 
 # -- entries and the log ---------------------------------------------------------------------------------------------
@@ -175,7 +175,7 @@ class CommLog:
         if active is not None:
             if active.reason == reason:
                 active.count, active.last_wall, active.last_mono = active.count + 1, wall, mono
-                if detail is not None:
+                if detail is not None or truncated:
                     active.detail, active.detail_truncated = detail, truncated  # the latest text; identity is the code
                 return active
             self._end(active, wall, mono, "REASON_CHANGED")
@@ -198,7 +198,7 @@ class CommLog:
         if active is not None:
             if (active.conn_gen, active.event, active.reason) == (conn_gen, event, reason):
                 active.count, active.last_wall, active.last_mono = active.count + 1, wall, mono
-                if detail is not None:
+                if detail is not None or truncated:
                     active.detail, active.detail_truncated = detail, truncated
                 return active
             self._end(active, wall, mono, "REASON_CHANGED" if active.conn_gen == conn_gen else "NEW_GENERATION")

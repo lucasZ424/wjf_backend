@@ -27,7 +27,7 @@ from htsg.config import Timing
 from htsg.runtime import Runtime
 from htsg.web import create_web_app
 
-TIMING = Timing(ua_keepalive_count=1)  # the asyncua test server sends its keep-alive one cycle later than the standard says
+TIMING = Timing()  # FieldUa uses the project-local server adapter; exercise the normal contract default.
 
 
 class Field:
@@ -111,7 +111,8 @@ async def test_the_runtime_reads_both_protocols_archives_serves_the_history_and_
                 assert rows["delta_t_01"][0]["value"] == pytest.approx(inner - outer)
         finally:
             await runtime.stop()
-    assert runtime.health["unwritten_at_stop"] == 0, "everything accepted was written before the process ended"
+    stop = (runtime.health["shutdown_incomplete"], runtime.health["run_end_status"], runtime.health["failed_sources"])
+    assert stop == (False, "COMMITTED", []), "the end of the run was confirmed, so every source had settled before it"
     assert kinds(primary, "RUN_START") == 1 and kinds(primary, "RUN_END") == 1, "the run is registered and ended"
 
 
@@ -128,7 +129,8 @@ async def test_realtime_state_does_not_wait_for_a_database_that_cannot_be_reache
             assert not runtime.failed.is_set(), "no task of the chain died because the archive is away"
         finally:
             await runtime.stop()
-    assert runtime.health["unwritten_at_stop"] > 0, "what could not be written is reported at the end, not hidden"
+    assert runtime.health["shutdown_incomplete"] is True and runtime.health["run_end_status"] != "COMMITTED"
+    assert runtime.health["unsettled_queue_items"] > 0, "what could not be written is reported at the end, not hidden"
 
 
 async def test_a_slow_archive_start_does_not_use_up_the_time_a_source_may_stay_quiet(monkeypatch):

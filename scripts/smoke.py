@@ -51,9 +51,10 @@ def tree_digest(paths) -> str:
 
 
 def running_code() -> list[Path]:
-    """The files of htsg that the delivered entry point actually loads (what runs), not everything in the folder."""
+    """The files loaded by the backend and by the separate simulated-field process used in delivery validation."""
     code = (
-        "import sys, htsg.cli, htsg.runtime, htsg.web, htsg.archive, htsg.archive_router, htsg.modbus, htsg.ua, htsg.owner; "
+        "import sys, htsg.cli, htsg.runtime, htsg.web, htsg.archive, htsg.archive_router, htsg.modbus, htsg.ua, "
+        "htsg.owner, htsg.simulation, htsg.sim_ua; "
         "print(chr(10).join(sorted(m.__file__ for n, m in sys.modules.items() if n.startswith('htsg') and getattr(m, '__file__', None))))"
     )
     out = subprocess.run([sys.executable, "-c", code], cwd=ROOT, capture_output=True, text=True, check=True).stdout

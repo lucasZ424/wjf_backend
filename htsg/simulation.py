@@ -156,8 +156,11 @@ class FieldSimulator:
     async def start_opcua(self):
         from asyncua import Server, ua
 
+        from .sim_ua import install_keepalive_adapter
+
         server = Server()
         await server.init()
+        install_keepalive_adapter(server)
         server.set_endpoint(self.sources["opcua"].endpoint)
         server.set_server_name("HTSG synthetic research field")
         server.set_security_policy([ua.SecurityPolicyType.NoSecurity])

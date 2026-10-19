@@ -330,6 +330,303 @@ D44f｜基线 `dc84fb2` 之上的工作区（D44a–D44e 之后，未提交）�
 
 **未覆盖/未验收（如实）：** 没有真实 Acheron、真实 OPC UA 网关、独立卷、现场长稳的证据；一年容量按终版口径仍不通过；整套连续运行仍没有通过记录。**设计侧文档里的状态陈述我没有动**：终版第 15 节表格与 15.1 开头仍写“设计已采纳、未实现”，方案头部与第 12 节仍写“尚未实施代码”，核验文件同——它们是用户维护的设计文件，终版的哈希写在方案头，回写会使其改变，请你决定是否回写、怎么写。
 
+### R01 恢复可靠取消（Q01）
+
+R01｜基线 `946cb5d` 之上的工作区（本轮第一批，未提交）｜**改** `htsg/modbus.py`、`htsg/runtime.py`；**新** `tests/test_cancellation.py`（位于 `.gitignore` 的 `tests/` 下，提交时须 `git add -f`，用户已授权）｜**验收** 新用例 10 项＋原有 `test_modbus_acquisition.py`、`test_runtime.py`、`test_capstone_c.py`，命令见下｜**结果** 新用例改前 4 失败 / 6 通过，改后 10 通过；原有三套件连同新文件在开发库重启后 **31 通过 / 0 失败 / 0 跳过**；隔夜前一次运行 20 通过 / 1 失败，失败的是一条既有用例的间歇失败，**待用户裁定**（见下）｜**证据位置** 新用例本身（可重跑）；运行输出和探针脚本在会话临时目录，未入库｜**未覆盖** 见末段。
+
+**改动（出处：细则 3.2、整改方案 R01、第2.3节决策5）：**
+- `htsg/modbus.py` `poll`：`except (ModbusIOException, TimeoutError)` 一支开头加一条判据——`asyncio.current_task().cancelling() > 0` 时 `raise asyncio.CancelledError from error`；否则照旧记 TIMEOUT 并继续。判据只有“本任务是否有未处理的取消请求”这一条，异常的 `__cause__` 不作条件，不匹配文本。净增 2 行。
+- `htsg/runtime.py` `_done`：`self.running` 为真时，任务以 cancelled 结束也记 `health["fatal"] = "<任务名>: CANCELLED"` 并置 `failed`；`running` 为假（正常停机）时行为不变。
+- **没有做**（细则 3.2 第4条）：没给 `_end` 加超时，没有循环重复 cancel 或固定 sleep，没动 `ModbusAcquirer.run` 的重连与退避，没动 `poll` 的整轮定性和 `session` 的连续超时计数，没动 UA 侧；`config/*.json` 与 `Timing`/`Limits`/`Storage` 默认值不变；没改 `.venv` 里的任何文件。
+
+**新用例（`tests/test_cancellation.py`，对应细则 3.3；每个用例的 docstring 写明保护的是 Q01 或终版 §9、§11 哪条）：**
+
+| 细则 | 用例 | 改前 | 改后 |
+| --- | --- | --- | --- |
+| 3.3.1 | `test_one_cancel_while_the_peer_withholds_its_answer_ends_the_acquirer_and_closes_its_client`：真实 `AsyncModbusTcpClient` 加真实 pymodbus 服务端（收到请求后用事件通知、暂扣应答）；请求已到达后单次 `task.cancel()`，2 秒内结束、客户端已关闭、取消后入口上没有新调用（无 TIMEOUT 批次、`attempt_failed`、`source_down`） | **失败**：任务未结束 | 通过 |
+| 3.3.2 对照 | `test_a_cancel_when_the_peer_answers_at_once_…`、`test_a_cancel_between_two_rounds_…`（节拍睡眠中）、`test_a_real_request_timeout_without_a_cancel_is_still_a_timeout_round_…`（真实请求超时：仍产出 TIMEOUT 批次、任务继续） | 通过 | 通过 |
+| 3.3.3 反例 | `test_poll_records_a_timeout_round_for_an_error_that_only_looks_like_a_cancel`（`poll` 层）、`test_an_error_that_only_looks_like_a_cancel_does_not_end_the_acquirer`（任务层：`ModbusIOException(...) from CancelledError()` 但本任务没被取消，连续出 TIMEOUT 批次并触发 TIMEOUTS 重连，任务不结束） | 通过 | 通过 |
+| 3.3.4 | `test_a_core_task_that_ends_cancelled_while_the_runtime_runs_is_a_failure`（`fatal == "acquire mb: CANCELLED"` 且 `failed` 置位） | **失败**：3 秒内 `failed` 未置位 | 通过 |
+| 3.3.4 | `test_the_cancels_of_a_normal_stop_are_no_failure`（正常 `stop()` 期间的取消不报 fatal） | 通过 | 通过 |
+| 3.3.5 | `test_the_full_scale_rig_ends_ten_times_…`、`test_the_simulation_chain_ends_ten_times_…`（`FieldModbus.delay=0.6`，请求到达后立即收尾，各 10 次；收尾设 10 秒上限，超限即判失败并强制收掉任务，不让失败变成整个运行挂住） | **失败**：`Rig.__aexit__`、`Chain.__aexit__` 10 秒内未结束 | 通过 |
+
+**命令与结果：** 命令形式均为 `PYTHONUTF8=1 .venv/Scripts/python.exe -m pytest <文件> -v --tb=short -p no:cacheprovider --basetemp=<会话临时目录> -o faulthandler_timeout=120`，输出重定向到文件。
+- 改前（`htsg/` 未动，只有新文件）：`tests/test_cancellation.py` **4 失败 / 6 通过 / 0 跳过，49.57 秒**。4 项失败正是细则 3.3.6 要求“修改前失败”的那几项（3.3.1、3.3.4 运行期取消报 fatal、3.3.5 两项），失败原因与预期一致；6 项对照、反例和正常停机在改前改后都成立。
+- 改后：同一命令 **10 通过 / 0 失败 / 0 跳过，42.69 秒**。其后把“真实请求超时”对照的对端从“晚0.6秒应答”换成“永不应答”（原因见下一条），连续再跑 3 遍均 10/10（42.28、42.36、42.46 秒）。
+- 原有套件（细则 3.3.6）：`tests/test_modbus_acquisition.py tests/test_runtime.py tests/test_capstone_c.py`，隔夜前一次 **20 通过 / 1 失败 / 0 跳过，80.84 秒**（失败项即下一条）；开发库重启后与新文件一并重跑 **31 通过 / 0 失败 / 0 跳过，113.21 秒**（`test_modbus_acquisition` 11、`test_runtime` 6、`test_capstone_c` 4、`test_cancellation` 10）。
+- `ruff check htsg tests scripts` 通过；`git diff --check` 通过（只有 LF→CRLF 提示）。
+
+**待用户裁定（细则和整改方案都没覆盖，我没有改动）：既有用例 `test_modbus_acquisition.py::test_one_timeout_keeps_the_connection_three_in_a_row_reconnect` 间歇失败。** 它在第二阶段（`server.delay = 0.6` 后等 `gen == 2`，即连续3轮超时触发重连）会在第217行 `await bench.until(lambda: bench.acquirer.gen == 2)` 超过10秒而断言失败。
+- **频次（依赖机器时序状态，两个时段差别很大）：** 隔夜前、改后的工作区单独重跑该用例 9 次，4 次失败；同序列加日志的探针 6 次，4 次失败。同一时段基线副本（`git archive 946cb5d` 解到临时目录，已核对 `htsg.__file__` 指向副本）同一用例 6 次：3 次 1.3 秒通过，3 次输出 60 秒 faulthandler 堆栈后 120 秒内未结束——堆栈只显示主线程在 `run_until_complete`，任务级位置没取到，所以这 3 次是“函数体失败后收尾挂住”还是“函数体通过后收尾挂住”**没有逐次证实**。开发库重启后，函数体结果与“收尾是否在15秒内结束”分开记录的探针，基线副本与改后工作区交错各 30 次：基线函数体失败 1/30、收尾未结束 2/30（另一批 6 次里收尾未结束 1 次，函数体 6/6 通过）；改后函数体失败 3/30、收尾未结束 0/30。函数体失败率两边差异不显著，且都比隔夜前低得多。
+- **原因（已定位）：** pymodbus 3.15.0 服务端 `server/requesthandler.py` 第117行在延时应答之后用 `self.last_pdu.transaction_id` 给响应打事务号，而 `last_pdu` 已被后到的请求覆盖。`FieldModbus.delay=0.6` 大于轮间隔（约0.17秒）时，旧请求的迟到应答带着最新请求的事务号被客户端当成当前请求的正确应答（探针时间线：服务端按0.6秒延时发出的应答，在10毫秒内被客户端记为一轮 OK），于是“连续3轮超时”凑不齐。这是测试服务端的行为，不是被测代码；R01 的新分支在无取消时不会走到（失败探针的45轮里每轮结束时 `cancelling()` 实测均为0，任务始终存活），改动前后该用例的函数体行为一致。
+- **验证：** 在临时副本（不在工作区）里把“晚0.6秒应答”改成“永不应答”（`delay=30`），同一序列连跑10次全部通过（隔夜前那个时段，原写法约45%失败）。
+- **未采取：** 按细则1.2第5条没有改这条既有用例。建议的最小改动：只改这一条用例的对端行为（永不应答，不再晚应答），不碰 `htsg/`；请用户裁定是否在本轮做。裁定前，“原有用例全过”只能写作：重启后一次完整运行全过，但该用例按上述机制间歇失败。
+- **对 R05 的提示：** 多从站夹具里“持续沉默”不要用比轮间隔长的 `delay`，用暂扣（永不应答）；否则迟到应答会被当成当前请求的应答，使“持续沉默”变成时有时无。
+
+**过程中的观察（不处理，仅记录）：** ① `ModbusAcquirer.poll` 里第二个 `except (ModbusIOException, TimeoutError)` 的 `TimeoutError` 被前一个 `except (ConnectionException, OSError)` 先接住（`TimeoutError` 是 `OSError` 的子类，已用 `issubclass` 核实），所以这一支实际只会接到 `ModbusIOException`；pymodbus 3.15.0 的请求超时本身是 `ModbusIOException`，不受影响。未改。② 基线上 `Bench.__aexit__` 收尾挂住是真实存在的：基线副本探针里函数体通过后 `__aexit__` 15 秒内未结束（该次之后重复取消才结束），改后 30 次未再出现。
+
+**未覆盖/留给后续：** 没有做变异验证（用来证明对照和反例确实能抓住“只看因果链”“遇到 `ModbusIOException` 就一律抛取消”这两种错误改法的是用例的设计，不是变异实验）；对端沉默时取消被吞的比例（复核实测12次里11次）未按12次复测，用例是确定性复现；G1 的“取消与生命周期检查在有限等待内结束”只覆盖了采集任务取消和 `Rig`/`Chain` 收尾，`Runtime.stop` 的整体期限属 R04；整套连续运行（G2）未做。
+
+### R02 详情脱敏与入队边界（Q04、Q06）
+
+R02｜基线 `946cb5d` 之上的工作区（R01 之后，未提交）｜**改** `htsg/commlog.py`、`htsg/records.py`、`htsg/modbus.py`、`htsg/owner.py`、`htsg/static/app.js`；测试 **新** `tests/test_detail_bounds.py`（26 项，`git add -f`），**改** `tests/test_web_comm.py`（+1 项）、`tests/test_comm_log.py`（见下，逐条）｜**验收** 命令见下｜**结果** 新用例改前 17 失败 / 10 通过，改后全部通过；细则 4.3 第6条列出的六个文件合计 **142 通过 / 1 xfail / 0 失败 / 0 跳过**（140.00 秒）；其中 1 项 xfail 是**待用户裁定**的一条旧参数（见下）｜**证据位置** 新用例本身（可重跑）；运行输出与探针在会话临时目录，未入库｜**未覆盖** 见末段。
+
+**改动（出处：细则 4.1、4.2、整改方案 R02 / 第2.3节决策6）：**
+- `commlog.py`：`_USERINFO` 改为从 `scheme://` 到其后**最近一个 `@`**，中间内容（空白也算）一律遮为 `***`，`@` 之后照常保留，没有 `@` 时不遮；`clean_detail` 改为——原文超过 4096 字符整段省略，返回 `(None, True)`，不做任何部分保留；4096 以内先完整脱敏，脱敏后超过 512 再截到 512 并标截断。删除“预截断后退回最后一个词”的逻辑。4096、512 沿用现行常量（`SCRUB_INPUT_LIMIT`、`DETAIL_LIMIT`），没有改成配置项，`_BEARER`、`_SECRET` 未动。
+- `records.py`：`RequestResult` 在 `detail` 之后加 `truncated: bool = False`。
+- `modbus.py` `poll`：构造 `RequestResult` 前调用 `clean_detail(str(error))`，把清理后的文本和截断标志存入；原始长文本不再离开这一行。
+- `owner.py` `_log_requests`：二次清理保留，截断标志取 `q.truncated or 本次清理的标志`，不会把 True 覆盖成 False。
+- `static/app.js` `commEntry`：详情为空且 `detail_truncated` 为真时，显示“详情已省略（过长）”（细则约定 H）；请求仍保留自己的“请求 <范围>”一行。
+- `ingress.py` 没改：`attempt_failed` 本来就在入口清理，规则随 `clean_detail` 自动更新。`ua.py` 没改：`_plain` 替换环境变量口令的行为不变（`test_comm_facts.py` 相关用例全过）。`docs/openapi.json` 没改：没有新增 API 字段，`test_health_communication.py::test_the_checked_in_openapi_description_matches_the_application` 通过。
+
+**新用例（`tests/test_detail_bounds.py` 26 项，`tests/test_web_comm.py` 1 项；每个用例的 docstring 写明保护的是 Q04、Q06 或终版 §15.1 的哪一条）：**
+- **Q04 合成串 A–G**（按复核意见书描述构造，秘密占位 `SYNTHSECRET` 重复）：改前 A、C、D 的输出含秘密前缀，B、E、G、F 不含——与复核意见书的探针表完全一致；改后七个输出都不含任何 `SYNTH` 片段，A–E、G 为 `(None, True)`，F（短 URL）为 `opc.tcp://***@localhost/`。
+- **边界：** 4096 字符正常处理（`("y"*512, True)`），4097 字符整段省略；短文本 `opc.tcp://user:SYNTH SECRET@localhost/`（userinfo 带空格）改前泄漏、改后遮挡；`connect opc.tcp://host:4840 failed; mail admin@example.com` → `connect opc.tcp://***@example.com`，用例 docstring 写明“多遮是已确认的取舍”；两个 URL 各遮到各自最近的 `@`。
+- **必须原样保留：** `opc.tcp://127.0.0.1:4840/`、`127.0.0.1:502`、pymodbus 的常规超时消息、`OSError` 的 `repr` 短文本、一条 0.8 秒连接消息；另有**真实 pymodbus** 对一台不应答的真实服务端发请求，`poll` 结果里的详情就是库的原文 `Modbus Error: [Input/Output] No response received after 0 retries, continue with next request`，`truncated=False`。
+- **Q06：** 假客户端抛 5,000,000 字符的 `ModbusIOException`：`poll` 返回的批次里、`Ingress.queue` 未排空时、`owner.commlog.snapshot()`、`/api/health` 响应里，详情均为 `None`、截断标志为真；另一条用 3000 字符且带凭据的文本，`poll` 结果里已是脱敏后截到 512、标志为真；owner 层的标志不被覆盖。
+- **页面：** 真实 Chrome，给日志注入一条详情被省略的 Modbus 请求失败和一条被省略的订阅尝试失败，页面都显示“详情已省略（过长）”，请求那条同时保留“请求 holding/1/0+16”，不出现“无详情”，无控制台错误。改前该用例失败。
+
+**命令与结果：** 命令形式同 R01。
+- 改前（`htsg/` 未改）：`tests/test_detail_bounds.py` 加上面那条页面用例：**17 失败 / 10 通过**（5.13 秒）。失败原因：A/C/D 泄漏、4097 未省略、`RequestResult` 没有 `truncated`、页面无说明等；通过的是 B/E/G/F、各 URL 遮到各自 `@`、必须原样保留的 5 条。
+- 改后：`tests/test_comm_log.py tests/test_comm_facts.py tests/test_comm_protocols.py tests/test_web_comm.py tests/test_health_communication.py tests/test_detail_bounds.py`：**142 通过 / 1 xfail / 0 失败 / 0 跳过，140.00 秒**（`test_comm_log` 48＋1 xfail、`test_comm_facts` 25、`test_comm_protocols` 16、`test_web_comm` 13、`test_health_communication` 14、`test_detail_bounds` 26）。
+- `ruff check htsg tests scripts` 通过；`node --check htsg/static/app.js` 通过；`git diff --check` 通过。
+
+**对原有用例的修改（细则 4.3 第6条；`tests/test_comm_log.py`，逐条）：**
+1. `test_the_ingress_cleans_and_cuts_the_text_before_it_queues_it`：输入 100,000 字符，原断言“长度等于 512 且已截断”→ 改为“`None` 且已截断”；另加一次 3000 字符输入，保留原来的“切到 512”预期。理由：新规则——超过 4096 字符整段省略，不再截到 512。
+2. `test_cleaning_a_huge_or_hostile_message_costs_milliseconds_not_minutes`（4 个参数）：断言由“长度不超过 512 且已截断”改为“`None` 且已截断”。理由：这 4 个输入都超过 4096，现在不再进入正则。**原意（对恶意长文本的清理耗时有上限）**移到新增的 `test_cleaning_a_hostile_message_of_the_largest_size_that_is_still_cleaned_costs_milliseconds`（4 个参数，输入都在 4096 以内，含无 `@` 的 1024 个 `a://`，这是新 URL 规则最坏的情形），实测每例约10毫秒以内。
+3. `test_long_text_is_cut_to_the_limit_and_says_so_and_short_text_is_not_marked`：5000 字符改为 4000 字符。理由：5000 超过 4096，现在整段省略；5000 的情形由新用例 `test_the_limit_is_4096_characters_of_raw_text_to_the_character` 覆盖。
+4. `test_credentials_never_survive_the_cleaning` 的参数 `cannot open opc.tcp://u:p@ss@host/ca`（秘密 `ss@`）：标成 `xfail(strict=True)`，**不是**“依赖旧‘退回最后一个词’行为”的那类断言，见下一条。
+
+**待用户裁定（细则没覆盖，我没有替你选口径）：口令里含未转义 `@` 时，“最近一个 `@`”规则只遮到第一个 `@`。** `opc.tcp://u:p@ss@host/ca` 现在输出 `opc.tcp://***@ss@host/ca`：口令在第一个 `@` 之后的部分（`ss`）没被遮；旧规则（贪婪到下一个 `/` 或空白之前的最后一个 `@`）会整段遮成 `opc.tcp://***@host/ca`，原来的参数用例就是为此写的。按 RFC 3986，userinfo 里的 `@` 应当百分号编码，这样的 URL 本身不规范，但按你确认的第2.3节决策6字面实现就是这个结果。可选：(a) 接受字面规则，删掉该参数、另写一条用例写明这一点；(b) 在最近的 `@` 之后，若紧跟的非空白、非 `/`、非 `@` 的一段又以 `@` 结尾，则连这一段也遮（正则 `[^@]*@(?:[^\s/@]*@)*`，仍不解析 URL；只对 `x@y@z` 这类文本比字面规则多遮 `y@`），更符合决策6说的“诊断损失小于泄漏风险”。我倾向 (b)，但这是你的口径。该参数现在是严格 xfail：选 (b) 并实现后它会变成 XPASS(strict) 而失败，提示去掉标记。
+
+**过程中的观察（不处理，仅记录）：** `CommLog.attempt_failed`、`round_failed` 在聚合已存在时只在新详情**不为 `None`** 时才更新文本和标志（`if detail is not None`），所以一条以“被截断/被省略”开头的聚合，之后再遇到一次被省略的失败，不会把标志改回来，也不会因省略而清空文本；这是既有行为，R02 没有改它。
+
+**未覆盖/留给后续：** 没有做变异验证；5,000,000 字符的路径用假客户端覆盖（真实 pymodbus 自己的异常文本很短，也有真实对照）；`ModbusAcquirer` 以外的来源（UA 侧 `_plain`）按细则只核对未变，没有新增用例；页面只核对了“省略”这一种新文案，其余渲染沿用既有用例。
+
+### R03a 崩溃收尾与跨库收尾只用本段证据（Q02）
+
+R03a｜基线 `946cb5d` 之上的工作区（R02 之后，未提交）｜**改** `htsg/archive.py`、`htsg/archive_router.py`、`htsg/history.py`；测试 **新** `tests/test_exit_evidence.py`（18 项，`git add -f`），**改** `tests/test_run_segments.py`、`tests/test_capstone_d.py`（各一条断言，见下）｜**验收** 命令见下｜**结果** 新用例改前 13 失败 / 4 通过（当时 17 项）＋第18项在基线副本上失败，改后 18/18；新用例连同细则 5.2 第6条列出的原有套件及相关套件共 **107 通过 / 0 失败 / 0 跳过，172.35 秒**｜**证据位置** 新用例本身（可重跑，真实数据库）；运行输出在会话临时目录，未入库｜**未覆盖** 见末段。
+
+**改动（出处：细则 5.1、整改方案 R03a / 第2.3节决策2、7）：**
+- `archive.py`：新增 `_segment_evidence`（某段的证据＝该段最后一条**有效观测**〔`quality='GOOD'`、有值、非极值，含状态重申，取重申时刻〕与该段**水位**中较晚者）和只读的 `unfinished_facts`（本库里哪些 run、哪些段已有终点，以及本库未结束的 run 的各段证据）。`reconcile_unfinished_runs`：run 的 `ended_wall`、`last_evidence_wall` 仍取全 run 最大证据（SQL 不变，只是运行元数据）；每个 `end_wall IS NULL AND start_wall IS NOT NULL` 的段，`end_wall` 改为**该段自己的证据**，既无有效观测也无水位时取该段 `start_wall`（细则约定 A），`end_reason='EXIT_TRUNCATED'` 不变；新增可选参数 `ended_runs`、`ended_segments`、`evidence`（路由器收集的各库事实）：任一库已结束的 run 不收尾，任一库已有终点的段不截断，段证据取各库中该段的最大值。不计入证据（用例逐类覆盖）：`state_event` 的任何记录、`result`、`fault_record`、BAD／极值／缺失（`quality` 不是 GOOD）的观测。
+- `archive_router.py`：`initialize` 先初始化全部库，再 `_close_unfinished_runs`：从所有可读库收集事实；**任一已绑定库不可读时不收尾任何运行**，`health["reconcile"] = "PENDING_UNREADABLE:<库名>"`，留待下次启动（细则约定 B；运行期间不重试）；全部可读时对每个库收尾，不向其他库复制 RUN_END 组、不改其他库的 run 行。成功时清掉旧的 `reconcile` 键。`/api/health` 的 `archive.health` 本来是开放对象，不需要改 OpenAPI。
+- `history.py`：`_merge_segments`——同一段在各库的记录里，真实终点优于 `EXIT_TRUNCATED`，同类里取 `end_wall` 最大的那一条，`end_reason` 取自同一条；`assemble`——`end_reason='EXIT_TRUNCATED'` 的段，最后一条记录的保持终点＝`max(该行时刻, min(段终点, 水位))`，无水位时＝该行自身时刻（只保留实存点），非最后一条照旧保持到下一条，缺口规则照旧；`coverage_end`——`EXIT_TRUNCATED` 段只取该段水位，无水位不贡献。其他 `end_reason` 的段全部不变；库里已有的数据不迁移、不改写。
+
+**新用例（`tests/test_exit_evidence.py` 18 项，真实 PostgreSQL，用 `archive_db_factory`；docstring 写明保护的是 Q02 / 终版 §5，对应细则 5.2）：**
+
+| 细则 5.2 | 用例要点 |
+| --- | --- |
+| 1 两源不同水位 | 源A观测1001、水位1002；源B观测与水位到1010，另有1015的状态记录；不 shutdown，重启收尾：A段 `end_wall=1002`、B段 1010，run 的 `ended_wall` 仍是全 run 最大证据 1015；查询A最后一条保持到1002，`coverage_end`＝{A:1002, B:1010}，不被B抬高 |
+| 2 无水位 | 只有观测1001：段终点1001；查询最后一条保持终点＝自身时刻，`coverage_end` 为 `None` |
+| 3 水位后的实存点 | 水位1005，其后观测1007、1008：两行都可见；1007保持到1008，1008不向后保持；`coverage_end`＝1005 |
+| 证据种类 | 状态重申按重申时刻计；BAD、极值、`MISSING_*` 观测和状态事件都不计，这样的段终点＝起点（细则约定 A）；坏值落在终点之后时照样显示、保持终点不早于自身时刻（第18项） |
+| 4 既有错误数据 | 直接写入按旧规则截断的段（`end_wall=1020`、`EXIT_TRUNCATED`）：有水位时保持终点按水位限制，无水位时＝自身时刻；再次启动后库里的 run 行和段行原样不变（参数化两例） |
+| 5 跨库 | ①运行在主库开始、续在应急库、正常停止（SEG_END 与 RUN_END 只在应急库）后重启：主库 run 行不被改（不是 `ABNORMAL_EXIT`）、主库那段不被截断，`*_closed_runs` 为空，合并后段终点与结束原因同出一条记录（1011、`SHUTDOWN`）；②同样的运行但崩溃：两库各自按本库证据记 `ABNORMAL_EXIT`，该段按**两库合并**的段证据截在1011，不被主库较早的1002截短；③RUN_END 所在库在重启时不可读：不收尾，`health` 为 `PENDING_UNREADABLE:emergency`，查询 `partial`、各源 `coverage_end` 为 `None`，该库恢复后再次启动，仍不误判、合并结果正确 |
+| 段合并 | `_merge_segments` 7 个参数：真实终点胜过截断（两种读取顺序）、真实终点之间取最晚且带它自己的原因（两种顺序）、两条截断取最晚、只有起点行与终点行合并（两种顺序） |
+
+**命令与结果：** 命令形式同 R01。
+- 改前（`htsg/` 未动）：`tests/test_exit_evidence.py` 当时 17 项 **13 失败 / 4 通过**（6.52 秒），失败原因与预期一致（段终点取到全 run 最大证据、跨库主库被判异常退出、没有 `reconcile` 键、合并取了错误的原因）；通过的 4 项是与旧规则碰巧一致的合并参数。第18项（坏值尾部）是改后补的，用基线副本（`git archive 946cb5d`，已核对导入的是副本）补测：失败（段终点 1020，应为 1002）。
+- 改后：新文件 **18/18 通过**；`tests/test_exit_evidence.py tests/test_run_segments.py tests/test_capstone_d.py tests/test_history_query.py tests/test_history_merge.py tests/test_capstone_f.py tests/test_history_api.py tests/test_resilience.py tests/test_storage_routing.py tests/test_archive_router.py`：**107 通过 / 0 失败 / 0 跳过，172.35 秒**（`test_exit_evidence` 18、`test_run_segments` 10、`test_capstone_d` 4、`test_history_query` 9、`test_history_merge` 8、`test_capstone_f` 9、`test_history_api` 19、`test_resilience` 4、`test_storage_routing` 20、`test_archive_router` 6）。
+- `ruff check htsg tests scripts` 通过；`git diff --check` 通过。
+
+**对原有用例的修改（细则 5.2 第6条）：** 原有套件没有一条因本批失败。两处“以全 run 最大证据作预期”的断言按细则改成本段证据，**改动前后数值相同**（两个场景都只有一个源、一个段，本段证据恰等于全 run 最大证据；实现改完、这两处断言还没改时，89 项原有用例已全过），所以改的是用例表达的意图，这两处自己区分不出新旧规则，区分靠新文件：
+1. `test_run_segments.py::test_an_exit_without_a_stop_is_closed_at_the_last_persisted_evidence_and_nothing_later`：段的预期由 run 级 `expected`（含状态记录）改为 `segment_expected`＝本段有效观测时刻与水位的较晚者；run 级的断言不变。
+2. `test_capstone_d.py::test_killing_the_process_before_inside_or_after_a_commit_…`（3个参数）：`segment["end_wall"] == old["ended_wall"]` 改为 `== segment_evidence`（崩溃前在库里查出的第1段的有效观测与水位较晚者）；run 级的断言不变。
+
+**实现取值与观察（需知悉，均未超出细则；若口径不同请裁定）：**
+1. **跨库的段证据取各库中该段的最大值。** 细则只写“本段证据”；一段的数据可能跨库，若只看本库证据，续在应急库里的观测会落在主库那一份段终点之后。run 级的 `ended_wall` 仍是每个库自己的全 run 最大证据，没变。
+2. **旧结构被拒（`REFUSED`）的库也按“不可读”处理**，会让整个收尾推迟；一个长期配置错误的绑定库因此会使崩溃遗留的运行一直不被收尾，直到它修好。这是细则“任一已绑定库不可读则不收尾”的保守读法。多个不可读库名用逗号连接。
+3. **晚于段终点的最后一行**（坏值不算证据，所以可能出现）：细则字面公式 `min(段终点, max(该行时刻, 水位))` 会得到早于该行自身时刻的保持终点，我夹到不早于自身时刻（零长度保持，行仍可见）。只在这个角落与字面公式不同。
+4. **耗时没有在大库上测。** 本段证据的查询与原有的 run 级 SQL 同量级（扫崩溃运行的观测），受 `db_statement_timeout`（默认3秒）约束；超时按“不可读”处理，即推迟收尾而不是误收尾。
+
+**过程中发生的事：** 一轮后台验收我用 `TaskStop` 中止后，外层 shell 被杀而 pytest 子进程仍继续跑完（105 通过 / 1 失败），那条失败是 `test_resilience.py::test_a_hard_kill_at_any_moment…`——需要新起后端子进程的用例，子进程以 `3221225794`（`0xC0000142`，进程初始化失败）退出，时间点正是我杀外层 shell 的时刻；中止前后我改了 `history.py` 一处（观察3）并补了第18项，所以那一轮的数字作废，上面的 107 项是改完后重新完整跑的结果。中止时遗留的 3 个 `htsg_test_*` 临时库已由那个继续跑完的进程自己清掉，之后核对没有遗留。
+
+**未覆盖/留给后续：** 没有做变异验证；没有在大库上测收尾耗时；运行期间 owner 侧的 `lost_seg`、段/缺口一致性（Q07）属 R03b，本批没动 `owner.py`；停机时的收尾属 R04。
+
+### R05 部分请求语义的回归用例（Q05）
+
+R05｜基线 `946cb5d` 之上的工作区（R03a 之后，未提交）｜**改** `tests/protocol_support.py`（新增 `device_points`、`FieldModbusDevices`）；**新** `tests/test_partial_requests.py`（15 项，`git add -f`）；**未改 `htsg/` 任何文件**（细则 9.1）｜**验收** 命令见下｜**结果** 15 项全部通过；连同依赖 `protocol_support` 的 `test_modbus_acquisition`、`test_resync_health`、`test_comm_facts`、`test_cancellation` 共 **89 通过 / 0 失败 / 0 跳过，139.79 秒**｜**证据位置** 新用例本身（可重跑）；运行输出在会话临时目录，未入库｜**未覆盖** 见末段。
+
+**夹具（细则 9.1、细则约定 E）：** `FieldModbusDevices` 是**一台真实 pymodbus TCP 服务端上的多个从站**（默认设备号1、2，各8个 float32，寄存器0–15），每个从站的 `mode[设备号]` 可随时改成 `OK`（正常应答）、`SILENT`（不应答）、`EXCEPTION`（回协议异常，设备故障码4）；`device_points` 为每个设备造两个点，所以一轮就是“每个设备一个读请求”。**“沉默”是暂扣到服务端停止，永远不回**，不用“延时应答”：见 R01 条目，pymodbus 服务端给迟到的应答打的是最新请求的事务号，迟到应答会被当成当前请求的应答，沉默就会时有时无。客户端路径没有 mock：受控时钟的用例也走真实的 `ModbusAcquirer.poll`／`run`，只是客户端是脚本化的、时间戳由用例给。
+
+**用例（`tests/test_partial_requests.py`，对应细则 9.2；docstring 写明保护的是 Q05、终版 §9、§11）：**
+
+| 细则 9.2 | 受控时钟（脚本化客户端，合成时钟或快速节拍） | 真实服务端 |
+| --- | --- | --- |
+| 1 一个沉默、一个正常，超过60秒 | `test_partly_answered_rounds_keep_the_stable_spell_so_sixty_seconds_clear_the_resync_count`：起点三次重同步（计数3），其后75个整秒的轮次，每轮 `[OK, TIMEOUT]`、整轮 `OK`：计数在第261秒（稳定区间从第201秒的首个应答起算）才清零，之前一直是3；每秒都是 VALID、无告警；健康设备的点有效，沉默设备的点不可用、原因 `POLL_MISSING`；日志里只有一条持续中的 `POLL_TIMEOUT`（范围 `holding/2/0+4`，次数75），没有另一个请求的失败。对照 `test_rounds_without_any_valid_response_never_clear_the_resync_count`：首次应答之后整轮都无应答的74秒，计数始终是3 | `test_a_real_slave_that_never_answers_leaves_the_connection_alone_and_a_minute_of_it_clears_the_count`（**62.08秒**，默认时限：请求超时0.8秒、每秒一轮）：先断开一次链路得到 `resync_count=1`、第2代，再让第二个从站永不应答；每次采样 `consecutive_timeouts==0`、代次始终是2、健康点持续有效；计数在稳定区间满60秒后清零（断言区间：自首个应答起 60 秒到 64 秒内）；日志只有第2代里一条 ACTIVE 的 `POLL_TIMEOUT`（`holding/2/0+4`，次数≥55） |
+| 2 两个都沉默连续3轮重连；中间有应答则清零 | `test_three_rounds_in_a_row_without_any_response_reconnect_once`（TIMEOUT×3 后重连一次，`RESYNC` 原因 `DOWN:TIMEOUTS`）；`test_an_answer_from_any_request_in_between_clears_the_count_…`（两轮全沉默＋一轮半应答，循环4次，从不重连，连续计数最高到2） | `test_real_slaves_an_answer_in_between_resets_the_count_…`（两轮全沉默，再一轮“一个应答”或“全应答”，循环3次，12轮不重连）；`test_real_slaves_that_all_stay_silent_cost_the_connection_in_the_third_round`（见下，如实固定） |
+| 3 协议异常 | `test_a_device_exception_is_a_valid_response_no_timeout_and_no_alarm`（半数异常／全部异常各75个整秒：不是超时、无告警、同样在第261秒清零，日志只有 `POLL_EXCEPTION`，原因码 `EXCEPTION_CODE_4`）；`test_exception_answers_are_not_timeouts_so_they_never_reconnect` | `test_real_slaves_that_answer_with_an_exception_are_no_timeout_and_no_alarm`（两种，各8轮：不计超时、不重连、无告警，日志一条 ACTIVE 的 `POLL_EXCEPTION`） |
+| 4 单请求现行配置不变 | `test_the_current_research_configuration_has_one_request_per_round_so_every_timeout_is_a_whole_round`：研究配置的 Modbus 点只有1个读请求；单设备脚本客户端，TIMEOUT×3 重连 | `test_a_real_single_slave_that_never_answers_is_a_whole_round_timeout_three_of_them_reconnect`（真实单从站，TIMEOUT×3 后重连，其后 OK） |
+| 5 先受控、再真实 | 受控版本（上表左列）先写先跑，全部通过 | 真实版本（右列）随后写；开发库不涉及 |
+
+**命令与结果：** 命令形式同 R01。`tests/test_partial_requests.py` 在没有 `-k` 时共 15 项：除一项外分两次先后跑（14 项 6.08 秒，那一项 62.39 秒），最后连同依赖它的套件一并重跑：`tests/test_partial_requests.py tests/test_modbus_acquisition.py tests/test_resync_health.py tests/test_comm_facts.py tests/test_cancellation.py` **89 通过 / 0 失败 / 0 跳过，139.79 秒**（15＋11＋28＋25＋10）。`ruff check htsg tests scripts` 通过。R05 只固定现行行为，没有“改前失败”这一步；这些用例没有做变异验证，不能说明它们能抓住行为被改回去的情形。
+
+**过程中发现并如实固定的既有行为（需知悉；细则和方案都没有列，我没有处理）：** 第一次写“两个从站都沉默、连续3轮后重连”的真实版本时，我预期的轮次序列 `TIMEOUT, TIMEOUT, TIMEOUT` 实际是 **`TIMEOUT, TIMEOUT, CONNECTION`**。原因在库里：pymodbus 3.15.0 `transaction/transaction.py` 第232–237行，连续 `retries+3` 个请求无应答之后会自己关闭连接（`count_until_disconnect`，任何一个应答都会把它重置）；一轮有两个请求且都沉默时，第5个无应答请求落在第3轮，库先于采集器自己的“连续3轮超时”把连接关了，该轮其余请求因连接已关而报连接异常（这一步是我对库行为的推断，没有逐行追踪库代码；观察到的事实是该轮的分类为 `CONNECTION`）。结果仍是约3轮后重连一次（终版 §11 的实际效果成立），但**日志里的原因是 `DOWN:CONNECTION`，不是 `DOWN:TIMEOUTS`**；脚本化客户端没有库的计数，所以走到 `DOWN:TIMEOUTS`。现行研究配置每轮只有1个请求，库要连续5轮无应答才关，采集器的3轮规则先到，不受影响。一轮里有任何一个请求应答，库的计数就被重置，所以“部分请求超时”的情形不会触发它（上面62秒的用例就是证据）。`test_real_slaves_that_all_stay_silent_cost_the_connection_in_the_third_round` 把这一点固定下来。**是否需要把这种“全沉默”也统一成 `TIMEOUTS` 原因，是你的口径，细则 1.1 第4条不许改轮次语义，所以我没碰。**
+
+**未覆盖/留给后续：** 真实版本的60秒用例让整套多出约一分钟；“受控时钟”指合成的 owner 时钟和快速节拍，真实版本用真实时钟；多请求形态只覆盖“每设备一个请求”（设备号不同），没有覆盖同一设备内寄存器类型不同、地址不连续、超过125个寄存器等其他分块；R07 验收第③项要用到的“某个请求持续超时”场景，夹具已具备。
+
+### R07 Modbus 失败轮的按点失效记录（Q08）
+
+R07｜基线 `946cb5d` 之上的工作区（R05 之后，未提交）｜**改** `htsg/records.py`（常量 `MISSING="MISSING_"`）、`htsg/owner.py`（`_accept_poll`、`_poll_failed`，新 `_missing`）、`htsg/history.py`（`input_basis` 一处）；测试 **新** `tests/test_failure_records.py`（14 项，`git add -f`），**改** `tests/test_partial_requests.py`（`Live` 夹具留下 owner 提交的组，供 R07 的真实线路用例读取）、`tests/test_input_basis.py`（一条断言，见下）｜**验收** 命令见下｜**结果** 新用例改前 13 项失败（首批10项 9 失败/1 通过，其余4项在基线副本上 4/4 失败），改后 14/14；新用例连同细则 7.2 列出的原有套件及 `test_partial_requests` 共 **92 通过 / 0 失败 / 0 跳过，102.71 秒**；另有一轮覆盖 web／capstone／runtime／smoke 的回归 164 项全过｜**证据位置** 新用例本身（可重跑，含真实线路用例）；运行输出在会话临时目录，未入库｜**未覆盖** 见末段。
+
+**改动（出处：细则 7.1、整改方案 R07 / 第1.1节）：**
+- **何时写**（`owner.py`）：`_accept_poll` 在本轮动手前记下 `PointState.good` 为真的点。整轮 `TIMEOUT`／`EXCEPTION`／`CONNECTION`（`_poll_failed`）：这些点各写一条，质量 `MISSING_TIMEOUT`／`MISSING_EXCEPTION`／`MISSING_CONNECTION`；整轮 `OK` 但某个本轮前有效的点不在本轮应答里（`POLL_MISSING`）：写一条 `MISSING_UNANSWERED`。**不写**：本轮前已无效的点（从未有过观测、上一条是 BAD／极值／失效记录）；失败持续时的后续轮次（点已经无效）；OPC UA 源（代码只在 Modbus 的 `_accept_poll` 里）；本轮自己有观测的点，含解码为 BAD 的点。
+- **形态**（复用 `observation` 表，没加表、没加列；细则约定 C）：`value=NULL`、`status_code=NULL`、`extreme=false`、`origin=RECEIVED`；`received_wall/mono` 取本批的 `wall/mono`；`tick`、`poll_id` 取本轮值，`response_id=NULL`；`batch_seq` 取本轮值，`item_seq` 接在本轮已收观测之后连续编号，ID 走 `observation_id` 规则；与本轮 `POLL` 状态记录、派生量结果**同一个提交组**（也是同一个实时发布组）。
+- **owner 内部**（细则约定 D）：写出后该点 `PointState.obs` 指向这条记录；`PointState.reason` 仍是 `POLL_<outcome>`／`POLL_MISSING`，实时视图和通信页的原因不变；故障计时照旧取消。
+- **读取侧**：`history.assemble` 没有改（`quality ≠ GOOD` 即 `valid=False`，自然结束此前的保持）；`input_basis` 改一处——THIS_ROUND 里这个输入**只有失效记录**时计入 `missing`、`complete=False`（原来只有“一行都没有”才算）；`strain_change` 的“上一轮”行不改变原有判断。CSV 导出前端逐行写 `row.quality`，行里就是 `MISSING_*`，没改。
+- **连带**：C2 状态重申会重申失效记录本身（`orig_id` 指向它），不会改为重申更早的有效值（用例）；通信页输入表该行 `value` 为空、`quality` 为 `MISSING_*`、`reason` 仍为 `POLL_*`（用例，经 `communication_inputs()`）；R03a 的“本段证据”不计失效记录（`quality='GOOD'` 的条件已把它排除）。
+- **没有做**：没改 `modbus.py` 的采集、重连和告警规则，没改轮次分类；不回填、不插值；没改 `ingress.py`、`publisher.py`。
+
+**新用例（`tests/test_failure_records.py` 14 项；每个先看 owner 提交的组，再用同一批组做历史：内存里 `history.assemble`、真实数据库里 `history.query`，对应细则 7.2）：**
+
+| 细则 7.2 | 用例要点 |
+| --- | --- |
+| ① 第10秒成功、第11秒整轮超时、第12秒成功 | `b1`、`b2` 各一条 `MISSING_TIMEOUT`（`value` 空、`status_code` 空、第11秒、`tick=11`、`poll_id=poll11`、`response_id` 空，`item_seq` 0、1，与 `POLL` 状态和派生量同组）；历史里 `b1` 三行 1010 GOOD／1011 `MISSING_TIMEOUT`／1012 GOOD，1010 的值只保持到 1011（`NEXT_CHANGE`），1011 `valid=False`，`s1` 同一时刻不可用，原始量与派生量一致；实时视图 `b1` 无效、原因 `POLL_TIMEOUT`、`value=None`；`input_basis`（真实库）把 `b1` 计入 `missing`、`complete=False` |
+| ①′ 连续2轮整轮超时 | 只在第一轮写；中间有一轮有效观测则下一次失败又是一次新的转移（共4条） |
+| ② 协议异常持续60秒以上 | 62轮 `EXCEPTION`，只有 `MISSING_EXCEPTION` 各一条（第1002秒）；源保持 VALID、无告警；历史里 1001 的值在 1002 结束，不再一直保持到水位（方案 1.1 节记录的改前行为；该用例改前先败在“没有失效记录”这一步，没有单独观察到这一点）；水位和 `coverage_end` 不受影响 |
+| ③ 多请求轮中一个请求持续超时 | 两台从站、每轮两个请求，第二台持续不应答：它的两个点各一条 `MISSING_UNANSWERED`（后几轮不再写），`item_seq` 接在本轮观测之后（0–3）；第一台的点每轮都有观测、始终有效；实时视图 `POLL_MISSING`。**真实线路版**：真实采集器＋R05 的多从站真实服务端，第二台沉默6轮后恢复：整轮分类仍是 `OK`，各点恰好一条失效记录，历史序列收成 GOOD→`MISSING_UNANSWERED`→GOOD，失效前一行在失效时刻结束；连跑8次均通过 |
+| ④ 恢复 | ①与③里各有恢复轮：首条有效观测重新开始保持（`until` 链回正常） |
+| 原因 | 三种整轮失败（`TIMEOUT`／`EXCEPTION`／`CONNECTION`）各自的质量名；实时原因仍是 `POLL_<outcome>`，不是 `QUALITY` |
+| 不受影响的路径 | 解码为 BAD 的点（`nan`）仍是 BAD 观测，随后整轮超时不再为它写记录；从未有过有效值的点不写；OPC UA 的好值和 Bad 通知逐条不变（质量、值），不产生 `MISSING_*`（该条改前改后都通过） |
+| 容量 | 满量 8 路 Modbus：一次失败转移**增加 8 条**记录（每点一条），继续失败的轮次增加 0 条；正常轮次的观测条数不变 |
+
+**命令与结果：** 命令形式同 R01。
+- 改前（`htsg/` 未动）：首批 10 项 **9 失败 / 1 通过**（0.51 秒）；通过的是 OPC UA 路径的对照。改后补的 4 项（三种整轮失败的参数＋真实线路）用基线副本补测（`git archive 946cb5d`，已核对导入的是副本）：**4/4 失败**，1.92 秒。
+- 改后：新文件 **14/14**；`tests/test_failure_records.py tests/test_owner_batches.py tests/test_modbus_acquisition.py tests/test_input_basis.py tests/test_history_query.py tests/test_capstone_b.py tests/test_capstone_f.py tests/test_partial_requests.py`：**92 通过 / 0 失败 / 0 跳过，102.71 秒**（14＋24＋11＋7＋9＋3＋9＋15）。
+- 回归（改后、`test_input_basis` 修正后）：`test_web_*`（8个文件）、`test_stream`、`test_capstone_c/d/g`、`test_runtime`、`test_smoke`、`test_history_api`、`test_history_merge`、`test_exit_evidence`、`test_failure_records`（当时10项）、`test_partial_requests`：**164 通过 / 0 失败 / 0 跳过，460.60 秒**。更早的一轮 22 个 owner／历史相关文件：232 通过 / 1 失败（76.06 秒），那 1 项就是下面改的断言。
+- `ruff check htsg tests scripts` 通过；`git diff --check` 通过。
+
+**对原有用例的修改（细则 7.2：因新增失效记录而必须调整的断言，逐条）：** 只有一条。`test_input_basis.py::test_modbus_basis_is_this_round_only_and_a_missing_input_is_reported_not_borrowed`：原断言 `na["inputs"]["b2"]["rows"] == []`（未应答的输入在依据里一行都没有）改为 `[(2, "MISSING_UNANSWERED")]`（第2轮有它自己的失效记录）；`missing == ["b2"]`、`complete is False` 不变，“第1轮的值不被借用”的原意保留。理由：R07 之后这个输入在第2轮有一条失效记录，依据里本来就会列出它。其他六个细则点名的文件及全部回归都没有因本批失败。
+
+**可见的变化与观察（需知悉）：** ① **实时视图里失效点的 `value` 现在是 `null`、`quality` 是 `MISSING_*`**（以前是旧值和旧质量，只是 `valid=false`）：因为 `PointState.obs` 指向失效记录（细则 7.1 第4条）；总览、通信页、回放表对 `null` 的显示沿用原有 BAD 观测的路径（通信页和回放表原样写出 `MISSING_*`），我没有逐页在浏览器里核对每个页面对这个新值的显示，回归套件里的页面用例都通过。② 派生量取输入时 `_input` 读的是 `obs.value`，现在是 `None`；这些输入本来就 `valid=false`，派生量照旧不可用，无行为变化。③ `CONNECTION` 轮的失效记录落在即将被 `source_down` 切断的那一段里，段终点随后由 `RESYNC` 写出，没有新增段处理。④ 满量下容量增量：每次失败转移最多 **+8 条** `observation` 记录（每个 Modbus 输入一条），之后同一次失败不再增加；请把它计入容量报告（交付件中的容量报告我没有改）。
+
+**未覆盖/留给后续：** 没有做变异验证；CSV 导出和各页面对 `MISSING_*` 行的显示没有单独的浏览器用例（前端逐行写 `quality`）；`input_basis` 对 `strain_change` 的“上一轮”行不改变原有判断（本轮没有任何行而上一轮有时，仍不算 missing，这是原有行为）；归档容量报告和 G3 的满量测量尚未按本批重做。
+
+### R03b 持久段身份与恢复单元（Q07）
+
+R03b｜基线 `946cb5d` 之上的工作区（R07 之后，未提交）｜**改** `htsg/owner.py`（本批只动这一个源文件）；测试 **新** `tests/test_segment_identity.py`（15 项，`git add -f`），**改** `tests/test_archive_gap.py`（共用的 `Sink`）、`tests/test_archive_recovery.py`、`tests/fault_support.py`、`tests/test_fault_owner.py`、`tests/test_capstone_e.py`、`tests/test_history_query.py`、`tests/test_input_basis.py`（见下，逐条）｜**验收** 命令见下｜**结果** 新用例改前 13 失败 / 1 通过（当时14项），改后 15/15；随机序列另用临时脚本跑了 200 个种子全过；关联套件（含新文件）**179 passed**；整套连续运行（旁证）744 passed / 1 failed（已知不稳用例，非本批引入）/ 1 xfailed / 0 skipped｜**证据位置** 新用例本身（可重跑，含真实数据库）；运行输出与探针在会话临时目录，未入库｜**未覆盖** 见末段。
+
+**改动（出处：细则 6.1、整改方案 R03b / 第2.3节决策1、M1）：**
+- **持久段事实**（`SourceState.durable`）：`committed()` 确认含 `SEG_START` 的组后加入该段号，确认含 `SEG_END` 的组后移出；`refused()` 和作废不改变它。**去掉了 `lost_seg`**，不再用 `open_segment` 或 `lost_seg` 推断要收尾哪个已落库段。
+- **收尾意图**（`SourceState.closing`：段号→原因、终点）：每个 `SEG_END` 状态记录在 `_build` 时登记，不论它所在的组后来是被丢弃（归档 LOST）、被拒、被作废、被 pending 清空，还是还在队列里；该段的 `SEG_END` 被确认时移除；恢复单元确认后，清掉从未落库的段的意图。源失效、重同步、换代、停机产生的 `SEG_END` 因此一律“登记，不再静默丢弃”。
+- **延后补写**（`_segment_group(unit=True)`）：恢复单元对 `durable` 里每个段写一条 `SEG_END`，终点＝收尾意图的终点与缺口起点（`lost_since_wall`）中**较早者**；意图终点不晚于缺口起点时用意图的原因，否则用单元自己的原因（`ARCHIVE_GAP`／`RECOVERY`）。没有落库的段不写，所以不会出现只有终点的“幻影段”。
+- **每源最多一个在途恢复单元**：`recovery_order` 一直保留到单元结清（确认或被拒）；`_try_archive_recovery` 和 `_recover` 在有在途单元时不建第二个；在途期间待发队列溢出，状态进 LOST 但**不清 `recovery_order`**，溢出的时刻、批次、原因和组号记在 `overflow`，`is_void` 因此不会作废在途单元（原有的 `order != recovery_order` 判断现在才可靠）。
+- **在途单元结清后**：确认且其后发生过溢出——登记该单元的持久事实（新段已落库、旧段已收尾、缺口已记），归档状态保持 LOST，下一个单元的缺口从溢出时刻起算（`lost_since_wall`、`lost_reason`、`lost_from_batch_seq`、`void_after_order` 取溢出时的值）；被拒——持久事实不推进，缺口起点保持最早的丢失起点；UNKNOWN——提交队列原样重试，结清前不建下一个单元。
+- **本批追加的两处（细则没写，随机序列逼出来的，需知悉）：** ① 本源还有**已被队列接纳、尚未结清**的组（`SourceState.inflight`，在 `_submit`／`_submit_recovery` 接纳时登记，`committed`／`refused`／`is_void` 判作废时移除）时，**不建恢复单元**（`_try_archive_recovery`、`_recover` 两处）。原因：丢失若由“队列满”发现，队列里还有本源更早的组；单元建好之后这些组被拒，丢失起点要前移到单元已经记录的缺口之前，单元里关闭的段就出现“终点早于起点”（随机种子28：段5 起于 1012，却在 1008 结束）。单元本来就排在这些组后面，提交时间不变，只是基线晚一点取。② 已处于 LOST 且没有在途单元时，更早的组被拒，缺口起点取较早者（原来只在进入 LOST 的那一刻取一次）。
+- **没有做**：没改 `commitq.py`（作废仍然无回调，所以 `is_void` 在判作废的同时把该组从 `inflight` 里移除）；没改 `archive.py`、`history.py`；没新增表、列或归档记录种类。
+
+**新用例（`tests/test_segment_identity.py` 15 项；同步写入桩复刻提交队列的契约：接纳或拒绝；队首的组被确认、被拒、被暂扣——UNKNOWN 重试；作废的组静默丢弃；对应细则 6.2）：**
+
+| 细则 6.2 | 用例要点 |
+| --- | --- |
+| 1 Q07 ① | 段1落库→丢失→来源超时失效（SEG_END 因 LOST 无法入队）→3–6秒内恢复：恢复单元带段1的 `SEG_END`，终点＝缺口起点（早于失效时刻105）；确认后每个已落库段恰一条 `SEG_END`，无幻影段；真实库里段1已收尾、段2开着 |
+| 1 Q07 ② | 段1落库→换代的组（`SEG_END` 1＋`SEG_START` 2）被拒：单元的 `SEG_END` 指向段1，不是从未落库的段2；段2不出现 |
+| 1 Q07 ②′ | 段1落库→`source_down` 的 `SEG_END` 组被拒→新代次：单元收尾段1，终点＝断开时刻 |
+| 1 Q07 ③ | 单元在途→待发溢出→首个单元被拒：下一个单元仍收尾段1，缺口起点仍是最早的丢失起点；被拒单元开的段2从未落库，不出现 |
+| 2 竞态 | 单元在途时待发溢出，之后：首个单元在下一次 tick 之前确认／在它之后才确认／被拒（即③）三种时序都只有一个在途单元，首个单元从不被作废（`is_void` 为假）；确认后归档保持 LOST，下一个缺口从溢出时刻（1006）起算，不盖住已确认的基线，旧段2 终点＝溢出时刻；两个缺口 [102,103]、[106,108] 不重叠 |
+| 3 一致性断言（所有序列） | 每段 `end_wall ≥ start_wall`；同源缺口互不重叠；被拒后最早的丢失区间仍被记录；无幻影段；结清后只有最新段开着；真实库里复核同样的几条。**另有随机序列**：6个固定种子在用例里，200个种子用临时脚本额外跑过，每步检查“至多一个在途单元、在途单元不被作废、已落库历史满足上述断言” |
+| 4 覆盖 | UNKNOWN：单元被暂扣10个节拍，期间不建第二个单元，之后确认；重复确认（`ALREADY`）：同一单元再确认一次，状态和计数不变；三库间段片段合并：把一个跨多段的场景的各组轮流写进三个数据库，合并查询与单库查询的段（起止、原因、各行时刻）完全一致，`partial` 为假 |
+
+**命令与结果：** 命令形式同 R01。
+- 改前（`owner.py` 未动，只有新文件）：当时 14 项 **13 失败 / 1 通过**（0.41 秒）；失败对应 Q07 的各条（段2 被当成要收尾的段、没有 SEG_END、随机序列里直接出现“有终点无起点的幻影段”、第二个单元重叠等），通过的是“重复确认”那一条。第15项（三库合并）是改后补的，没有改前运行。
+- 改后：新文件 **15/15**；临时脚本（同一个随机序列函数体，种子 6–205，每个种子收尾时在真实库里复核）**200/200**。中间三次失败的归因：① 随机序列的收尾阶段没有在来源进入重同步后开新代次，是用例问题，已改；② 随机序列里把“带 GAP 的恢复组”之外的普通恢复组也当成单元，是用例问题，已改；③ 单元建得太早（上面追加的第①处），是实现问题，已改，之后 200 个种子才全过。
+- 细则 6.2 第5条列出的 `test_archive_gap.py`、`test_archive_recovery.py`、`test_capstone_f.py`、`test_capstone_e.py` 及相关套件：`test_archive_gap`、`test_archive_recovery`、`test_capstone_d`／`e`／`f`、`test_fault_owner`、`test_history_query`、`test_history_merge`、`test_input_basis`、`test_run_segments`、`test_watermark`、`test_owner_batches`、`test_source_validity`、`test_commit_queue`、`test_exit_evidence`、`test_failure_records`、`test_segment_identity` 一次 pytest 进程 **179 passed**（68.5 秒）。
+- `ruff check htsg tests scripts` 通过；`git diff --check` 通过。
+- **整套连续运行（旁证，不是 G2，候选版本未定）：** R03b 完成后的工作区，一次 pytest 进程、不分段：收集 746，**744 passed、1 failed、1 xfailed、0 skipped**，813.66 秒（0:13:33）。失败的是已知不稳用例 `test_modbus_acquisition.py::test_one_timeout_keeps_the_connection_three_in_a_row_reconnect`（见 R01 条目，未改动，待用户裁定）；xfail 的是 R02 的 `@` 口令参数。同一工作区的**第一次**连续运行在第 385 个用例 `test_measure.py::test_the_push_latency_is_split_into_its_parts_and_the_packing_wait_is_reported_apart`（有浏览器参与）处停住：faulthandler 150 秒时的堆栈里主线程空闲在事件循环的 IOCP 等待中，另有 2 个 anyio 工作线程、2 个线程池工作线程都在空等，没有线程在忙；那段时间我这边没有同时运行别的测试进程。**第二次没有复现**（该用例通过，12.8 秒）；该用例单独运行 6/6 通过，`test_measure.py` 单文件通过。原因未查明，也没有抓到停住时的 asyncio 任务栈（第二次带了观察插件，但没有用例超过 100 秒）。这属于用户已知的“整套连续运行挂住”，G2 前仍是开放问题。
+
+**对原有用例的修改（细则 6.2 第5条；意图都保留，`test_recovery_attempts_the_queue_turns_away_do_not_move_the_segment_the_gap_closes` 的意图——被拒绝的恢复尝试只消耗编号、不移动缺口要收尾的那个段——原样保留并通过）：** 全部是同一个原因：这些用例的“提交桩”接纳一个组就当它已落库，而 R03b 之后 owner 只信 `committed()` 的确认，并且只在本源没有更早的在途组时才建恢复单元。改法都是让桩去扮演一个跟得上的写入线程。
+1. `tests/test_archive_gap.py` 的共用 `Sink`：接纳非恢复单元的组时立刻调 `owner.committed(group)`（`build()` 和另外一个自己建 `Sink` 的用例把 `sink.owner = owner` 接上）；恢复单元仍由用例自己决定命运。
+2. `tests/test_archive_recovery.py::test_a_second_overflow_while_waiting_retakes_the_baseline_and_memory_stays_bounded`：在期望第二个单元之前，先确认首个单元（并断言它确认后归档仍是 LOST）。理由：现在每源只有一个在途单元，第二个要等第一个结清；“溢出后重新取基线、内存有界”的意图不变。`test_against_postgres_the_recovery_unit_lands_in_one_transaction_with_every_part` 同样只是接上 `sink.owner`。
+3. `tests/fault_support.py` 的 `Accepting` 与 `fault_owner`、`tests/test_fault_owner.py` 的 1000 故障用例：同第 1 条。
+4. `tests/test_capstone_e.py::test_a_recovery_unit_with_1000_faults_and_the_full_baseline_stays_inside_the_group_budget`：手工把状态置为 LOST 之前，先确认桩已接纳的组。
+5. `tests/test_history_query.py::test_an_archive_gap_stops_the_hold_at_the_start_of_the_gap`：前一个桩接纳的组（运行开始、第1段开始）先确认，并连同它们一起写进数据库（原先第1段的起点组没写进库，靠“只有终点的幻影行”撑住断言）。
+6. `tests/test_input_basis.py::test_values_derived_inside_an_archive_gap_say_that_their_basis_is_incomplete`：接上 `sink.owner`。
+
+**需知悉：** ① **同一段的 `SEG_END` 在极少数交错下会写两次，终点相同。** 那条 `SEG_END` 所在的组还在队列里、没确认时，恢复单元已经按“持久段＝起点已确认、终点未确认”的口径带上了它；两条随后都落库，`segment` 表是幂等 upsert，一行一个终点（随机序列的断言放宽为“各条终点一致”，四条命名序列仍是严格一条）。要做到任何交错都恰好一条，得让 owner 跟踪队列里每个未结清组并处理作废无回调的情形，我没做。② `closing` 里从未落库的段的意图要等恢复单元确认才清理，归档长期 LOST 而来源一直抖动时会慢慢增多（每次失效一条，量很小，但理论上没有上界）。③ 恢复单元现在要等本源在途的组结清后才建，期间进来的数据落在 LOST 里（记为缺口的一部分），而不是排进 pending；归档写入很慢时缺口会比原来长，但单元本来也排在这些组之后，提交时刻不变。④ `inflight` 只有真实的提交队列（它保证 `committed`／`refused`／`is_void` 三条出路）才会清空；用纯接收器（`commit` 返回 `None` 且从不确认）的用例里，丢失之后恢复单元不会建，这也是上面逐条改桩的原因。
+
+**未覆盖/留给后续：** 没有做变异验证；停机时的终结组（R04）要用的“登记为恢复单元”目前没有，`shutdown()` 产生的 `SEG_END` 只登记意图；`_clock_jump` 在归档非 OK 时仍只写标记不切段，没动；真实数据库里没有跑“写入线程在途时 `is_void` 判作废”的并发时序，只有同步桩加三个真实库的落库复核。
+
+### 整改续记：R02、R03a、R03b复核补正与R04
+
+**接手基线与方法（2026-10-16）：** 从未提交的R03b工作区继续，先按[整改开发细则](HTSG_V1_全量测试前整改开发细则_v0.1.md)重读直接调用方和用例；GitNexus没有本仓库索引，本次以源码、diff和定向测试核对。开发库55432/55433可达。没有重做已完成批次。
+
+**R02补正：** `commlog.py`同原因聚合原先只有新详情非空才覆盖旧详情；“短详情→超长详情被省略(None,True)”会继续展示旧短详情且不标省略。已改为`detail is not None or truncated`时更新，ATTEMPT和ROUND均补“短→省略→短”用例。聚合省略标志定向7项通过。口令自身含未转义`@`的严格xfail仍保留待裁定，本次未擅自改变已确认的“第一个@”规则。
+
+**R03a补正：** 跨库崩溃收尾逐库执行时，第一库写入`ABNORMAL_EXIT/EXIT_TRUNCATED`、第二库失败，会让下次启动把清理结果误当真实RUN_END/SEG_END而永久跳过第二库。`unfinished_facts()`现只把非`ABNORMAL_EXIT`运行及非`EXIT_TRUNCATED`段作为跨库真实终结证据；新增真实双库“第一次中途失败、第二次继续”回归。`test_exit_evidence.py` **19通过**；R03a相关扩展集曾为49通过，旧记录保留。
+
+**R03b补正：** 新增`opening`记录尚可能落库的SEG_START，并在拒绝、作废、未入队、pending清空和确认时结清；`closing`只保留已持久或仍可能持久的段。长期LOST反复1000次换代后，关闭意图保持为已持久段1条，不再线性增长。`test_segment_identity`＋archive gap/recovery **29通过**。极少数相同终点的重复SEG_END仍由既有幂等upsert处理，本次未擅自放宽或重写该历史说明。
+
+**R04实现：** `owner.py`把源收尾和RUN_END拆开：恢复单元、pending、普通SEG_END或LOST终结组先结清；LOST终结组只含GAP和已持久段SEG_END，不带C2基线。每源记录稳定的终结组、确认/拒绝结果；`runtime.py`保持writer运行，在统一`STOP_WRITE_WAIT`内推进源收尾，全部确认后才提交一个稳定RUN_END并等待确认；队列满重交同一对象，REFUSED、UNKNOWN或期限未决不登记NORMAL。新增`test_shutdown_commit.py`覆盖队列满同组重交、REFUSED、UNKNOWN真实库不写正常结束、真实恢复pending顺序；R03b直接用例覆盖恢复中停机和LOST终结组。
+
+**验证：** `test_runtime.py` **6通过**；`test_run_segments.py` **10通过**；`test_shutdown_commit.py` **4通过**；R01–R04扩大定向集 **161通过 / 1 xfail / 0失败**，94.00秒；R03b/R04及Capstone D/E/F、历史/依据/故障关联集 **90通过 / 0失败**，80.80秒。ruff、JavaScript语法和`git diff --check`通过。两次沙箱内pytest的业务断言均跑完，但最终因临时目录访问权限报错，以上正式数字来自授权后的隔离目录运行或不依赖该目录的重跑。
+
+**该次续记尚未关闭（后续状态见下面R06条目）：** ① `test_modbus_acquisition.py::test_one_timeout_keeps_the_connection_three_in_a_row_reconnect`仍有慢应答夹具间歇失败，不能归因于R01；② R02未转义`@`严格xfail；③ R04还未执行G2连续全套与G3证据刷新；④ 当时R06尚未开始。当前没有提交这些整改改动。
+
+### R06 模拟服务器保活适配（主体实现，G3未完成）
+
+R06｜R04后的同一未提交工作区｜**新**`htsg/sim_ua.py`（锁定asyncua 2.0.1的实例级SubscriptionService包装，只修项目自建Server实例）；**改**`htsg/simulation.py`和`tests/protocol_support.py`（FieldSimulator/FieldUa共用适配，FieldUa可显式关闭作raw对照）、`tests/live_support.py`、`tests/test_runtime.py`、`scripts/measure.py`（撤销计数1绕行，使用默认2）、交付记录保活说明；**新**`tests/test_simulated_keepalive.py`（适配/raw计数2/1真实间隔＋Owner十种tick相位）｜未修改生产UA客户端、第三方Server、3秒有效期和默认保活计数。
+
+**结果：** 真实回环asyncua测试：适配实例计数2／1约2秒／1秒，随后启动的未适配实例仍约4秒／3秒，证明没有全局类污染；四种间隔＋十种Owner tick相位 **14通过**。`test_ua_client.py`、`test_capstone_c.py`、`test_runtime.py`、`test_simulation.py`合计 **30通过**，96.74秒；ruff、JavaScript语法和差异检查通过。
+
+**长稳与候选证据（随后完成）：**
+
+- 静止满量：`measure.py --steady 600 --outage 7 --quiet --stats-interval 60`，真实200点OPC UA＋8路Modbus＋Owner＋双PostgreSQL运行600.1秒；`expiries=0`、入口/队列/写失败均0、队列无遗留、停机未写0，UA/Modbus各一次真实停服后均重建并恢复归档OK。稳态约1.19组/秒、9.2行/秒；报告`docs/evidence/r06/measure-20261016-140349.json`（本地忽略证据）。
+- 标准D46＋Chrome：120.1秒满量变化、双协议各25秒断连；417量稳定写入约417.8行/秒，无拒写/失败；接收到绘制延迟p50 112.0ms、p95 124.7ms、p99 137.1ms、最大393.3ms，停机未写0；报告`measure-20261016-141740.json`。
+- D47实际脚本：6次硬杀无半组/孤儿，三库路由与滞回按预期；满量变化一年仍需约10.51TB并判`INSUFFICIENT`，静止工况约0.23TB判当前卷足够但不替代满量结论；报告`resilience-all-20261016-141257.json`。
+- D48实际烟测：启动、正常停止、同库重启均通过，两个run均`NORMAL`、历史无重复/缺口。候选摘要已扩展到后端＋独立模拟进程加载的28个模块：代码`830e096e...cdb0`、页面`23e75d26...6ac`、配置`6e1f673d...eac5`、schema`2479b07e...ee2`；报告`smoke-20261016-141901.json`。工作区仍未提交，所以`clean=false`属实。
+- 受影响回归：`test_measure.py`、`test_smoke.py`、`test_resilience.py` **9通过**；静态检查通过。
+
+**R06证据刷新当时仍未完成（后续G2结果见下）：** 当时G2当前候选连续全套尚未运行；真实网关行为、现场设备/卷和一年容量通过结论仍未取得。历史满量容量“不通过”被新D47再次确认，没有被静止工况推翻。
+
+**G2连续全套（随后完成）：** 当前工作区收集771项。第一次连续运行 **766通过 / 4失败 / 1 xfail / 0跳过**，852.94秒；没有挂住。四个失败分别是：共享`owner_and_groups`测试助手被R04改成自动确认后破坏了两条“未确认水位”用例；Capstone E和新增恢复停机用例以“队列已弹出”误当数据库回调已完成。均属于测试支撑/竞态等待问题，不是业务断言被实现推翻；改为只有需要的生命周期用例启用即时确认，并等待持久结果而非只看队列深度，四项定向重跑全部通过。
+
+第二次同一工作区、单一pytest进程连续运行：**770通过 / 0失败 / 1 xfail / 0跳过**，815.96秒（13分35秒），退出码0，无停滞；两条既有依赖弃用警告。唯一strict xfail仍是R02中URL口令自身含未转义`@`时“第一个@”遮蔽规则的待裁定边界。故G2运行证据已取得，但R02该安全取舍及G1最终无遗留状态仍未关闭。
+
+第二次全量后，最终聚焦回归暴露`test_shutdown_commit`自身仍有一个前置竞态：只等待SEG_START确认，没有等待紧随其后的首批数据组结清，偶尔因此在恢复单元尚不应建立时开始3秒等待。用例改为同时等待`durable={1}`、本源`inflight`为空及队列深度0；业务代码未再改变。该真实数据库用例随后连续5次通过（0.91–1.01秒/次）。没有为这条纯测试等待修正运行第三次全套，上述第二次G2对应的业务代码与当前相同。
+
+### R04 以提交结果完成正常收尾（Q03及补充A）——正式条目与细则修订
+
+R04｜基线`946cb5d`之上的未提交工作区（R03b之后；2026-10-16实现并补正，2026-10-19细则修订）｜**改**`htsg/owner.py`（`shutdown`、`shutdown_progress`、`submit_run_end`、终结组、`opening`结清）、`htsg/runtime.py`（`Runtime.stop`停机循环），`htsg/commitq.py`不改；**新**`tests/test_shutdown_commit.py`（8项）、`tests/test_runtime_stop.py`（16项）；**改**`tests/crash_worker.py`（新增`before_end`／`after_end`两种停机模式）、`tests/test_run_segments.py`（`owner_and_groups`的`confirm`开关），另有`tests/test_segment_identity.py`中的停机相关用例｜**验收**`pytest tests/test_runtime_stop.py tests/test_shutdown_commit.py`（真实数据库）；整套连续运行｜**结果**两个新文件 **24通过 / 0失败 / 0跳过**，连跑4次稳定（42.5–43.7秒），其中`test_shutdown_commit.py`由上文“验证”所记的4项增至8项；`opening`补正后的整套连续运行（收集775）**774通过 / 1 xfail / 0失败 / 0跳过**，836.74秒（首次运行的1项失败见下面“整套连续运行”一段）；当前收集795项，尚无整套记录｜**证据位置**用例本身（可重跑），停机实测值由用例打印｜**未覆盖**见本条末段。
+
+**停机流程：** 取消采集、owner循环和维护任务并排空入口后，`Runtime.stop`开始计`STOP_WRITE_WAIT`（8秒）并调用`owner.shutdown`：它登记各源收尾意图、关段（归档非LOST的源照常发出SEG_END，LOST的源只记收尾意图），不再无条件提交RUN_END。期限内每50毫秒推进一次`shutdown_progress()`（LOST且无在途单元的源在此构造终结组，并登记为该源的`recovery_order`），`submit_run_end()`只有在全部来源结清后才构造并提交唯一的RUN_END组，队列满则在期限内重交同一对象。循环在RUN_END被确认或被拒、有源收尾失败（其终结组被明确拒绝）或期限到时结束，其后才调`queue.stop()`，writer因此不会在RUN_END确认前因队列暂空而退出（`commitq.py`不改）。只有RUN_END被确认才登记正常结束；被拒、UNKNOWN未决、期限到、有源收尾失败都不登记，下次启动记`ABNORMAL_EXIT`。上文“R04实现”一段里的REFUSED指终结组或RUN_END被明确拒绝；恢复单元被拒见下面“细则修订”。
+
+**细则修订（2026-10-19，用户确认）：**
+
+- **内容：** 细则8.1新增2a项：停机开始时在途的恢复单元之后被明确拒绝，该源回到LOST，由停机流程补发终结组（GAP＋已落库段的SEG_END，无基线）。终结组被收下则运行登记`NORMAL`，也被拒才不登记。须同时满足五项前提：拒绝是确定未提交的拒绝；缺口覆盖全部未落库数据；每个已落库段都收尾；终结组确认提交后才提交RUN_END；全部在同一个8秒内。同时改了第4、5、6步（引入“收尾失败”）、第7步实现方式、8.2-2验收，并在第11节新增约定J–M。
+- **为什么：** 原8.1-4(c)、8.1-6把“恢复单元被拒”直接算作该源不能正常结束，比整改方案v0.2 R04第5步更严。方案写的是“已接纳记录确认提交或其拒写已形成持久缺口、源收尾结清后，才提交RUN_END”。用户2026-10-16在审核中选“保留现状”，2026-10-19确认并要求写入细则。方案不改，其“明确失败”在此处指终结组被明确拒绝或期限到。
+- **后果：** 满量恢复单元约0.6MB（积压1000条故障约1.7MB），远低于单次写入上限8MiB。生产模式下的拒收原因多与包大小无关（磁盘余量），终结组也会被拒，结果与按原细则相同；差别只出现在与包大小有关的拒收，如单次上限`WRITE_BATCH_BUDGET`、开发模式累计写入预算`DEVELOPMENT_WRITE_BUDGET_EXHAUSTED`。`NORMAL`的含义因此变弱：不再等于“停机时一次拒收都没发生”，库内也不记录“恢复单元被拒过”，缺口原因记的是最初的丢失原因。
+- **随带约定K–M（用户2026-10-16裁定，2026-10-19一并写入）：** 终结组遇队列满时在期限内重交同一对象，仅明确REFUSED不再重试（K）；`commitq.py`第59行不改，writer不提前退出靠`Runtime.stop`的调用顺序（L）；终结组不带内存中的故障缓冲，这些记录随进程结束丢失（M）。
+- **用例钉住：** `test_shutdown_commit.py::test_a_unit_turned_away_after_the_stop_began_is_followed_by_the_final_group_of_its_source`（终结组收下／也被拒两个变体）和`test_runtime_stop.py::test_a_unit_and_the_final_group_both_turned_away_end_the_stop_at_once_without_the_end`。在临时副本里把行为改成“恢复单元被拒即该源失败”，收下变体失败、被拒变体通过。
+
+**同期补正（用户2026-10-16批准，审核发现）：** 恢复单元被拒时，`pending`里等着的新段起点组被丢弃，却没有结清`opening`，之后正常停机永远等不到结清（随机历史里约15%的收尾后停机、约2.5%的随机时刻停机会卡住）。在`owner.py`三处`pending.clear()`前补`_discard_groups`（`_archive_lost`、恢复单元被拒的分支、`_submit_recovery`）；`_submit`的溢出分支原本就有。`test_segment_identity.py`新增4项（1个确定性回归、3个随机停机性质），改前全失败，改后全过；临时脚本跑了30,000个收尾后停机和3,000个随机时刻停机（写入端全收：3,000个完成；写入端拒收30%：2,311个完成、689个以明确拒绝结束），0个卡住。
+
+**整套连续运行（`opening`补正后、新增20项之前，收集775项）：** 第一次 **773通过 / 1失败 / 1 xfail**，失败的是`test_comm_protocols.py`里“五次拒绝重连”一条（pymodbus请求超时），当时我在并行跑别的进程；同一文件单独连跑12次、16项全过；其后不并行的干净重跑 **774通过 / 1 xfail / 0失败 / 0跳过**，836.74秒，无停滞。把那次失败归因于并行负载是推断，不是证实。
+
+**停机实测（细则8.2-5，上限9秒）：** 4次运行，数字由用例打印：单来源正常停机0.113–0.123秒；满量（8路Modbus＋200点UA，真实双库）0.112–0.175秒；归档不应答、走到真实8秒期限8.037–8.078秒。
+
+**未覆盖／待裁定：**
+
+- 这两个测试文件的变异检查只做过一次（上面“恢复单元被拒即该源失败”那一种），其余未做；
+- 当前795项尚无整套连续运行；
+- `owner.py`补正后代码指纹由`830e096e…cdb0`变为`600b9bc5…`（页面、配置、schema摘要未变），`docs/evidence/r06/`的D46／D47／D48证据须在最终候选上重做（G3）；
+- 审核时列出的三个小项待裁定：LOST＋VALID的终结段`end_reason`写`SHUTDOWN`（恢复单元路径写`ARCHIVE_GAP`）；停机循环遇第一个收尾失败即退出，其余来源可能没来得及补终结组；`unwritten_at_stop`是混合计数，不是未写组数；
+- 停机时LOST源已确认、未落库的故障记录随进程丢失（探针2条），属约定M已裁定的后果，此处只记数量。
+
+### 整改补充：2026-10-19 用户裁定与审核必修2–5
+
+**出处：** 用户2026-10-19转来的审核建议（逐项裁定），并要求把上一份审核的必修2–5纳入本轮；各项只跑了直接相关的测试，没有做变异检查、整套连续运行和G3刷新。
+
+- **R02 未转义`@`（选方案(b)）：** `commlog.py`的`_USERINFO`尾部加`(?:[^\s/@]*@)*`，`u:p@ss@host`输出`***@host`；`test_comm_log.py`去掉严格xfail并加一条参数，`test_detail_bounds.py`新增4项（三个以上`@`、百分号编码口令、含空格凭据、多个URL各遮各的、遇空白或斜杠即停、二次清理不再变化）。`test_comm_log`＋`test_detail_bounds`＋`test_comm_facts`共107通过，已无xfail。取舍：不带空白、相连的`b.com,c@`这类片段也会被多遮。
+- **R04停机三项：** ① 终结段结束原因与恢复路径共用`_durable_ends`：离段时刻不晚于缺口起点保留原因，否则记`ARCHIVE_GAP`（LOST＋VALID原记`SHUTDOWN`，现记`ARCHIVE_GAP`）；由CLOCK_JUMP切出的段一律视为在缺口之前。② `Runtime.stop`不再遇到第一个收尾失败就退出：全部来源成功或明确失败、或同一个8秒期限到才结束；有失败来源仍不提交RUN_END。③ 取消`unwritten_at_stop`，改为`shutdown_incomplete`、`run_end_status`（`NOT_QUEUED`／`UNCONFIRMED`／`COMMITTED`／`REFUSED`）、`failed_sources`、`unsettled_queue_items`；`Owner.shutdown_unsettled()`随之删除，`scripts/measure.py`报告新增`stop`一栏（旧证据JSON保留旧字段）。这些字段不能读作“零数据丢失”（约定M仍成立）。用例：`test_runtime_stop.py`+3（含双源A/B两种顺序），并把原有的14处停机结果断言改为新字段；`test_runtime_stop`＋`test_shutdown_commit`共27通过，owner层相关46通过，`test_runtime`＋`test_measure`10通过。双源用例在旧的“首败即退”下也会通过（队列排空本来就会把另一源的终结组写进去），区别新旧行为的是结束原因断言。
+- **必修2 UNKNOWN重试固定原库：** `ArchiveRouter`新增有界`pinned`表（256条），首次UNKNOWN后只在该库核验或重试，不因磁盘水位改道，确认后释放；固定的重试不再经过磁盘与预算策略。`test_archive_router.py`+4项，该组共23通过。
+- **必修3 首次Modbus失败不显示VALID：** 只有`OK`或`EXCEPTION`能使WAITING变VALID，首次`TIMEOUT`／`CONNECTION`保持WAITING（页面显示“等待首次数据”），曾经VALID后单次超时仍VALID。`test_comm_facts.py`+4项；相关owner层文件111通过（加上4项新用例单跑通过），真实Modbus三个文件54通过。
+- **必修4 归档非OK时的墙钟跳变：** RECOVERING时也切段（切段组排在恢复单元之后的`pending`里，单元打开的段不再包住时钟的两半）；LOST时的CLOCK_JUMP标记记入`owed_jumps`（至多16个），由下一个恢复单元或终结组带上，确认后释放；缺口终点不早于起点（回拨时为零长度）。`test_segment_identity.py`+6项（前跳、回拨各3种：RECOVERING、LOST、切段被拒），6通过。
+- **必修5 跨库10000行上限：** `history.assemble`合并去重后按通道统一限流，设`truncated`；窗口前的“保持值”基准行不计入也不被截。`test_history_query.py`+4项，历史相关共66通过。
+- **R01老用例：** `FieldModbus`新增`withhold`（接下来N个请求永不应答，含迟到应答，直到服务器停止）；`test_one_timeout_keeps_the_connection_three_in_a_row_reconnect`改用`withhold=1`和`withhold=3`，超时数恰为4。单个用例连续12次通过；旧写法隔夜曾约45%失败。
+- **R06测试收紧：** `test_simulated_keepalive.py`改为量连续保活间隔，容差±0.2秒（未适配计数1、2对照各观察16秒，适配的各6秒）；新增变化按发布周期送达（六种相位，≤1.2秒）、稀疏变化与保活节奏（该用例实测间隔1.98–2.01秒）、3秒保活在某个tick相位会失效的反例。17项，连续两次全过（各77秒），未放宽容差。
+
+**状态：** 当前收集824项（原795）；ruff、`git diff --check`通过。**未覆盖：** 变异检查、整套连续运行、G3证据（owner／runtime／commlog／archive_router／history均已变，须在冻结后重做）；R03a大库收尾耗时仍待验；SIM-01／SIM-03／N2另行安排；审核提到的R07端到端`MISSING_*`用例未排。上文R04条目“未覆盖／待裁定”里的三个小项（终结段标签、首败即退、`unwritten_at_stop`混合计数）已按本条处理。
+
 ## 2. 偏离、风险与未验收
 
 - **页面集合与用户意图不一致（2026-10-13 用户指出并已确认纠偏方向）：** 用户要的是参考原型 `htsg_hmi.html` 里按**显示顺序**排的第 1、2、4、5（新增历史查询）、12、14、15 页，其中第 14 页是“通信·日志”、第 15 页是“系统管理·权限”。原型的导航是 `PAGES` 数组按位置编号（`i+1`）：…第 12 页系统自检、第 13 页算法引擎·数字孪生、第 14 页通信·日志、第 15 页系统管理·权限；而它的元素 id 是另一套（`p13` 通信·日志、`p14` 系统管理·权限、`p15` 算法引擎·数字孪生）。**原终版设计第 15 节的表按元素 id 写成了“14 系统管理·权限、15 算法引擎·数字孪生”**（该表在提交 `40750c9` 随终版定稿进入），实施方案 D44 与我的实现照着这张表做，于是：①交付了设计里“沿用入口、仅显示轻量模型参数”的**算法引擎·数字孪生页**（模型页，原型里是四层算法，设计又把它削成参数页——这是设计与实现共同造出来的页）；②**没有通信·日志页**。而更早的前端（提交 `40750c9` 的 `app.js`，D36 之前）恰好是 `[1,2,4,5,12,14 通信·日志,15 系统管理·权限]`，后端有 `GET /api/communications`（协议读数与映射、实际错误与恢复记录，最近 500 条内存记录，`dev-docs/history/模拟现场使用说明.md` 第 59 行仍在描述它）。D36–D44 的重写与 D45 对旧链路的清除把这个页和这个接口一并丢了——这是我按设计表做的、没有向你单独指出的**功能丢失**，不是你要求的。**当前处置：此前已按用户指示移除数字孪生页及其专属接口。** 移除后的六页是过渡状态，目标七页未完成；本轮已按用户授权完成[通信页审核处置](HTSG_V1_通信日志页设计审核_v0.1.md#review-disposition)，回写终版并拟定实施方案，通信页代码尚未实现。此前提前细化的任务拆分曾撤回；本次以审核处置后的终版与实施方案为准，历史接口只作为功能丢失经过的证据。**2026-10-14：通信·日志页已实现并验收（D44a–D44f），现为七页，页面集合与用户意图一致。**
@@ -341,6 +638,12 @@ D44f｜基线 `dc84fb2` 之上的工作区（D44a–D44e 之后，未提交）�
 - 会话预算：用户"用尽 session limit"指 5 小时会话额度；CLAUDE.md 的 30,000 token 条款，用户随后明确说"别控制预算了，我自己看着来"——预算由用户掌控，执行时不自行限额、不为预算停下或提问。
 
 ## 3. 交接（新会话从这里开始）
+
+**整改轮交接（更新于2026-10-16，R04之后）：** 已完成并定向复验R01、R02、R03a、R05、R07、R03b、R04；本次接手另补R02聚合省略标志、R03a跨库收尾中断续跑及R03b长期LOST关闭意图上界。下一批按细则为R06（模拟服务器保活适配与候选证据刷新）。当前工作区仍按用户此前决定累计、不提交；新增且被`.gitignore`隐藏的测试包括`test_cancellation.py`、`test_detail_bounds.py`、`test_exit_evidence.py`、`test_partial_requests.py`、`test_failure_records.py`、`test_segment_identity.py`、`test_shutdown_commit.py`，提交时须显式加入。R06前仍需注意上述间歇失败与严格xfail；G2连续全套尚未通过，不得以定向测试代替。
+
+**整改轮交接（更新于2026-10-16，G2之后）：** R01、R02、R03a、R05、R07、R03b、R04、R06的实现、定向验证、D46/D47/D48刷新及771项连续全套均已完成；第二次G2为770通过、1 strict xfail、0失败。新增被忽略测试包括`test_simulated_keepalive.py`和`test_shutdown_commit.py`。工作区仍按用户决定累计、未提交。下一项需要用户口径的是R02未转义`@`边界；完成后应重跑对应安全用例并决定是否再做最终提交/推送。容量满量不通过、真实设备/网关/卷与现场长稳仍是独立开放项。
+
+**整改轮交接（更新于 2026-10-16，R03b 之后）：** 本轮按[整改开发细则](HTSG_V1_全量测试前整改开发细则_v0.1.md)（临时文件，按用户决定不提交）和[整改方案 v0.2](HTSG_V1_全量测试前整改解决方案_v0.2.md)执行，顺序 R01 → R02 → R03a → R05 → R07 → R03b → R04 → R06；基线 `946cb5d`，分支 `dev/htsg-v1-impl`。**提交方式（用户 2026-10-15 答复）：** 各批攒在工作区，G1 达成或用户指定节点前不提交；新建的测试文件允许 `git add -f`（`.gitignore` 有 `tests/`、`docs/`）；目前新增 `tests/test_cancellation.py`、`tests/test_detail_bounds.py`、`tests/test_exit_evidence.py`、`tests/test_partial_requests.py`、`tests/test_failure_records.py`、`tests/test_segment_identity.py`。**已做：** R01（`modbus.py`、`runtime.py`）、R02（`commlog.py`、`records.py`、`modbus.py`、`owner.py`、`app.js`）、R03a（`archive.py`、`archive_router.py`、`history.py`）、R05（只改测试：`protocol_support.py` 的多从站夹具＋`test_partial_requests.py`）、R07（`records.py`、`owner.py`、`history.py`）、R03b（`owner.py`；另按“提交桩要确认接纳的组”改了六个既有测试文件的桩，逐条在 R03b 条目），见各自条目。**下一批：** R04（停机按提交结果收尾；改 `runtime.py`、`commitq.py`、`owner.py`）。终结组要登记成该源的 `recovery_order`，并沿用 R03b 的四件事实：`durable`（档案里开着的段）、`closing`（已离开未确认的段终点）、`inflight`（已被队列接纳未结清的组）、`recovery_order`（每源至多一个在途单元）；先读 R03b 条目。之后是 R06。**已知卡点／待用户裁定：** ① 既有用例 `test_modbus_acquisition.py::test_one_timeout_keeps_the_connection_three_in_a_row_reconnect` 间歇失败（测试服务端给延时应答打最新请求的事务号），证据与建议改法在 R01 条目，未改动；R03b 之后的整套连续运行里它又失败了一次；② R02：口令含未转义 `@` 时“最近一个 `@`”规则只遮到第一个 `@`，`test_comm_log.py` 一条参数暂标严格 xfail，选项在 R02 条目；③ R03a 的四处实现取值（跨库段证据取各库最大值、旧结构库也按不可读推迟收尾、晚于段终点的行夹到自身时刻、大库耗时未测）在 R03a 条目；④ R05 发现的既有行为：两个从站都沉默时，pymodbus 在第3轮自己关连接，该轮记 `CONNECTION`，重连原因是 `DOWN:CONNECTION` 而不是 `DOWN:TIMEOUTS`（未改，见 R05 条目）；⑤ R07 的可见变化：实时视图里失效点的 `value` 现在是 `null`、`quality` 是 `MISSING_*`，满量下每次失败转移最多 +8 条记录（容量报告未改），见 R07 条目；⑥ R03b 有两处超出细则文字：本源有已接纳未结清的组时不建恢复单元（`inflight` 门），以及已 LOST 且无在途单元时更早的组被拒，缺口起点取较早者；另有三点需知悉：同一段的 `SEG_END` 极少数交错下会写两次、终点相同（`segment` 是幂等 upsert），`closing` 理论上无上界，恢复单元要等在途组结清、缺口可能略长，见 R03b 条目；⑦ 整套连续运行做过两次（R03b 之后的工作区，不是 G2）：第一次在 `test_measure.py` 的 push-latency 用例（有浏览器参与）处停住，原因未明；第二次收集 746，744 通过、1 失败（上面①）、1 xfail，813.66 秒，没有挂住，也没有用例超过 100 秒，数字与堆栈见 R03b 条目；⑧ 开发库开机后默认不启动，2026-10-16 已执行 `bootstrap_db.py start`（55432/55433 在听）。
 
 **状态（2026-10-14）：** D01–D48 的编码、测量与交付件都做了，旧链路已由用户删除；**通信·日志页（D44a–D44f）已实现并验收，现为七页**（总览、应变场、热应力、历史查询、自检、通信·日志、权限；只标标题、不标页序号、不做移动端布局）。全部测试文件分两段运行 **631 通过 / 0 失败 / 0 跳过**，其后三处小改各自复跑，现共 632 项（D44f 条目）。**但仍不能说收口**：① 整套**连续**运行没有通过记录——pymodbus 3.15.0 把取消改抛为 `ModbusIOException`、`ModbusAcquirer.poll` 当超时继续（`modbus.py` 的 `except (ModbusIOException, TimeoutError)` 一支）导致取消丢失，连续运行会随机挂住，用户定为独立问题本轮不修；另有一次 `test_capstone_c` 首个用例挂住未查明、未复现；开发库实例没起来也会让 DB 用例卡住（机器重启后实际发生过）；② **一年容量按终版口径不通过**（交付记录第 5 节）；③ 真实 Acheron、UA 网关、独立卷、现场长稳均未验证；④ **设计侧文档仍写着“通信页尚未实现”**（终版第 15 节表格与 15.1 开头、方案头部与第 12 节、核验文件），我没有动——终版哈希写在方案头，回写由用户决定。开发库实例开机后默认不启动，先 `bootstrap_db.py start`。
 

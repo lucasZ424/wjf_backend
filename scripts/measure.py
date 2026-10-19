@@ -85,9 +85,8 @@ def make_config(stats_interval=5.0, outage=0.0, quiet=False, external=False) -> 
     data["sources"][0]["port"] = free_port()
     data["sources"][1]["endpoint"] = f"opc.tcp://127.0.0.1:{free_port()}/measure/"
     data["simulation"]["control_port"] = free_port()
-    # keepalive count 1: the asyncua test server sends its keep-alive one publish cycle later than negotiated (as in
-    # tests/live_support.py); with the default 2, a plant that holds still would flap between valid and expired
-    data["timing"] = {"stats_interval": stats_interval, "ua_keepalive_count": 1}
+    # FieldSimulator corrects the locked asyncua server per instance, so measure the normal contract default.
+    data["timing"] = {"stats_interval": stats_interval}
     for scenario in data["simulation"]["scenarios"]:
         if outage and scenario["kind"].startswith("disconnect_"):
             scenario["duration"] = outage
@@ -400,8 +399,11 @@ async def push_latency(lab: Lab) -> dict:
 
 
 async def main(args):
-    report = {"started": time.strftime("%Y-%m-%d %H:%M:%S"), "host": socket.gethostname(), "python": sys.version.split()[0]}
-    async with Lab(stats_interval=args.stats_interval, browser=args.browser, outage=args.outage) as lab:
+    report = {
+        "started": time.strftime("%Y-%m-%d %H:%M:%S"), "host": socket.gethostname(),
+        "python": sys.version.split()[0], "quiet": args.quiet,
+    }
+    async with Lab(stats_interval=args.stats_interval, browser=args.browser, outage=args.outage, quiet=args.quiet) as lab:
         report["initial_burst"] = await initial_burst(lab)
         report["steady"] = await steady(lab, args.steady)
         if args.outage:
@@ -411,7 +413,10 @@ async def main(args):
             report["push_latency_ms"] = await push_latency(lab)
         report["owner_health"] = dict(lab.runtime.owner.health)
         report["finished"] = time.strftime("%Y-%m-%d %H:%M:%S")
-    report["unwritten_at_stop"] = lab.runtime.health["unwritten_at_stop"]
+    report["stop"] = {
+        key: lab.runtime.health[key]
+        for key in ("shutdown_incomplete", "run_end_status", "failed_sources", "unsettled_queue_items")
+    }
     text = json.dumps(report, ensure_ascii=False, indent=2)
     print(text)
     if args.out:
@@ -427,5 +432,6 @@ if __name__ == "__main__":
     parser.add_argument("--outage", type=float, default=0, help="seconds each protocol is cut off (0: skip)")
     parser.add_argument("--stats-interval", type=float, default=5, help="seconds between the heavy database statistics")
     parser.add_argument("--browser", action="store_true", help="measure push-to-drawn latency in a real Chrome")
+    parser.add_argument("--quiet", action="store_true", help="hold every simulated input constant")
     parser.add_argument("--out", default="", help="folder for the JSON report")
     asyncio.run(main(parser.parse_args()))

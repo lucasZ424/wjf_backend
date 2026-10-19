@@ -30,6 +30,8 @@ def test_a_second_overflow_while_waiting_retakes_the_baseline_and_memory_stays_b
         data(owner, 104.0 + n, items=(("ti", 510.0 + n),), seq=10 + n)
         assert len(s.pending) <= 3
     assert owner.health["pending_overflows"] >= 1 and s.archive == "LOST"
+    owner.committed(sink.groups[-1] if sink.groups[-1].order == first_recovery else next(g for g in sink.groups if g.order == first_recovery))
+    assert s.archive == "LOST", "the first unit is confirmed, yet the archive was lost again after it: not recovered"
     owner.tick(*at(114.0))
     newest = sink.groups[-1]
     assert newest.kind == r.GROUP_RECOVERY and newest.order != first_recovery
@@ -141,6 +143,7 @@ def test_against_postgres_the_recovery_unit_lands_in_one_transaction_with_every_
     router.bind_run("run", cfg_ua.config_id, WALL0)
     sink = Sink()
     owner = Owner(cfg_ua, WALL0, 100.0, commit=sink, publish=lambda p: None, run_id="run")
+    sink.owner = owner
     owner.begin_generation("ua", 1, WALL0, 100.0)
     data(owner, 101.0)
     lose_the_archive(owner, sink)

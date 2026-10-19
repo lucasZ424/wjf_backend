@@ -269,6 +269,27 @@ def test_the_log_says_which_run_what_was_trimmed_and_what_was_lost_and_never_gra
     assert page.errors == []
 
 
+def test_a_detail_left_out_for_its_length_says_so_instead_of_showing_a_blank(page, fresh):
+    """R02 / 终版 §15.1 "详情截断须标明": a text too long to be kept at all is neither an empty cell nor "no detail" -
+    the page says that it was left out, and a request keeps its own line above that note."""
+
+    def inject():
+        owner = fresh.owner
+        now, mono = time.time(), time.monotonic()
+        owner.commlog.round_failed(
+            MB, owner.sources[MB].conn_gen, "POLL_TIMEOUT", "NO_ANSWER", now, mono, scope="holding/1/0+16", detail=None, truncated=True
+        )
+        owner.attempt_failed(UA, "SUBSCRIBE", "ERROR:SubscriptionError", None, True, now + 1, mono + 1)
+
+    fresh.call(inject)
+    open_page(page, fresh)
+    texts = [cells(row)[4] for row in page.locator("#comm-log tbody tr").all()]
+    left_out = [t for t in texts if "详情已省略（过长）" in t]
+    assert len(left_out) == 2, texts[:4]
+    assert any("请求 holding/1/0+16" in t for t in left_out) and not any("无详情" in t for t in texts)
+    assert page.errors == []
+
+
 def test_an_empty_log_says_so_without_claiming_that_nothing_ever_happened(page, fresh):
     open_page(page, fresh)
     payload = health_json(page, fresh)

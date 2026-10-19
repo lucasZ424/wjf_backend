@@ -16,9 +16,17 @@ from htsg.owner import Owner
 CONFIG = ua_only()
 
 
-def owner_and_groups(config=None, run_id="run"):
+def owner_and_groups(config=None, run_id="run", *, confirm=False):
     rec = Recorder()
-    owner = Owner(config or CONFIG, WALL0, MONO0, commit=rec.commit, publish=rec.publish, run_id=run_id)
+    owner = Owner(config or CONFIG, WALL0, MONO0, publish=rec.publish, run_id=run_id)
+
+    def commit(group):
+        rec.commit(group)
+        if confirm:
+            owner.committed(group)
+        return True
+
+    owner.commit = commit  # this unit-test sink behaves like a writer that confirms every accepted group immediately
     owner.start(WALL0, MONO0)
     owner.begin_generation("ua", 1, WALL0, MONO0)
     return owner, rec
@@ -40,7 +48,7 @@ def one(store, sql, *args):
 
 
 def test_start_registers_the_run_and_a_normal_stop_closes_every_segment_after_the_last_record(archive_db_factory):
-    owner, rec = owner_and_groups()
+    owner, rec = owner_and_groups(confirm=True)
     data(owner, 101.0)
     owner.tick(*at(102.0))
     owner.shutdown(*at(103.0))
@@ -71,12 +79,16 @@ def test_an_exit_without_a_stop_is_closed_at_the_last_persisted_evidence_and_not
         max(s.detail["covered_wall"] for g in rec.commits for s in g.states if s.kind == "WATERMARK"),
         max(s.at_wall for g in rec.commits for s in g.states if s.kind != "CLOCK_JUMP"),
     )  # fmt: skip
+    segment_expected = max(  # R03a: a segment ends at ITS OWN evidence - a valid observation or its watermark, no state record
+        max(o.asserted_wall or o.received_wall for o in rec.observations() if o.quality == r.GOOD and not o.extreme),
+        max(s.detail["covered_wall"] for g in rec.commits for s in g.states if s.kind == "WATERMARK"),
+    )
     closed = store.reconcile_unfinished_runs("a-new-run")
     assert closed == [{"run_id": "run", "ended_wall": expected, "segments_cut": 1}]
     (run,) = one(store, "SELECT ended_wall,end_reason FROM run")
     assert (run["ended_wall"], run["end_reason"]) == (expected, "ABNORMAL_EXIT")
     (segment,) = one(store, "SELECT end_wall,end_reason FROM segment")
-    assert (segment["end_wall"], segment["end_reason"]) == (expected, "EXIT_TRUNCATED")
+    assert (segment["end_wall"], segment["end_reason"]) == (segment_expected, "EXIT_TRUNCATED")
     assert expected < at(124.0)[0] + 1, "no crash time is invented beyond the evidence"
     assert store.reconcile_unfinished_runs("a-new-run") == [], "idempotent"
 
