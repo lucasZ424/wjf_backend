@@ -52,7 +52,7 @@ py -3.13 -m venv .venv
 
 | 文件 | 用途 |
 | --- | --- |
-| `config/research-sim.json` | 满量研究演示入口：8 路 Bridge＋200 个 OPC UA 点＋209 路派生量，配套独立的现场模拟器，见[模拟现场使用说明](dev-docs/history/模拟现场使用说明.md)与[通道分配](dev-docs/模拟通道分配.md) |
+| `config/research-sim.json` | 满量研究演示入口：8 路 Bridge＋200 个 OPC UA 点＋209 路派生量，配套独立的现场模拟器，见[模拟现场使用说明](dev-docs/HTSG_V1_模拟现场使用说明_v0.1.md)与[通道分配](dev-docs/模拟通道分配.md) |
 | `config/development.json` | 最小开发配置：一个 Modbus 源（127.0.0.1:15020）、两个演示点；进程内模拟源已取消 |
 | `config/production.template.json` | 空点表、禁用的真实源；填入现场资料后用 `htsg check --config ...` 校验 |
 
@@ -109,4 +109,4 @@ git diff --check
 
 ## 尚未验证
 
-真实的 Acheron 设备与点表、真实 OPC UA 网关实际修订的订阅参数（尤其测点队列被修订为 1、保活晚于协商值一个发布周期的服务器）、独立卷与真实磁盘、一年容量与现场变化速率、现场启动与长稳，都没有在本环境验证；模拟环境的结果不能代替它们，清单见[交付记录](dev-docs/HTSG_V1_交付记录_v0.1.md)。
+真实的 Acheron 设备与点表、真实 OPC UA 网关实际修订的订阅参数（尤其测点队列被修订为 1、保活晚于协商值（未适配的asyncua服务器晚两个发布周期）的服务器）、独立卷与真实磁盘、一年容量与现场变化速率、现场启动与长稳，都没有在本环境验证；模拟环境的结果不能代替它们，清单见[交付记录](dev-docs/HTSG_V1_交付记录_v0.1.md)。
