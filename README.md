@@ -41,7 +41,8 @@ py -3.13 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.lock
 .\.venv\Scripts\python.exe -m pip install --no-build-isolation --no-deps -e .
 .\.venv\Scripts\python.exe scripts\bootstrap_db.py install    # 首次
-.\.venv\Scripts\python.exe scripts\bootstrap_db.py start      # 开发实例默认不启动；不启动则数据库用例超时
+.\.venv\Scripts\python.exe scripts\bootstrap_db.py start      # 开发实例默认不启动；不启动则数据库用例超时；只建空库 htsg
+.\.venv\Scripts\python.exe scripts\bootstrap_db.py build      # 把两实例的 htsg 建到当前归档代（建表）；旧的帧式库会被拒绝，须删库重建
 .\.venv\Scripts\python.exe -m htsg.cli init-accounts
 .\scripts\run.ps1                                              # 默认 config/development.json，127.0.0.1:8000
 ```

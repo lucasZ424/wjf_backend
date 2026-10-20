@@ -1,4 +1,10 @@
-"""Install/start isolated development PostgreSQL clusters only under D:\\HTSG-dev."""
+"""Install/start isolated development PostgreSQL clusters only under D:\\HTSG-dev, and build their database.
+
+    install   first time: the two clusters and the credentials in .local/database.json
+    start     start them; create an EMPTY database `htsg` where it is missing
+    build     bring `htsg` of both clusters to the current archive generation (终版 §13.2): an empty one gets its
+              schema, one already at this generation is accepted, a legacy (frame-based) or foreign one is refused here
+"""
 
 import argparse
 import hashlib
@@ -23,9 +29,28 @@ def run(args):
     )
 
 
+def build(local):
+    """The schema is created here, not left to the first start of the backend: until then a database is only a name,
+    and a legacy one would be found out as `refused` at run time, with the backend running on without an archive."""
+    from htsg.archive import ArchiveStore, SchemaError
+    from htsg.config import load_settings
+
+    conf = json.loads((local / "database.json").read_text())
+    config = load_settings(PROJECT / "config/development.json")
+    for name in ["primary", "emergency"]:
+        store = ArchiveStore(conf[name])
+        try:
+            store.initialize(config)
+        except SchemaError as error:
+            raise SystemExit(f"{name}: {error}.  Drop the database and run `start` and `build` again.") from error
+        finally:
+            store.close()
+        print(f"{name}: database htsg is at the current archive generation.")
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=["install", "start", "stop", "status"])
+    parser.add_argument("action", choices=["install", "start", "build", "stop", "status"])
     args = parser.parse_args()
     if os.name != "nt" or ROOT.resolve().drive.upper() != "D:":
         raise SystemExit("Development databases must be on D:")
@@ -105,6 +130,9 @@ def main():
                         "log_truncate_on_rotation = on\nstatement_timeout = '5s'\n"
                     )
         print("Installed two isolated D: clusters; credentials in .local/database.json (not printed).")
+    if args.action == "build":
+        build(local)
+        return
     for name in ["primary", "emergency"]:
         data = ROOT / name
         if args.action == "start":

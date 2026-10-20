@@ -56,6 +56,21 @@ def isolated_lab(tmp_path, monkeypatch):
             return self.row
 
     monkeypatch.setattr(lab.psycopg, "connect", lambda dsn, **kwargs: Connection(dsn))
+    state.built, state.refuse = [], None
+
+    class Store:
+        def __init__(self, dsn):
+            self.dsn = conninfo_to_dict(dsn)["dbname"]
+
+        def initialize(self, config):
+            if state.refuse:
+                raise lab.SchemaError(state.refuse)
+            state.built.append((self.dsn, config.config_id))
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(lab, "ArchiveStore", Store)
     config_path = Path(__file__).resolve().parents[1] / "config/research-sim.json"
     return local, state, config_path
 
@@ -72,6 +87,24 @@ def test_new_lab_archives_binding_and_preserves_credentials(isolated_lab):
     assert (local / "accounts.json").read_bytes() == account_bytes
     assert (local / "initial-credentials.json").read_text() == "existing-private-credentials"
     assert (local / "simulation-secret.txt").read_text() == "existing-secret"
+
+
+def test_a_new_lab_is_built_to_the_current_archive_generation_before_anything_starts(isolated_lab):
+    """The schema used to appear only when the backend first started; a database it refused left the lab running without
+    an archive."""
+    local, state, config_path = isolated_lab
+    config = lab.prepare(config_path, new_lab=True)
+    names = {name for name, _ in state.built}
+    assert len(state.built) == 2 and len(names) == 1 and names.pop().startswith("htsg_research_"), state.built
+    assert {config_id for _, config_id in state.built} == {config.config_id}
+
+
+def test_a_legacy_lab_database_stops_the_launcher_instead_of_running_without_an_archive(isolated_lab, capsys):
+    local, state, config_path = isolated_lab
+    state.refuse = "legacy frame-based database; create a new database instead of upgrading it"
+    with pytest.raises(SystemExit, match="cannot be used.*legacy.*new-lab"):
+        lab.prepare(config_path)
+    assert "Research databases prepared" not in capsys.readouterr().out
 
 
 def test_failure_preserves_active_binding(isolated_lab):

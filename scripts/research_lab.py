@@ -15,6 +15,7 @@ import psycopg
 from psycopg import sql
 from psycopg.conninfo import make_conninfo
 
+from htsg.archive import ArchiveStore, SchemaError
 from htsg.auth import Accounts
 from htsg.cli import deployment_lock
 from htsg.config import load_settings
@@ -22,6 +23,20 @@ from htsg.research_config import estimate_budget
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCAL = ROOT / ".local/research"
+
+
+def build_schema(databases, roles, config):
+    """Bring every lab database to the current archive generation (终版 §13.2) before anything starts: an empty one gets
+    its schema, one already at this generation is accepted.  A legacy or foreign one stops the launcher here - the
+    backend would only report it as refused and run on without an archive."""
+    for role in roles:
+        store = ArchiveStore(databases[role])
+        try:
+            store.initialize(config)
+        except SchemaError as error:
+            raise SystemExit(f"The {role} lab database cannot be used: {error}.  Run new-lab for a fresh lab.") from error
+        finally:
+            store.close()
 
 
 def prepare(config_path, *, new_lab=False):
@@ -79,6 +94,7 @@ def prepare(config_path, *, new_lab=False):
             used_bytes += conn.execute(
                 "SELECT coalesce(sum(pg_total_relation_size(relid)),0)::bigint FROM pg_stat_user_tables"
             ).fetchone()[0]
+    build_schema(databases, roles, config)
     accounts = Accounts(LOCAL / "accounts.json")
     credentials = {}
     for role in ("admin", "viewer"):
