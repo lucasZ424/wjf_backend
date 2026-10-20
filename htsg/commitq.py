@@ -68,6 +68,9 @@ class CommitQueue:
             if self.is_void is not None and self.is_void(group):
                 self.queue.popleft()  # it sits behind a lost group; only the recovery unit may restore continuity
                 self.stats["voided"] += 1
+                release = getattr(self.router, "release", None)
+                if release is not None:
+                    release(group.group_id)  # never tried again: a memory of where an unknown commit went is no longer needed
                 continue
             result = await loop.run_in_executor(self.io, self.router.write_group, group)
             if result.durable:

@@ -168,7 +168,4 @@ def validate_research(config):
             occupied |= addresses
         elif not p.node_id.startswith("ns=2;s="):
             raise ValueError("simulation NodeId must use ns=2;s=<name>")
-    budget = estimate_budget(config)
-    if budget["validation_bytes_estimate"] > budget["development_budget_bytes"]:
-        raise ValueError("simulation validation estimate exceeds development budget; reduce scope")
-    return config
+    return config  # the storage guards at run time decide what fits; `estimate_budget` only informs (research_lab, status)

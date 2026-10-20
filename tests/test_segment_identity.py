@@ -20,6 +20,7 @@ from owner_support import Recorder
 from test_source_validity import MONO0, WALL0, at, data, keepalive, tick, ua_only
 
 from htsg import history as h
+from htsg import owner as owner_module
 from htsg import records as r
 from htsg.owner import Owner
 
@@ -661,3 +662,101 @@ def test_a_cut_for_a_clock_step_that_was_turned_away_still_ends_the_stored_segme
     writer.settle()
     sound(writer.stored)
     in_database(archive_db_factory, writer.stored)
+
+
+# ====================================== the clock-jump markers a long loss cannot hold (rulings of 2026-10-20, item 10b)
+
+
+def many_clock_steps_while_lost(steps):
+    """The archive is lost, and then the wall clock steps `steps` times, alternately forward and back, before anything can be stored."""
+    owner, writer = world()
+    lose(owner, writer, 102.0)
+    writer.accepting = False
+    for k in range(steps):
+        shift = 3600.0 if k % 2 == 0 else 0.0
+        step_clock(owner, 104.0 + 0.1 * k, shift)
+        stepped_keepalive(owner, 104.05 + 0.1 * k, shift)
+    writer.accepting = True
+    return owner, writer
+
+
+def the_unit_after(owner, writer):
+    stepped_keepalive(owner, 106.0, 0.0)
+    step_clock(owner, 106.1, 0.0)
+    return the_unit(writer)
+
+
+def dropped_said(group):
+    return [x.detail.get("earlier_markers_dropped") for x in group.states if x.kind == "CLOCK_JUMP"]
+
+
+def stored_markers(factory, groups):
+    store = factory()
+    store.initialize(CONFIG)
+    store.bind_run("run", CONFIG.config_id, WALL0)
+    for group in groups:
+        assert store.write_group(group).durable, group.group_id
+    with store.session() as conn:
+        return [x["detail"] for x in conn.execute("SELECT detail FROM state_event WHERE kind='CLOCK_JUMP' ORDER BY at_mono,id").fetchall()]
+
+
+def test_clock_steps_beyond_the_limit_are_counted_and_the_first_marker_stored_says_how_many_went(archive_db_factory):
+    """The oldest markers were dropped without a trace: the stored clock events looked like all of them."""
+    owner, writer = many_clock_steps_while_lost(20)
+    s = owner.sources["ua"]
+    assert s.archive == "LOST" and owner.health["clock_jumps"] == 20
+    assert (len(s.owed_jumps), s.owed_dropped, owner.health["clock_markers_dropped"]) == (16, 4, 4), "the newest sixteen are kept"
+    unit = the_unit_after(owner, writer)
+    assert dropped_said(unit) == [4] + [None] * 15
+    writer.settle()
+    assert s.archive == "OK" and s.owed_jumps == [] and s.owed_dropped == 0, "stored, so nothing is owed any more"
+    assert owner.health["clock_markers_dropped"] == 4, "what went stays counted for the run"
+    sound(writer.stored)
+    found = stored_markers(archive_db_factory, writer.stored)
+    assert len(found) == 16 and [x.get("earlier_markers_dropped") for x in found] == [4] + [None] * 15
+
+
+def test_up_to_the_limit_nothing_is_dropped_and_nothing_is_said():
+    owner, writer = many_clock_steps_while_lost(16)
+    s = owner.sources["ua"]
+    assert (len(s.owed_jumps), s.owed_dropped, owner.health["clock_markers_dropped"]) == (16, 0, 0)
+    assert dropped_said(the_unit_after(owner, writer)) == [None] * 16
+    owner, writer = many_clock_steps_while_lost(17)
+    assert (owner.sources["ua"].owed_dropped, owner.health["clock_markers_dropped"]) == (1, 1), "the seventeenth is the first to cost one"
+
+
+def test_a_unit_turned_away_keeps_the_count_and_the_next_one_says_it_again():
+    owner, writer = many_clock_steps_while_lost(20)
+    writer.policy = only(r.GROUP_RECOVERY)("REFUSE")
+    assert dropped_said(the_unit_after(owner, writer)) == [4] + [None] * 15
+    writer.settle()
+    s = owner.sources["ua"]
+    assert s.archive == "LOST" and s.owed_dropped == 4, "nothing was stored, so the loss is still owed"
+    writer.policy = lambda group: "COMMIT"
+    step_clock(owner, 107.0, 0.0)
+    stepped_keepalive(owner, 107.05, 0.0)
+    step_clock(owner, 107.1, 0.0)
+    assert dropped_said(the_unit(writer)) == [4] + [None] * 15
+
+
+def test_the_gap_and_the_segments_of_the_unit_do_not_rest_on_the_markers_the_limit_dropped(monkeypatch):
+    """The markers are information about the clock; the cut of the history comes from the segment facts.  The same loss with room
+    for every marker gives the same gap and the same segment records."""
+
+    def the_rest():
+        owner, writer = many_clock_steps_while_lost(20)
+        return [x for x in the_unit_after(owner, writer).states if x.kind != "CLOCK_JUMP"]
+
+    capped = the_rest()
+    monkeypatch.setattr(owner_module, "OWED_JUMPS_LIMIT", 100)
+    assert the_rest() == capped
+    assert {"GAP", "SEG_END", "SEG_START"} <= {x.kind for x in capped}
+
+
+def test_the_final_group_of_a_stop_says_how_many_markers_went_too():
+    owner, writer = many_clock_steps_while_lost(20)
+    owner.shutdown(*at(106.0))
+    terminal = owner.sources["ua"].shutdown_group
+    assert dropped_said(terminal) == [4] + [None] * 15
+    writer.settle()
+    assert owner.sources["ua"].shutdown_done and owner.sources["ua"].owed_dropped == 0

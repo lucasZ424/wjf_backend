@@ -70,10 +70,20 @@ def test_research_configuration_has_bounded_full_duration_capture():
     assert budget["validation_bytes_estimate"] < 2 * 1024**3
 
 
-def test_simulation_refuses_invalid_references_nonlocal_servers_and_overbudget():
+def test_the_estimate_of_a_validation_run_never_decides_whether_a_configuration_loads():
+    """SIM-01: the old per-frame estimate (1 KiB a value) refused the default research configuration outright once the budget was
+    1 GiB or the duration 16,765 s - while the real guards, at run time, count what is actually written."""
     original = json.loads(Path("config/research-sim.json").read_text(encoding="utf-8"))
-    # Exercise refusal with a small test quota; the live lab now deliberately allows 10 GiB.
-    original["storage"]["development_budget_bytes"] = 2 * 1024**3
+    assert estimate_budget(Settings.model_validate(original))["validation_bytes_estimate"] > 1024**3
+    for budget, seconds in ((1024**3, 2100), (1024, 2100), (10 * 1024**3, 20000), (10 * 1024**3, 86400)):
+        data = json.loads(json.dumps(original))
+        data["storage"]["development_budget_bytes"], data["simulation"]["validation_duration_seconds"] = budget, seconds
+        config = Settings.model_validate(data)
+        assert estimate_budget(config)["validation_bytes_estimate"] > budget, "the estimate is still made, and says it does not fit"
+
+
+def test_simulation_refuses_invalid_references_and_nonlocal_servers():
+    original = json.loads(Path("config/research-sim.json").read_text(encoding="utf-8"))
     for mutate in (
         lambda d: d["sources"][0].update(host="0.0.0.0"),
         lambda d: d["simulation"]["signals"].pop(),

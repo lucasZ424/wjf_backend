@@ -80,6 +80,7 @@ class SourceState:
     shutdown_done: bool = False
     shutdown_failed: bool = False
     owed_jumps: list = field(default_factory=list)  # CLOCK_JUMP markers seen while LOST (no group could carry them): the next unit or final group does
+    owed_dropped: int = 0  # markers evicted for the limit since the last ones were stored: the first one carried says how many
     watermark_mono: float | None = None
     watermark_wall: float = 0.0
 
@@ -108,7 +109,7 @@ def _sink_none(_):
 
 RUN_SOURCE = "_run"  # carrier "source" of run-level groups (start / end)
 PENDING_LIMIT = 256  # groups held per source while a recovery group is not yet confirmed
-OWED_JUMPS_LIMIT = 16  # clock-jump markers kept per source while its archive is lost: the newest ones
+OWED_JUMPS_LIMIT = 16  # clock-jump markers kept per source while its archive is lost: the newest ones (the rest are counted)
 
 
 class Owner:
@@ -184,6 +185,7 @@ class Owner:
             "archive_recoveries": 0,
             "pending_overflows": 0,
             "clock_jumps": 0,
+            "clock_markers_dropped": 0,
         }
 
     # ------------------------------------------------------------------ plumbing
@@ -323,6 +325,8 @@ class Owner:
         s.inflight.discard(group.order)
         if s.owed_jumps:  # the markers this group carried are stored now
             carried = {st.id for st in group.states if st.kind == "CLOCK_JUMP"}
+            if s.owed_jumps[0].id in carried:
+                s.owed_dropped = 0  # the first one said how many were dropped before the ones that were kept
             s.owed_jumps = [marker for marker in s.owed_jumps if marker.id not in carried]
         for st in group.states:  # the archive's own open segments follow what is CONFIRMED, nothing else
             if st.kind == "SEG_START":
@@ -387,7 +391,7 @@ class Owner:
         """At a batch boundary: gap + new segment + retained baseline + first watermark as ONE unit (§5)."""
         if s.archive != "LOST" or s.recovery_order is not None or s.inflight or s.state in (RESYNC, EXPIRED):
             return  # a unit on its way, or groups still on theirs, hold this up; an unsynchronised intake must be fixed by C1 first
-        states = [self._gap_state(s, wall, mono), *s.owed_jumps]
+        states = [self._gap_state(s, wall, mono), *self._owed_markers(s)]
         group = self._segment_group(s, "ARCHIVE_GAP", wall, mono, lead=states, unit=True)
         self._submit_recovery(s, group)  # archive-only: realtime clients saw these values long ago
 
@@ -423,6 +427,15 @@ class Owner:
         return self._state(
             s, "GAP", wall, mono, start_wall=s.lost_since_wall, end_wall=max(wall, s.lost_since_wall), reason=s.lost_reason
         )  # a clock stepped back since the loss began must not give a gap that ends before it started
+
+    def _owed_markers(self, s: SourceState) -> list[rec.StateRecord]:
+        """The clock-jump markers the next unit or final group stores.  When the limit made some go, the first one says how many
+        (`earlier_markers_dropped`): the stored clock events must not be read as all of them.  Segments and gaps do not rest on
+        these markers - they come from the segment facts - so the loss touches nothing but this record."""
+        if not s.owed_dropped:
+            return list(s.owed_jumps)
+        first, *rest = s.owed_jumps
+        return [replace(first, detail={**first.detail, "earlier_markers_dropped": s.owed_dropped}), *rest]
 
     def _watermark_state(self, s: SourceState, wall: float, mono: float):
         """History is certain only as far as communication was proven; never 'now' (§5)."""
@@ -1063,7 +1076,7 @@ class Owner:
 
     def _terminal_group(self, s: SourceState) -> rec.CommitGroup:
         wall, mono = self.shutdown_wall, self.shutdown_mono
-        states = [self._gap_state(s, wall, mono), *s.owed_jumps, *self._durable_ends(s, "ARCHIVE_GAP", wall, mono)]
+        states = [self._gap_state(s, wall, mono), *self._owed_markers(s), *self._durable_ends(s, "ARCHIVE_GAP", wall, mono)]
         return self._build(rec.GROUP_RECOVERY, s.id, wall, states=states)
 
     def shutdown_progress(self) -> bool:
@@ -1151,7 +1164,10 @@ class Owner:
                 self._submit(s, group)
             else:
                 if s.archive == "LOST":  # nothing is queued across a gap: the unit that ends it, or the final group, carries the marker
-                    s.owed_jumps = [*s.owed_jumps, marker][-OWED_JUMPS_LIMIT:]
+                    over = max(0, len(s.owed_jumps) + 1 - OWED_JUMPS_LIMIT)
+                    s.owed_jumps = [*s.owed_jumps, marker][over:]
+                    s.owed_dropped += over
+                    self.health["clock_markers_dropped"] += over
                 self._emit(rec.GROUP_STATE, s, wall, states=[marker])
 
     def _watermarks(self, wall: float, mono: float):

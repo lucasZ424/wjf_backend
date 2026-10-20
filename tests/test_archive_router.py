@@ -196,9 +196,36 @@ def test_only_a_group_of_unknown_commit_is_remembered(rig):
     assert failed.status == "FAILED" and rig.router.pinned == {}, "a failure that is certain needs no memory"
 
 
-def test_the_memory_of_groups_of_unknown_commit_is_bounded_and_forgets_the_oldest_first(rig, monkeypatch):
+def test_the_memory_of_groups_of_unknown_commit_is_bounded_and_never_drops_one_to_make_room(rig, monkeypatch):
+    """Forgetting the oldest let its retry be routed again - to another database, and stored twice - without a word.  A NEW
+    group of unknown commit that finds the memory full is refused out loud instead; the groups already remembered keep their
+    database.  (The refused one may well be durable - its reply was lost - which is why it is a reported gap, not a denial.)"""
+    monkeypatch.setattr(archive_router, "PINNED_LIMIT", 2)
+    real = lose_the_reply(rig)
+    group = {order: make_group(order=order, config_id=rig.cfg.config_id) for order in (1, 2, 3, 4)}
+    for order in (1, 2):
+        assert rig.router.write_group(group[order]).status == "UNKNOWN"
+    third = rig.router.write_group(group[3])
+    assert (third.status, third.reason, third.durable) == ("REFUSED", "PIN_TABLE_FULL", False)
+    assert list(rig.router.pinned) == ["run1/g1", "run1/g2"], "nobody was forgotten to make room for the new one"
+    assert rig.router.health["pin_table_full"] == 1
+    again = rig.router.write_group(group[1])  # a remembered group is still asked of its own database, full table or not
+    assert again.status == "UNKNOWN" and rig.router.health["pin_table_full"] == 1
+    answer_again(rig, real)
+    assert rig.router.write_group(group[1]).status == "ALREADY" and list(rig.router.pinned) == ["run1/g2"]
+    lose_the_reply(rig)
+    assert rig.router.write_group(group[4]).status == "UNKNOWN", "a released place can be used again"
+    assert list(rig.router.pinned) == ["run1/g2", "run1/g4"]
+
+
+def test_a_group_the_queue_gave_up_frees_its_place_in_the_memory_of_groups_of_unknown_commit(rig, monkeypatch):
+    """A voided group is never asked about again; if its place stayed taken, a full table would refuse new groups for ever."""
     monkeypatch.setattr(archive_router, "PINNED_LIMIT", 2)
     lose_the_reply(rig)
-    for order in (1, 2, 3):
+    for order in (1, 2):
         assert rig.router.write_group(make_group(order=order, config_id=rig.cfg.config_id)).status == "UNKNOWN"
+    assert rig.router.write_group(make_group(order=3, config_id=rig.cfg.config_id)).reason == "PIN_TABLE_FULL"
+    rig.router.release("run1/g1")
+    rig.router.release("run1/never-pinned")  # a group that was never remembered is no error
+    assert rig.router.write_group(make_group(order=3, config_id=rig.cfg.config_id)).status == "UNKNOWN"
     assert list(rig.router.pinned) == ["run1/g2", "run1/g3"]

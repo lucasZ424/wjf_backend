@@ -108,6 +108,24 @@ async def test_a_refused_group_is_dropped_and_reported_without_blocking_later_gr
     assert queue.stats["refused"] == 1
 
 
+async def test_a_voided_group_is_let_go_of_by_the_router_that_may_remember_it():
+    """An unknown commit is remembered by the router for its retries; a group dropped as void gets none, so it must say so."""
+
+    class Remembering(ScriptedRouter):
+        released = []
+
+        def release(self, group_id):
+            self.released.append(group_id)
+
+    router = Remembering()
+    queue = CommitQueue(router, 10, is_void=lambda group: group.order == 1)
+    queue.offer(g(1))
+    queue.offer(g(2))
+    await drain(queue, lambda: len(router.written) >= 1)
+    assert router.released == ["run1/g1"] and router.written == [("run1/g2", "COMMITTED")]
+    assert queue.stats["voided"] == 1
+
+
 async def test_unknown_outcomes_are_retried_for_the_same_group():
     router = ScriptedRouter({"run1/g1": ["UNKNOWN", "UNKNOWN", "COMMITTED"]})
     queue = CommitQueue(router, 10, retry_delay=(0.01, 0.02))

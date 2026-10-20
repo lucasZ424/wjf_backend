@@ -261,7 +261,9 @@ class ArchiveRouter:
         """Write one whole group.  A group whose commit came back UNKNOWN is remembered with its database: whatever the disks
         say by the time it is tried again, it is asked of THAT database only - the first attempt may have become durable
         there, and a copy in another database would be the same group stored twice.  The memory ends when the group is
-        confirmed durable, and it is bounded: a group the queue gave up on is forgotten after `PINNED_LIMIT` newer ones."""
+        confirmed durable, and it is bounded by `PINNED_LIMIT`: no remembered group is ever dropped to make room.  A NEW group
+        of unknown commit that finds the memory full is refused (`PIN_TABLE_FULL`, counted in `health`), because a retry of it
+        could no longer be kept away from the other databases."""
         pinned = self.pinned.get(group.group_id)
         if pinned is None:
             result = self._write_routed(group)
@@ -270,13 +272,18 @@ class ArchiveRouter:
             if result.durable:
                 self.bytes_written += group_bytes(group)
         if result.status == "UNKNOWN" and result.target is not None:
-            self.pinned.pop(group.group_id, None)
-            self.pinned[group.group_id] = result.target
-            while len(self.pinned) > PINNED_LIMIT:
-                del self.pinned[next(iter(self.pinned))]
+            if group.group_id in self.pinned or len(self.pinned) < PINNED_LIMIT:
+                self.pinned[group.group_id] = result.target
+            else:
+                self.health["pin_table_full"] = self.health.get("pin_table_full", 0) + 1
+                result = RouteResult("REFUSED", None, "PIN_TABLE_FULL")
         elif result.durable:
             self.pinned.pop(group.group_id, None)
         return result
+
+    def release(self, group_id: str):
+        """The queue gave this group up (voided behind a lost group): it is never asked about again, so its place is free."""
+        self.pinned.pop(group_id, None)
 
     def _write_routed(self, group: rec.CommitGroup) -> RouteResult:
         policy = self.config.storage

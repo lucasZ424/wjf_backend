@@ -16,7 +16,7 @@ import psycopg
 
 from .records import MISSING
 
-ROW_LIMIT = 10000  # rows shown per channel; reaching it is reported, never hidden
+ROW_LIMIT = 10000  # rows of the window per channel, plus the value in effect at its start; reaching it is reported
 INF = math.inf
 
 OBS_COLUMNS = (
@@ -82,8 +82,7 @@ def read_store(store, name, channels: dict[str, str], start: float, end: float, 
             for row in window:
                 if row.pop("rn") > limit:
                     out.truncated.add(row["point_id"])
-                else:
-                    out.rows.append({**row, "kind": kind})
+                out.rows.append({**row, "kind": kind})  # the extra row stays: it ends the last one shown
             keys = [(s["run_id"], s["source_id"], s["seg"], s["start_wall"]) for s in out.segments]
             if keys:
                 basis = _rows(
@@ -149,8 +148,11 @@ def _ranking(row: dict) -> tuple:
 def _limit_per_channel(rows: dict, start: float, limit: int, truncated: set):
     """The limit is per channel over ALL the databases, not per database: each was asked for `limit`+1 rows of the window, so
     together they may hold up to twice that.  The rows of a channel are those of the union, once each (by stable id), in the
-    order every database ranks them in; what is left over the limit is dropped and the channel is marked truncated.  The
-    value held in from before the window (a row ahead of `start`) is not a row of the window and is never cut."""
+    order every database ranks them in; what is left over the limit is not shown and the channel is marked truncated.  The
+    first row over the limit is kept, marked `boundary`, to bound the hold of the last row shown (without it that row would
+    be held to the end of its segment, as if nothing followed it); `assemble` never shows it.  The value held in from
+    before the window (a row ahead of `start`) is not a row of the window and is never cut.  So a channel shows at most
+    `limit` rows of the window plus the value in effect at its start."""
     window: dict[str, list] = {}
     for row in rows.values():
         if row["effective_wall"] >= start:
@@ -158,7 +160,8 @@ def _limit_per_channel(rows: dict, start: float, limit: int, truncated: set):
     for pid, found in window.items():
         if len(found) > limit:
             found.sort(key=_ranking)
-            for row in found[limit:]:
+            rows[found[limit]["id"]] = {**found[limit], "boundary": True}
+            for row in found[limit + 1 :]:
                 del rows[row["id"]]
             truncated.add(pid)
 
@@ -207,6 +210,8 @@ def assemble(
             cut_at_exit = info.get("end_reason") == "EXIT_TRUNCATED"
             out_rows = []
             for i, row in enumerate(seg_rows):
+                if row.get("boundary"):
+                    continue  # only there to end the row before it; always the last of its segment
                 t = row["effective_wall"]
                 last = i + 1 == len(seg_rows)
                 # a segment end bounds every record; the watermark only vouches for the TAIL of an open
@@ -254,6 +259,8 @@ def assemble(
                         "ended_by": why,
                     }
                 )
+            if not out_rows:
+                continue  # a segment of which only the boundary row was left
             spans.append(
                 {
                     "run_id": key[0],

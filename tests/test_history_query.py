@@ -162,10 +162,12 @@ def values_of(result, pid="ti"):
     return [x["value"] for span in spans(result, pid) for x in span["rows"] if x["kind"] == "raw" and not x["held"]]
 
 
-def series(count, step=0.01):
+def series(count, step=0.01, end=None):
     owner, rec = owner_and_groups()
     for n in range(count):
         data(owner, 101.0 + n * step, items=(("ti", 500.0 + n),), seq=n + 1)
+    if end is not None:
+        owner.shutdown(*at(end))  # the segment is over by then: every row is held until something
     return rec, next(i for i, g in enumerate(rec.commits) if g.observations)  # the groups, and where the data begins
 
 
@@ -227,3 +229,79 @@ def test_a_long_series_is_answered_quickly_from_the_point_time_index(archive_db_
     rows = spans(result)[0]["rows"]
     assert rows[0]["held"] and rows[0]["value"] == 29999.0 and len(rows) == 102
     assert elapsed < 1.5, f"{elapsed:.2f}s for a 100 s window in a 60000-row series"
+
+
+def shown(result, pid="ti"):
+    """(value, time, until, ended_by) of every raw row of the window, in order - the value held in from before it is not one."""
+    rows = (x for span in spans(result, pid) for x in span["rows"])
+    return [(x["value"], x["time"], x["until"], x["ended_by"]) for x in rows if x["kind"] == "raw" and not x["held"]]
+
+
+def first_data_group(rec):
+    return next(i for i, g in enumerate(rec.commits) if g.observations)
+
+
+def test_a_row_limit_never_lengthens_the_hold_of_the_last_row_shown(archive_db_factory):
+    """The review of 2026-10-20.  The row after the limit was dropped before the intervals were worked out, so the last row
+    shown was held to the end of its segment as if nothing came after it - and the page and the CSV drew exactly that."""
+    rec, _ = series(5, step=1.0, end=200.0)
+    store = stored(archive_db_factory, rec)
+    whole = shown(ask(store, 100, 210))
+    assert [x[3] for x in whole] == ["NEXT_CHANGE"] * 4 + ["SEGMENT_END"], "the premise: only the very last row is held to the end"
+    for limit in (1, 2, 3, 4):
+        cut = ask(store, 100, 210, limit=limit)
+        assert shown(cut) == whole[:limit], f"limit {limit}: every row shown is held exactly as long as when all rows are shown"
+        assert shown(cut)[-1][2:] == (whole[limit][1], "NEXT_CHANGE"), "the last one ends where the row left out begins"
+        assert cut["channels"]["ti"]["truncated"]
+    exact = ask(store, 100, 210, limit=5)
+    assert shown(exact) == whole and not exact["channels"]["ti"]["truncated"], "five rows are exactly the limit: nothing is left out"
+
+
+def test_the_row_that_ends_the_last_one_shown_may_be_in_the_other_database(archive_db_factory):
+    """Neither database reaches the limit alone, so the row after it is found only by putting them together."""
+    rec, first = series(12, step=1.0, end=200.0)
+    for kept in (0, 1):  # the first eight rows in the primary and the rest in the other one, and the other way round
+        stores = two_databases(
+            archive_db_factory, rec, lambda i, kept=kept: [0, 1] if i < first else [kept if i < first + 8 else 1 - kept]
+        )
+        whole = shown(h.query(stores, CHANNELS, at(100)[0], at(210)[0]))
+        cut = h.query(stores, CHANNELS, at(100)[0], at(210)[0], limit=8)
+        assert shown(cut) == whole[:8], f"rows 1-8 in database {kept}"
+        assert shown(cut)[-1][2:] == (whole[8][1], "NEXT_CHANGE")
+        assert cut["channels"]["ti"]["truncated"]
+
+
+def test_a_row_left_out_that_is_bad_or_a_failure_record_still_ends_the_hold_of_the_last_row_shown(archive_db_factory):
+    """A Good value is not in effect after something that is not Good has come, whether or not the page has room to show it."""
+    for what, item in (("a Bad sample", ("ti", None, r.BAD, 0x80350000)), ("a failure record", ("ti", None, r.MISSING + "TIMEOUT", 0))):
+        owner, rec = owner_and_groups()
+        for n, one in enumerate((("ti", 1.0), ("ti", 2.0), item, ("ti", 4.0))):
+            data(owner, 101.0 + n, items=(one,), seq=n + 1)
+        owner.shutdown(*at(200.0))
+        first = first_data_group(rec)
+        single = [("primary", stored(archive_db_factory, rec))]
+        split = two_databases(  # the first two rows in the primary, the row that is left out in the other database
+            archive_db_factory, rec, lambda i, first=first: [0, 1] if i < first else [0] if i < first + 2 else [1]
+        )
+        for stores in (single, split):
+            whole = shown(h.query(stores, CHANNELS, at(100)[0], at(210)[0]))
+            cut = h.query(stores, CHANNELS, at(100)[0], at(210)[0], limit=2)
+            assert [x[0] for x in whole] == [1.0, 2.0, None, 4.0], what
+            assert shown(cut) == whole[:2], what
+            assert shown(cut)[1][2:] == (at(103.0)[0], "NEXT_CHANGE"), f"{what} ends the hold of 2 where it is stored"
+
+
+def test_a_row_left_out_in_a_later_segment_is_not_shown_and_changes_nothing_in_the_one_before(archive_db_factory):
+    owner, rec = owner_and_groups()
+    data(owner, 101.0)
+    data(owner, 102.0, items=(("ti", 2.0),), seq=2)
+    owner.source_down("ua", 1, "CONNECTION", *at(106.5))
+    owner.begin_generation("ua", 2, *at(120.0))
+    data(owner, 121.0, items=(("ti", 3.0),), gen=2, seq=1)
+    owner.shutdown(*at(200.0))
+    store = stored(archive_db_factory, rec)
+    whole = ask(store, 100, 210)
+    cut = ask(store, 100, 210, limit=2)
+    assert [x[0] for x in shown(whole)] == [500.0, 2.0, 3.0]
+    assert shown(cut) == shown(whole)[:2] and shown(cut)[1][2:] == (at(106.5)[0], "SEGMENT_END")
+    assert [s["seg"] for s in spans(cut)] == [1], "the second segment has no row to show: it is not listed empty"
