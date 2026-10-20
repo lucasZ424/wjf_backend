@@ -64,14 +64,15 @@
 
 ## 5. 场景
 
-模拟器有 8 个场景，同一时刻只有一个生效：`baseline`、`thermal_step`、`load_cycle`、`extreme_temperature`、`bad_quality`、`freeze`、`disconnect_modbus`、`disconnect_opcua`。**网页没有场景切换入口**；切换用模拟控制接口（仅本机回环，令牌认证）：
+模拟器有 8 个场景，同一时刻只有一个生效：`baseline`、`thermal_step`、`load_cycle`、`extreme_temperature`、`bad_quality`、`freeze`、`disconnect_modbus`、`disconnect_opcua`。**网页没有场景切换入口**（评估后不做：加按钮要改冻结的第15节页面与权限要求，并使整套连续运行与 G3 证据作废，见[模拟场景覆盖表](HTSG_V1_模拟场景覆盖表_v0.1.md)“认领结论”）；用手动脚本触发，**一次一个场景，不按顺序、不定时**：
 
 ```powershell
-$token = (Get-Content .local\research\simulation-secret.txt).Trim()
-Invoke-RestMethod -Method Post -Uri http://127.0.0.1:14841/scenario `
-  -Headers @{Authorization = "Bearer $token"} -ContentType "application/json" -Body '{"scenario":"bad_quality"}'
-Invoke-RestMethod -Uri http://127.0.0.1:14841/status -Headers @{Authorization = "Bearer $token"}
+.\.venv\Scripts\python.exe scripts\trigger_scenario.py --list      # 列出场景名与持续时间
+# 在 .local\research\trigger.json 里写要触发的场景，例如 {"scenario": "bad_quality"}
+.\.venv\Scripts\python.exe scripts\trigger_scenario.py             # 触发它；换场景就改文件再运行
 ```
+
+触发文件里只放一个 `scenario`（另可选 `research_config`，仅在研究配置不是 `config/research-sim.json` 时用）；写了多个场景或多余的键会被拒绝，未知场景名在发请求之前就报错并列出可用名。模拟器未运行、令牌不对时给出明确的错误信息；控制令牌从 `.local/research/simulation-secret.txt` 读取，不打印。（脚本只是对模拟控制接口 `POST http://127.0.0.1:14841/scenario` 的封装，仅本机回环、令牌认证。）
 
 - 切换在模拟器的**下一次生成**才生效，`POST /scenario` 立即返回的状态不证明协议端已应用（断连场景还要等服务器重配）。
 - 非基线场景各持续配置里的 `duration` 秒，之后自动回到基线：`thermal_step`、`extreme_temperature` 30 秒，`load_cycle` 120 秒，`bad_quality`、`freeze`、两个断连各 20 秒。断连场景是停掉相应服务器（连接被拒），不是“沉默”；`bad_quality` 与 `freeze` 各作用于2个点；`freeze` 保留值与 OPC UA 源时间戳，在接收时间基准下，读回的恒定值**不能单独证明设备故障**（freeze 作为“信号断联”的新判据尚未确定）。
