@@ -20,6 +20,7 @@ from owner_support import Recorder
 from protocol_support import FieldModbusDevices, device_points, fast_ticker
 from pymodbus.exceptions import ModbusIOException
 from pymodbus.pdu import ExceptionResponse
+from pymodbus.server.requesthandler import ServerRequestHandler
 
 from htsg.config import Settings, Timing, load_settings
 from htsg.ingress import Ingress
@@ -28,7 +29,11 @@ from htsg.owner import Owner
 
 OK, SILENT, EXCEPTION = FieldModbusDevices.OK, FieldModbusDevices.SILENT, FieldModbusDevices.EXCEPTION
 WALL0, MONO0 = 1000.0, 100.0
-QUICK = Timing(modbus_request_timeout=0.15, modbus_connect_timeout=0.3)
+# "Quick" is the ticker and the back-off; the timeouts are the real ones.  A slave that answers must never be late by chance: when
+# the whole loop stands still for longer than the request timeout between the sending of a request and the server's handling of
+# it (the server needs several turns of the loop to answer, the client's timer one), the round reads TIMEOUT and the answer that
+# comes after it is dropped.  With 0.15 s that turned the first round after a reconnect into a fourth timeout, once, in a full run.
+QUICK = Timing(modbus_request_timeout=0.8, modbus_connect_timeout=0.8)
 
 
 def at(mono):
@@ -341,7 +346,7 @@ async def test_real_slaves_an_answer_in_between_resets_the_count_so_two_silent_r
     """Q05 on the real wire: two rounds of silence, then a round in which only one slave, or both, answer - over and over."""
     schedule = [(SILENT, SILENT), (SILENT, SILENT), (OK, SILENT), (OK, OK)] * 3
     live = await run_schedule(schedule, (OK, OK), len(schedule) + 2)
-    assert live.rounds[: len(schedule)] == ["TIMEOUT", "TIMEOUT", "OK", "OK"] * 3
+    assert live.rounds[: len(schedule)] == ["TIMEOUT", "TIMEOUT", "OK", "OK"] * 3, live.rounds
     assert set(live.gens) == {1} and live.s.resync_count == 0, "twelve rounds, three silent ones in a row never happened"
 
 
@@ -352,7 +357,7 @@ async def test_real_slaves_that_all_stay_silent_cost_the_connection_in_the_third
     (终版 §11).  Fixed as it is, so that a change of the library or of the rule shows."""
     schedule = [(SILENT, SILENT)] * 3
     live = await run_schedule(schedule, (OK, OK), 6)
-    assert live.rounds[:6] == ["TIMEOUT", "TIMEOUT", "CONNECTION", "OK", "OK", "OK"]
+    assert live.rounds[:6] == ["TIMEOUT", "TIMEOUT", "CONNECTION", "OK", "OK", "OK"], live.rounds
     assert live.gens[:3] == [1, 1, 1] and live.gens[3] == 2 and live.s.resync_count == 1, "one reconnect, one resync"
 
 
@@ -385,7 +390,40 @@ async def test_a_real_single_slave_that_never_answers_is_a_whole_round_timeout_t
     try:
         async with Live(server, devices=(1,), on_round=next_round) as live:
             await until(lambda: len(live.rounds) >= 5, 20)
-            assert live.rounds[:5] == ["TIMEOUT"] * 3 + ["OK"] * 2
+            assert live.rounds[:5] == ["TIMEOUT"] * 3 + ["OK"] * 2, live.rounds
             assert live.gens[:3] == [1, 1, 1] and live.gens[3] == 2 and live.s.resync_count == 1
+    finally:
+        await server.stop()
+
+
+async def test_the_timing_of_these_tests_survives_a_stall_of_the_whole_loop_at_the_worst_moment(monkeypatch):
+    """What failed once in a full run, made on purpose: the first request on the new connection, after the third timeout, is
+    answered late because the loop stands still for 0.5 s when its first bytes arrive - after the client has sent it and set its
+    timer, before the server's handler has started.  The timing of these tests has to take that without a fourth timeout; with
+    the 0.15 s they had it does not.  (The stall is put into pymodbus 3.15.0's server handler, like the quirk the fixtures know.)"""
+    original = ServerRequestHandler.callback_data
+    handlers = []
+
+    def callback_data(self, data, addr=None):
+        if self not in handlers:
+            handlers.append(self)
+        if len(handlers) == 2 and handlers[1] is self and not getattr(self, "stalled", False):
+            self.stalled = True
+            time.sleep(0.5)
+        return original(self, data, addr)
+
+    monkeypatch.setattr(ServerRequestHandler, "callback_data", callback_data)
+    server = FieldModbusDevices(devices=(1,))
+    server.mode[1] = SILENT
+
+    def next_round(offered):
+        server.mode[1] = SILENT if offered < 3 else OK
+
+    await server.start()
+    try:
+        async with Live(server, devices=(1,), on_round=next_round) as live:
+            await until(lambda: len(live.rounds) >= 5, 20)
+            assert live.rounds[:5] == ["TIMEOUT"] * 3 + ["OK"] * 2, live.rounds
+            assert len(handlers) == 2, "the stall was put where it was meant to be: the second connection"
     finally:
         await server.stop()

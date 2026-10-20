@@ -548,6 +548,53 @@ async def test_a_source_whose_final_group_is_turned_away_does_not_take_the_other
         assert (segments[good]["end_reason"], segments[failed]["end_reason"]) == ("ARCHIVE_GAP", "EXIT_TRUNCATED")
 
 
+@pytest.mark.parametrize("failed", ["mb", "ua"])
+async def test_a_source_still_recovering_when_another_is_turned_away_is_settled_afterwards_and_none_is_left_half_settled(
+    archive_db_factory, monkeypatch, failed
+):
+    """R04, "one source is turned away first, another completes its recovery later": the unit of the second source is still on its
+    way when the stop begins and the final group of the first is turned away behind it; the second source's recovery is confirmed
+    and its segment end follows.  The stop goes on advancing the sources until each is done or has failed: it returns with every
+    source settled, and with the gap and the segment end of the second one stored."""
+    good = "ua" if failed == "mb" else "mb"
+    lab = Lab(archive_db_factory, monkeypatch, config=two_sources(first=failed))
+    async with lab:
+        lab.feed()
+        lab.feed_mb()
+        await lab.stored("ua", "mb")
+        recover = lab.owner._try_archive_recovery
+        monkeypatch.setattr(lab.owner, "_try_archive_recovery", lambda s, wall, mono: recover(s, wall, mono) if s.id == good else None)
+        for source, feed in (("ua", lab.feed), ("mb", lab.feed_mb)):
+            lab.wire.rule(has_data_of(source), verdict="REFUSED", times=1)
+            feed()
+        await lab.until(
+            lambda: all(lab.owner.sources[x].archive == "LOST" and not lab.owner.sources[x].inflight for x in ("ua", "mb")),
+            "both archives are lost",
+        )
+        unit = lab.wire.rule(lambda group: group.source_id == good and is_unit(group), hold=True)
+        lab.wire.rule(is_final_of(failed), verdict="REFUSED")
+        end = lab.wire.rule(lambda group: group.source_id == good and carries("SEG_END")(group) and not is_unit(group), hold=True)
+        lab.tick()  # only the source that is to recover gets its unit, and the writer holds it
+        assert lab.owner.sources[good].archive == "RECOVERING"
+        stopping = asyncio.create_task(lab.stop())
+        await lab.until(lambda: lab.queue.depth == 2, "the final group of the other source waits behind the unit")
+        unit.release()
+        await lab.until(lambda: lab.owner.sources[failed].shutdown_failed, "the other source is turned away")
+        await asyncio.sleep(0.3)
+        assert not stopping.done(), "the segment end of the recovering source is still to come"
+        end.release()
+        await asyncio.wait_for(stopping, 10)
+        assert lab.owner.shutdown_settled() and lab.owner.sources[good].shutdown_done, "no source is left half settled"
+        assert stop_facts(lab.runtime) == (True, "NOT_QUEUED", [failed], 0)
+        assert run_of(lab.primary) == (None, None) and count(lab.primary, "state_event", "kind='RUN_END'") == 0
+        (gap,) = rows(lab.primary, "SELECT source_id FROM archive_gap")
+        assert gap["source_id"] == good, "the recovering source has its gap"
+        stored = segments_of(lab.primary)
+        assert all(x["end_wall"] is not None for x in stored if x["source_id"] == good), "and every one of its segments is closed"
+        assert [x["end_wall"] for x in stored if x["source_id"] == failed] == [None], "the one turned away is left for the next start"
+        assert not not_whole(lab.primary)
+
+
 # ======================================================================================= the end, offered again
 
 
