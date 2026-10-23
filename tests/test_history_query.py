@@ -305,3 +305,29 @@ def test_a_row_left_out_in_a_later_segment_is_not_shown_and_changes_nothing_in_t
     assert [x[0] for x in shown(whole)] == [500.0, 2.0, 3.0]
     assert shown(cut) == shown(whole)[:2] and shown(cut)[1][2:] == (at(106.5)[0], "SEGMENT_END")
     assert [s["seg"] for s in spans(cut)] == [1], "the second segment has no row to show: it is not listed empty"
+
+
+def test_a_crashed_segment_that_nobody_closed_is_held_into_every_later_window_until_the_start_up_close_out_ends_it(
+    archive_db_factory,
+):
+    """Why the start-up close-out exists (R03a).  The process dies without a stop: its last segment is open in the database.  An
+    open segment reaches to infinity, so a window long AFTER the crash still shows the value it held (an unknown tail, or a hold
+    up to a watermark that lies far before the window).  Once the close-out has ended the segment at its own last evidence the
+    dead value is no longer held into windows after it."""
+    for silence, why in ((4, "no watermark was written before the crash"), (25, "a watermark was written before the crash")):
+        owner, rec = owner_and_groups()
+        data(owner, 101.0)
+        keepalives(owner, 102, 101 + silence)  # alive and quiet, then the process dies: no shutdown, no segment end
+        store = stored(archive_db_factory, rec)
+        window = (1000, 1100)  # a quarter of an hour after the crash
+        before = [x for s in spans(ask(store, *window)) for x in s["rows"]]
+        assert len(before) == 1, f"{why}: the dead segment is shown in a window after it"
+        (row,) = before
+        assert (row["value"], row["held"]) == (500.0, True), why
+        assert row["until"] is None or row["until"] < at(window[0])[0], f"{why}: held to {row['until']}, before the window began"
+        closed = store.reconcile_unfinished_runs("the-next-run")
+        assert closed and closed[0]["segments_cut"] >= 1, why
+        after = [x for s in spans(ask(store, *window)) for x in s["rows"]]
+        assert after == [], f"{why}: closed by the close-out, the dead value is not held into the later window"
+        ends = {(s["seg"], s["end_reason"]) for s in spans(ask(store, 100, 130))}
+        assert ends == {(1, "EXIT_TRUNCATED")}, why

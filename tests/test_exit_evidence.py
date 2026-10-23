@@ -5,10 +5,13 @@ Real PostgreSQL.  Why it matters (终版 §5): history holds a value until the e
 watermark.  If every segment of a crashed run were cut at the run's latest evidence, a source that went quiet early
 would be shown as valid until another source's last sample; and a run that ended normally in the emergency database
 would be called an abnormal exit by the database it had left, with its segments cut short.  The evidence of a segment
-is the later of its last VALID observation (Good, a value, not extreme, restated values included) and its watermark;
-a segment with neither ends at its start - nothing is made up.  Records that only prove the owner was running (state
-events, results, faults, bad or missing observations) are no evidence of communication.
+is its WATERMARK (细则 5.1 as revised 2026-10-23: the close-out reads only the run, segment and watermark tables, so it takes
+the same time for a crashed run of any size); a segment without one ends at its start - nothing is made up.  Observations,
+restated values and every other record are no evidence: those after the cut stay visible in history and hold nothing beyond
+themselves.
 """
+
+from contextlib import contextmanager
 
 import psycopg
 import pytest
@@ -16,6 +19,7 @@ from owner_support import small_config
 
 from htsg import history as h
 from htsg import records as r
+from htsg.archive import ArchiveStore
 from htsg.archive_router import ArchiveRouter
 
 CONFIG = small_config()
@@ -126,6 +130,29 @@ def run_of(store):
         return conn.execute("SELECT ended_wall,end_reason FROM run WHERE run_id=%s", (RUN,)).fetchone()
 
 
+def spy_on(store, seen):
+    """Records the text of every statement the store runs from now on."""
+    original = store.session
+
+    class Spy:
+        def __init__(self, conn):
+            self._conn = conn
+
+        def execute(self, query, *args, **kwargs):
+            seen.append(str(query))
+            return self._conn.execute(query, *args, **kwargs)
+
+        def __getattr__(self, name):
+            return getattr(self._conn, name)
+
+    @contextmanager
+    def session():
+        with original() as conn:
+            yield Spy(conn)
+
+    store.session = session
+
+
 def restart(primary, emergency, run_id="next"):
     router = ArchiveRouter(CONFIG, primary, emergency)
     router.initialize(run_id)
@@ -150,7 +177,7 @@ def stores(archive_db_factory):
 # ------------------------------------------------------------------------------- a crash, one database
 
 
-def test_each_segment_ends_at_its_own_evidence_and_the_run_keeps_the_latest_evidence_of_all(stores):
+def test_each_segment_ends_at_its_own_watermark_and_the_run_ends_at_the_latest_of_its_start_and_its_watermarks(stores):
     primary, emergency, rec = stores
     rec.put(primary, "ua", start=1000.0, seen=[1001.0], mark=1002.0)
     rec.put(primary, "mb", start=1000.0, seen=[1001.0, 1010.0], mark=1010.0, poll=1015.0)
@@ -159,34 +186,36 @@ def test_each_segment_ends_at_its_own_evidence_and_the_run_keeps_the_latest_evid
         ("mb", 1): (1000.0, 1010.0, "EXIT_TRUNCATED"),
         ("ua", 1): (1000.0, 1002.0, "EXIT_TRUNCATED"),
     }, "the quiet source is not carried to the busy one's last sample"
-    assert tuple(run_of(primary).values()) == (1015.0, "ABNORMAL_EXIT"), "the run's own end is still its latest evidence"
+    assert tuple(run_of(primary).values()) == (1010.0, "ABNORMAL_EXIT"), "the run's end: its latest watermark (a POLL at 1015 is none)"
     result = ask(("primary", primary))
     assert last_row(result, "ti")["until"] == 1002.0, "the hold stops at the segment's own evidence"
     assert result["coverage_end"] == {"ua": 1002.0, "mb": 1010.0}, "no source's coverage is lifted by another"
 
 
-def test_a_segment_without_a_watermark_ends_at_its_last_valid_observation_and_holds_nothing_beyond_it(stores):
+def test_a_segment_without_a_watermark_ends_at_its_start_and_its_sample_holds_nothing_beyond_itself(stores):
     primary, emergency, rec = stores
     rec.put(primary, "ua", start=1000.0, seen=[1001.0])
     rec.put(primary, "mb", start=1000.0, seen=[1010.0], mark=1010.0)
     restart(primary, emergency)
-    assert segments(primary)[("ua", 1)] == (1000.0, 1001.0, "EXIT_TRUNCATED")
+    assert segments(primary)[("ua", 1)] == (1000.0, 1000.0, "EXIT_TRUNCATED")
     result = ask(("primary", primary))
     assert last_row(result, "ti")["time"] == last_row(result, "ti")["until"] == 1001.0, "only the sample itself is kept"
     assert result["coverage_end"]["ua"] is None, "no watermark, no certain coverage"
 
 
-def test_samples_after_the_watermark_stay_visible_and_the_last_one_holds_nothing_beyond_itself(stores):
+def test_samples_after_the_watermark_stay_visible_and_none_of_them_holds_beyond_itself(stores):
     primary, emergency, rec = stores
     rec.put(primary, "ua", start=1000.0, seen=[1001.0], mark=1005.0)
     rec.put(primary, "ua", seen=[1007.0])
     rec.put(primary, "ua", seen=[1008.0])
     rec.put(primary, "mb", start=1000.0, seen=[1020.0], mark=1020.0)
     restart(primary, emergency)
-    assert segments(primary)[("ua", 1)] == (1000.0, 1008.0, "EXIT_TRUNCATED")
+    assert segments(primary)[("ua", 1)] == (1000.0, 1005.0, "EXIT_TRUNCATED")
     result = ask(("primary", primary))
     (span,) = result["channels"]["ti"]["segments"]
-    assert [(x["time"], x["until"]) for x in span["rows"]] == [(1001.0, 1007.0), (1007.0, 1008.0), (1008.0, 1008.0)]
+    assert [(x["time"], x["until"]) for x in span["rows"]] == [(1001.0, 1005.0), (1007.0, 1007.0), (1008.0, 1008.0)], (
+        "the watermark vouches up to 1005; what lies after it is shown, each holding only itself - 1007 is not held to 1008"
+    )
     assert result["coverage_end"]["ua"] == 1005.0, "what is certain is the watermark, not the samples after it"
 
 
@@ -202,12 +231,14 @@ def test_a_bad_sample_after_the_last_evidence_is_shown_but_holds_nothing_and_the
     assert [(x["time"], x["valid"], x["until"]) for x in span["rows"]] == [(1001.0, True, 1002.0), (1004.0, False, 1004.0)]
 
 
-def test_a_value_that_was_re_stated_counts_as_evidence_at_the_time_it_was_re_stated(stores):
+def test_a_re_stated_value_is_no_evidence_either_it_stays_visible_and_holds_nothing_beyond_itself(stores):
     primary, emergency, rec = stores
     rec.put(primary, "ua", start=1000.0, seen=[1001.0], restated=[1009.0])
     rec.put(primary, "mb", start=1000.0, seen=[1020.0], mark=1020.0)
     restart(primary, emergency)
-    assert segments(primary)[("ua", 1)] == (1000.0, 1009.0, "EXIT_TRUNCATED")
+    assert segments(primary)[("ua", 1)] == (1000.0, 1000.0, "EXIT_TRUNCATED")
+    (span,) = ask(("primary", primary))["channels"]["ti"]["segments"]
+    assert [(x["time"], x["until"]) for x in span["rows"]] == [(1001.0, 1001.0), (1009.0, 1009.0)]
 
 
 def test_records_that_only_show_the_owner_was_running_are_no_evidence_so_such_a_segment_ends_at_its_start(stores):
@@ -221,6 +252,54 @@ def test_records_that_only_show_the_owner_was_running_are_no_evidence_so_such_a_
 
 
 # ------------------------------------------------------------------ data the old rule already wrote
+
+
+def test_the_close_out_reads_no_observation_result_state_or_fault_row_so_a_run_of_any_size_closes_in_the_same_time(stores):
+    """R03a: the start-up close-out used to scan these tables, whose size grows with the crashed run: beyond about 6-8M rows its
+    statements passed the 3 s limit, nothing was closed, and the next start did the same.  The close-out is checked by its
+    structure, not by a timer: whatever it reads, it never reads them."""
+    primary, emergency, rec = stores
+    rec.put(primary, "ua", start=1000.0, seen=[1001.0, 1002.0, 1003.0], bad=[1004.0], poll=1005.0, mark=1003.0)
+    rec.put(primary, "mb", start=1000.0, seen=[1010.0], mark=1010.0)
+    statements = []
+    for store in (primary, emergency):
+        spy_on(store, statements)
+    restart(primary, emergency)
+    assert statements, "the close-out did run"
+    big = ("observation", "result", "state_event", "fault_record")
+    touched = [q for q in statements if any(table in q for table in big)]
+    assert touched == [], f"read or wrote a table that grows with the run: {touched}"
+    assert any("watermark" in q for q in statements), "it works from the watermarks"
+    assert segments(primary) == {("mb", 1): (1000.0, 1010.0, "EXIT_TRUNCATED"), ("ua", 1): (1000.0, 1003.0, "EXIT_TRUNCATED")}
+
+
+def test_a_run_that_cannot_be_closed_now_leaves_the_others_closed_and_the_database_unreported_as_unavailable(stores, monkeypatch):
+    """D (2026-10-23): one transaction per run; a failure is DEFERRED with its reason, not a database failure, and it does not
+    hold the others back.  The next start closes the one that was left."""
+    primary, emergency, rec = stores
+    rec.put(primary, "ua", start=1000.0, seen=[1001.0], mark=1002.0)
+    with primary.session() as conn:  # a second crashed run, which is closed although the first is not
+        conn.execute("INSERT INTO run(run_id,config_id,started_wall) VALUES('other',%s,1500)", (CONFIG.config_id,))
+        conn.execute("INSERT INTO segment(run_id,source_id,seg,conn_gen,start_wall,start_reason) VALUES('other','ua',1,1,1500,'CONNECT')")
+    original = ArchiveStore._close_run
+
+    def failing_for_the_first(conn, run, *args):
+        if run["run_id"] == RUN:
+            raise psycopg.errors.QueryCanceled("too slow")
+        return original(conn, run, *args)
+
+    monkeypatch.setattr(ArchiveStore, "_close_run", staticmethod(failing_for_the_first))
+    router = restart(primary, emergency)
+    assert router.health["reconcile"] == "DEFERRED:primary:QueryCanceled"
+    assert router.health["primary"] == "OK", "the database is fine; one close-out was deferred"
+    assert tuple(run_of(primary).values()) == (None, None), "the run that failed is left as it was"
+    with primary.session() as conn:
+        other = conn.execute("SELECT ended_wall,end_reason FROM run WHERE run_id='other'").fetchone()
+    assert (other["ended_wall"], other["end_reason"]) == (1500.0, "ABNORMAL_EXIT"), "the other run was closed all the same"
+    assert [x["run_id"] for x in router.health["primary_closed_runs"]] == ["other"]
+    monkeypatch.undo()
+    again = restart(primary, emergency, "later")
+    assert "reconcile" not in again.health and tuple(run_of(primary).values()) == (1002.0, "ABNORMAL_EXIT")
 
 
 @pytest.mark.parametrize("mark", [1002.0, None], ids=["with-a-watermark", "without-one"])
@@ -305,7 +384,8 @@ def test_cross_database_crash_reconciliation_resumes_after_one_store_failed_half
     first = restart(primary, interrupted)
     assert tuple(run_of(primary).values()) == (1002.0, "ABNORMAL_EXIT")
     assert tuple(run_of(emergency).values()) == (None, None)
-    assert first.health["emergency"] == "UNAVAILABLE"
+    assert first.health["reconcile"] == "DEFERRED:emergency:OperationalError", "said to be deferred, with the reason"
+    assert first.health["emergency"] == "OK", "the database that was readable and writable is not reported unavailable"
 
     second = restart(primary, emergency, "later")
     assert tuple(run_of(emergency).values()) == (1011.0, "ABNORMAL_EXIT")

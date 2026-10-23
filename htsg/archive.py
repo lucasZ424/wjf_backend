@@ -58,6 +58,15 @@ class SchemaError(RuntimeError):
     """The database cannot be used by this generation; nothing was changed."""
 
 
+class CloseOutDeferred(RuntimeError):
+    """The start-up close-out closed some runs of this database and could not close others now (a database error).  Nothing is
+    lost: an unclosed run stays as it is and the next start tries it again."""
+
+    def __init__(self, closed: list, failed: dict):
+        super().__init__(f"{len(failed)} run(s) not closed now: {failed}")
+        self.closed, self.failed = closed, failed
+
+
 class LegacyDatabaseError(SchemaError):
     """A database created by the frame-based generation: kept as it is, never mixed into queries."""
 
@@ -278,16 +287,13 @@ class ArchiveStore:
 
     @staticmethod
     def _segment_evidence(conn, run_ids) -> dict:
-        """(run, source, seg) -> the later of the segment's last VALID observation (Good, a value, not extreme; a
-        re-stated value counts at the time it was re-stated) and its watermark.  State events, results, faults and
-        bad or missing observations only show that the owner was running, not that the source was talking (§5)."""
+        """(run, source, seg) -> the segment's watermark: the only evidence the start-up close-out reads (§5, 细则 5.1 as revised
+        2026-10-23).  It is a row per segment, so what is read grows with the number of segments and never with the number of
+        observations: a crashed run of any size is closed in the same time.  Observations, state events, results and faults
+        are NOT read; the observations after the last watermark stay visible in history but are not held beyond themselves."""
         rows = conn.execute(
-            "SELECT run_id,source_id,seg,max(t) AS t FROM ("
-            "SELECT run_id,source_id,seg,effective_wall AS t FROM observation "
-            "WHERE run_id=ANY(%(runs)s) AND quality=%(good)s AND value IS NOT NULL AND NOT extreme "
-            "UNION ALL SELECT run_id,source_id,seg,covered_wall AS t FROM watermark WHERE run_id=ANY(%(runs)s)"
-            ") e GROUP BY run_id,source_id,seg",
-            {"runs": list(run_ids), "good": rec.GOOD},
+            "SELECT run_id,source_id,seg,covered_wall AS t FROM watermark WHERE run_id=ANY(%(runs)s)",
+            {"runs": list(run_ids)},
         ).fetchall()
         return {(x["run_id"], x["source_id"], x["seg"]): x["t"] for x in rows}
 
@@ -326,13 +332,17 @@ class ArchiveStore:
     ) -> list[dict]:
         """Close runs that never recorded an end, using ONLY what is persisted (§5).
 
-        The run's end is the latest persisted evidence of the whole run (a watermark, an observation, a state record);
-        no crash time is guessed.  Each segment still open is cut at ITS OWN evidence - the later of its last valid
-        observation and its watermark, its start when it has neither - never at the run's.  What the other bound
-        databases hold is respected (the router gathers it with `unfinished_facts`): a run or segment that ended in any
-        of them is not closed here, and the evidence of a segment counts wherever it was written.
+        Each segment still open is cut at ITS OWN evidence - its watermark, its start when it has none (细则 5.1 as revised
+        2026-10-23) - never at the run's, and never before its own start.  The run's end is the latest of its start and the
+        watermarks this database holds; no crash time is guessed.  Only the `run`, `segment` and `watermark` tables are read, so
+        the time this takes does not grow with the size of the crashed run.  What the other bound databases hold is respected
+        (the router gathers it with `unfinished_facts`): a run or segment that ended in any of them is not closed here, and the
+        evidence of a segment counts wherever it was written.
+
+        Every run is closed in a transaction of its own.  One that cannot be closed now (a database error) leaves the others
+        alone: they are closed, and `CloseOutDeferred` says which were not - the next start tries those again.
         """
-        closed, evidence = [], evidence or {}
+        closed, failed, evidence = [], {}, evidence or {}
         with self.session() as conn:
             runs = conn.execute(
                 "SELECT run_id,started_wall FROM run WHERE ended_wall IS NULL AND run_id IS DISTINCT FROM %s",
@@ -340,40 +350,40 @@ class ArchiveStore:
             ).fetchall()
             runs = [run for run in runs if run["run_id"] not in ended_runs]
             own = self._segment_evidence(conn, [run["run_id"] for run in runs])
-            for run in runs:
-                rid = run["run_id"]
-                latest = conn.execute(
-                    "SELECT greatest("
-                    "%(start)s,"
-                    "coalesce((SELECT max(covered_wall) FROM watermark WHERE run_id=%(r)s),0),"
-                    "coalesce((SELECT max(effective_wall) FROM observation WHERE run_id=%(r)s),0),"
-                    "coalesce((SELECT max(effective_wall) FROM result WHERE run_id=%(r)s),0),"
-                    "coalesce((SELECT max(at_wall) FROM state_event WHERE run_id=%(r)s AND kind<>'CLOCK_JUMP'),0),"
-                    "coalesce((SELECT max(confirmed_wall) FROM fault_record WHERE run_id=%(r)s),0)) AS t",
-                    {"start": run["started_wall"], "r": rid},
-                ).fetchone()["t"]
-                conn.execute(
-                    "UPDATE run SET ended_wall=%s,end_reason='ABNORMAL_EXIT',last_evidence_wall=%s WHERE run_id=%s",
-                    (latest, latest, rid),
-                )
-                cut = 0
-                open_segments = conn.execute(
-                    "SELECT source_id,seg,start_wall FROM segment "
-                    "WHERE run_id=%s AND end_wall IS NULL AND start_wall IS NOT NULL",
-                    (rid,),
-                ).fetchall()
-                for segment in open_segments:
-                    key = (rid, segment["source_id"], segment["seg"])
-                    if key in ended_segments:
-                        continue  # it has its end in another database
-                    known = [t for t in (own.get(key), evidence.get(key)) if t is not None]
-                    cut += conn.execute(
-                        "UPDATE segment SET end_wall=%s,end_reason='EXIT_TRUNCATED' "
-                        "WHERE run_id=%s AND source_id=%s AND seg=%s AND end_wall IS NULL",
-                        (max(known, default=segment["start_wall"]), rid, segment["source_id"], segment["seg"]),
-                    ).rowcount
-                closed.append({"run_id": rid, "ended_wall": latest, "segments_cut": cut})
+        for run in runs:
+            try:
+                with self.session() as conn:
+                    closed.append(self._close_run(conn, run, own, evidence, ended_segments))
+            except psycopg.Error as error:
+                failed[run["run_id"]] = type(error).__name__
+        if failed:
+            raise CloseOutDeferred(closed, failed)
         return closed
+
+    @staticmethod
+    def _close_run(conn, run, own, evidence, ended_segments) -> dict:
+        rid = run["run_id"]
+        latest = max([run["started_wall"], *(t for key, t in own.items() if key[0] == rid)])
+        conn.execute(
+            "UPDATE run SET ended_wall=%s,end_reason='ABNORMAL_EXIT',last_evidence_wall=%s WHERE run_id=%s",
+            (latest, latest, rid),
+        )
+        cut = 0
+        open_segments = conn.execute(
+            "SELECT source_id,seg,start_wall FROM segment WHERE run_id=%s AND end_wall IS NULL AND start_wall IS NOT NULL",
+            (rid,),
+        ).fetchall()
+        for segment in open_segments:
+            key = (rid, segment["source_id"], segment["seg"])
+            if key in ended_segments:
+                continue  # it has its end in another database
+            known = [t for t in (own.get(key), evidence.get(key)) if t is not None]
+            cut += conn.execute(
+                "UPDATE segment SET end_wall=%s,end_reason='EXIT_TRUNCATED' "
+                "WHERE run_id=%s AND source_id=%s AND seg=%s AND end_wall IS NULL",
+                (max([segment["start_wall"], *known]), rid, segment["source_id"], segment["seg"]),
+            ).rowcount
+        return {"run_id": rid, "ended_wall": latest, "segments_cut": cut}
 
     # --------------------------------------------------------------------- routing state
 

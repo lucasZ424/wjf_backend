@@ -96,13 +96,12 @@ def test_killing_the_process_before_inside_or_after_a_commit_leaves_no_half_grou
             ).fetchone()["n"]
             assert orphans == 0, t
         run = conn.execute("SELECT ended_wall FROM run WHERE run_id='run1'").fetchone()
-        last_evidence = conn.execute(
-            "SELECT greatest(coalesce((SELECT max(effective_wall) FROM observation),0),"
+        last_evidence = conn.execute(  # R03a (revised 2026-10-23): the run's start and its watermarks, nothing else
+            "SELECT greatest((SELECT started_wall FROM run WHERE run_id='run1'),"
             "coalesce((SELECT max(covered_wall) FROM watermark),0)) AS t"
         ).fetchone()["t"]
-        segment_evidence = conn.execute(  # R03a: the segment's OWN evidence - a valid observation or its watermark
-            "SELECT greatest(coalesce((SELECT max(effective_wall) FROM observation "
-            "WHERE seg=1 AND quality='GOOD' AND value IS NOT NULL AND NOT extreme),0),"
+        segment_evidence = conn.execute(  # the segment's OWN evidence - its watermark, its start when it has none
+            "SELECT greatest((SELECT start_wall FROM segment WHERE run_id='run1' AND seg=1),"
             "coalesce((SELECT max(covered_wall) FROM watermark WHERE seg=1),0)) AS t"
         ).fetchone()["t"]
     assert run["ended_wall"] is None, "the dead process registered no end"

@@ -220,10 +220,11 @@ def assemble(
                 until, why = (seg_end, "SEGMENT_END") if seg_end is not None else (None, None)
                 if seg_end is None and last and mark is not None and mark >= t:
                     until, why = mark, "WATERMARK"
-                if cut_at_exit and last:
+                if cut_at_exit and (last or (seg_end is not None and t >= seg_end)):
                     # a cut made at an exit is no end the source reached: the last sample is held as far as the
-                    # watermark vouches for it, and without one it holds nothing beyond itself; a sample after the
-                    # cut (a bad one is no evidence) is still shown, never held from before its own time
+                    # watermark vouches for it, and without one it holds nothing beyond itself.  A sample AT or after the
+                    # cut (the cut is the segment's watermark, so everything after it is unvouched - 细则 5.1 as revised
+                    # 2026-10-23) is still shown, last or not, and holds nothing beyond itself, never from before its own time
                     until = max(t, min(seg_end, mark if mark is not None else t))
                     why = "WATERMARK" if mark is not None else "SEGMENT_END"
                 if not last and (until is None or seg_rows[i + 1]["effective_wall"] <= until):

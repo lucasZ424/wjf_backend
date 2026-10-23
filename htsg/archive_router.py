@@ -17,7 +17,7 @@ from dataclasses import asdict, dataclass
 import psycopg
 
 from . import records as rec
-from .archive import ArchiveStore, SchemaError, WriteOutcome
+from .archive import ArchiveStore, CloseOutDeferred, SchemaError, WriteOutcome
 from .config import Settings
 
 DEV_RESERVE = 1024**3  # development: every data volume keeps at least 1 GiB free
@@ -148,16 +148,23 @@ class ArchiveRouter:
     def _close_unfinished_runs(self, current_run_id, readable, unreadable):
         """Close what a crash left open, with what EVERY bound database knows (终版 §5): a run that ended in one of them
         is not an abnormal exit because the others never heard of its end, and a segment with an end anywhere is not cut.
-        While a bound database cannot be read nothing is closed - the next start does it; there is no retry while running."""
-        facts = {}
+        While a bound database cannot be read nothing is closed - the next start does it; there is no retry while running.
+        A close-out that cannot finish NOW (a statement too slow, a run that failed to close) is `DEFERRED`: it says so and
+        which database and why, the database itself is not reported unavailable, and the runs that could be closed are."""
+        facts, deferred = {}, []
         for name, store in readable:
             try:
                 facts[name] = store.unfinished_facts(current_run_id)
+            except psycopg.errors.QueryCanceled as error:  # too slow, not unreadable
+                deferred.append(f"{name}:{type(error).__name__}")
             except psycopg.Error:
                 self.health[name] = "UNAVAILABLE"
                 unreadable.append(name)
         if unreadable:
             self.health["reconcile"] = "PENDING_UNREADABLE:" + ",".join(unreadable)
+            return
+        if deferred:  # what the other databases hold is not known: closing here could judge a run they ended
+            self.health["reconcile"] = "DEFERRED:" + ",".join(deferred)
             return
         self.health.pop("reconcile", None)
         ended_runs = set().union(*(f["ended_runs"] for f in facts.values()))
@@ -171,8 +178,13 @@ class ArchiveRouter:
                 self.health[name + "_closed_runs"] = store.reconcile_unfinished_runs(
                     current_run_id, ended_runs=ended_runs, ended_segments=ended_segments, evidence=evidence
                 )
-            except psycopg.Error:
-                self.health[name] = "UNAVAILABLE"
+            except CloseOutDeferred as error:  # some runs were closed, the others stay for the next start
+                self.health[name + "_closed_runs"] = error.closed
+                deferred.append(f"{name}:" + "+".join(sorted(set(error.failed.values()))))
+            except psycopg.Error as error:
+                deferred.append(f"{name}:{type(error).__name__}")
+        if deferred:
+            self.health["reconcile"] = "DEFERRED:" + ",".join(deferred)
 
     # ------------------------------------------------------------------ routing decision
 
