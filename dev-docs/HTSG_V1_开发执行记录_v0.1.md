@@ -6,7 +6,7 @@
 
 **状态更新（2026-10-14）：** 通信·日志页已实现并验收，现为七页（见 D44a–D44f 条目与第 3 节首段）；下面“本次移除验证”“页面纠偏”两段是 2026-10-13 当日的状态说明，其中“六页过渡、通信页尚未实现”已不是现状，保留为历史。
 
-**状态更新（2026-10-23）：** 初版开发完成（本机模拟范围，用户2026-10-23定）。设计侧文档里的页面状态陈述（终版第15节“当前六页、通信页未实现”、实施方案头部／D44行／Capstone G／第12节、核验文件、交付记录、README）已按现状回写，**取代2026-10-15“不回写”的决定**（用户2026-10-23指示回写）；只改状态陈述，不改设计内容。整套连续运行已通过（候选`ed0dafd`，858/858）。一年容量按终版口径仍不通过，真实Acheron设备、真实UA网关、独立卷、现场长稳仍未验。上面“本次移除验证”“页面纠偏”两段与下文第2节旧条目里的“六页、未实现、整套连续运行没有通过记录”均是当日状态，保留为历史。
+**状态更新（2026-10-23）：** 初版开发完成（本机模拟范围，用户2026-10-23定）。设计侧文档里的页面状态陈述（终版第15节“当前六页、通信页未实现”、实施方案头部／D44行／Capstone G／第12节、核验文件、交付记录、README）已按现状回写，**取代2026-10-15“不回写”的决定**（用户2026-10-23指示回写）；只改状态陈述，不改设计内容。整套连续运行已通过（候选`ed0dafd`，858/858）。一年容量按终版口径仍不通过，真实Acheron设备、真实UA网关、独立卷、现场长稳仍未验。上面“本次移除验证”“页面纠偏”两段与下文第2节旧条目里的“六页、未实现、整套连续运行没有通过记录”均是当日状态，保留为历史。（补正2026-10-25：README当时漏改，已补；第3节“进入新会话的第一步”等D45之前的陈述同时标为历史，见第1节末条“状态陈述补正”。）
 
 **本次移除验证（2026-10-13）：** 已删除数字孪生导航、模型卡片与专属渲染辅助函数，并移除`/api/ui-config`中仅供该页使用的`models`响应字段。该页没有独立监听端口、API路由或WebSocket；共享实时流、计算模型及结果依据保留。当前为六页，通信页未实现，模型卡片未迁到其他页。
 
@@ -14,7 +14,7 @@
 
 **页面纠偏（2026-10-13，按用户最新指示）：** 目标仍为系统总览、水冷壁应变场、热应力分析、历史查询、系统自检、通信·日志、系统管理·权限七页。此前已移除数字孪生页及其专属接口；现有六页是过渡状态，通信页尚未实现，七页目标未完成。本轮按用户授权完成通信页审核处置：采纳审核建议并补充语义限定，回写终版并拟定实施方案；具体选择由助手在授权范围内作出，见[审核处置](HTSG_V1_通信日志页设计审核_v0.1.md#review-disposition)、[终版第15节](HTSG_V1_终版设计_v1.0.md#15-前端页面)及[实施方案状态说明](HTSG_V1_开发实施方案_v1.0.md#page-contract-correction)。本轮只改文档，未实现通信页、未运行测试。既有错误页面集合的通过记录保留为历史事实；完整套件尚无修复后全部通过记录，最终 Capstone H 仍未关闭。 下文执行经过保留历史事实，页面当前状态以本说明为准。
 
-- 分支：`dev/htsg-v1-impl`（自 `main` 的 `40750c9` 切出），只做本地提交，不推送。
+- 分支：`dev/htsg-v1-impl`（自 `main` 的 `40750c9` 切出），只做本地提交，不推送。（状态更新2026-10-25：用户2026-10-23指示推送过一次，`origin/dev/htsg-v1-impl`现为`87d1194`，不开PR；之后是否推送以用户指示为准。）
 - 平台：Windows 11；Python 3.13.4（`.venv`）；asyncua 2.0.1、pymodbus 3.15.0、psycopg 3.3.5、pytest 9.1.1、ruff 0.16.6；Node 24.16.0。
 - 数据库：项目既有两套隔离开发集群（`D:\HTSG-dev\primary`、`emergency`，127.0.0.1:55432/55433），用 `scripts/bootstrap_db.py start` 启动；测试每个用例新建 `htsg_test_<32位hex>` 临时库，结束强制删除；不触碰旧开发库/研究库。凭据只在 `.local/database.json`，本文与测试输出不含凭据。
 - **新旧并存（D45 前）**：新链路写成新模块（`records`、`archive`、`archive_schema.sql`、`derive`、`owner` 等），旧帧链路和旧测试保持可跑，作为回归基线；D45 切换并删除旧链路。这是为保留回归基线的过渡，不是长期双架构。
@@ -710,6 +710,16 @@ R04｜基线`946cb5d`之上的未提交工作区（R03b之后；2026-10-16实现
 - **已做：** [场景覆盖表](HTSG_V1_模拟场景覆盖表_v0.1.md)后段改写为统一版：两个手段（A场景触发脚本已有；B异常响应观察脚本待实现）与15行逐行结论；我原先的逐行结论与汇总已删除；手动触发脚本和可触发场景表保留。没有任何一行写成“已验收”。
 - **下一步（用户移到新会话继续）：** 实现手段B（配置文件驱动、用真实协议测试服务器和真实后端、按时间线输出响应；不碰运行路径）；再按各行验收要点取证并保存证据。
 
+### 状态陈述补正：README与执行记录（2026-10-25）
+
+**出处：** 用户2026-10-25要求修正README和执行记录里过时的状态说明。起因是复查时发现：第3节首段说2026-10-23已回写README对应陈述，但`87d1194`没有改README，README“是什么”首段仍写着“整套连续运行没有通过记录、分段631项、连续运行随机挂住、Capstone H仍未关闭”。
+
+- **README：** “是什么”首段前加“状态更新（2026-10-25）”：初版开发完成（本机模拟范围）、七页已齐、整套连续运行已通过（`ed0dafd`，858/858）、取消丢失已由R01修复，一年容量与现场项不变；2026-10-13那段原文保留为历史。
+- **执行记录：** 第0节分支约定补“2026-10-23已推送一次”；第3节两段2026-10-23交接各补一句（README漏改、已推送）；“进入新会话的第一步”改为现行做法（整套单进程连续运行），原命令行保留为历史注释；“新链路代码地图”“D45接线清单”“模块G历史实现记录”里“Runtime尚未接线／仍是旧帧链路／未接入运行入口”的陈述标为D45之前的历史，代码地图补上整改轮的`runtime.py`与`sim_ua.py`。
+- **只改状态陈述：** 没有改设计内容、代码、配置和测试；`ed0dafd`的G2与G3证据不受影响。最终Capstone H的门槛（实施方案“最终Capstone H”一段）与现有证据的对照，记录里没有单独写成关闭结论，本次也没有替用户下这个结论。
+- **未改：** 场景覆盖表顶部总表里“证据绑定旧候选，待G3刷新”一类陈述（与后段取证记录不一致），不在本次范围。
+- **验证：** 只改了文档，本环境（Linux云端容器，无开发库、无项目`.venv`）没有跑整套测试。`git diff --check`通过。`tests/test_spec_links.py`（临时环境只装pytest，`--noconftest`）：23通过、5失败，README与执行记录均通过；5项失败在改动前的同一提交上完全相同，都是五份审核／整改文件链接到`../.venv/Lib/site-packages/`下的pymodbus、asyncua源码，Windows开发机上的`.venv`有这些文件，本容器没有，与本次修改无关。
+
 ## 2. 偏离、风险与未验收
 
 - **页面集合与用户意图不一致（2026-10-13 用户指出并已确认纠偏方向）：** 用户要的是参考原型 `htsg_hmi.html` 里按**显示顺序**排的第 1、2、4、5（新增历史查询）、12、14、15 页，其中第 14 页是“通信·日志”、第 15 页是“系统管理·权限”。原型的导航是 `PAGES` 数组按位置编号（`i+1`）：…第 12 页系统自检、第 13 页算法引擎·数字孪生、第 14 页通信·日志、第 15 页系统管理·权限；而它的元素 id 是另一套（`p13` 通信·日志、`p14` 系统管理·权限、`p15` 算法引擎·数字孪生）。**原终版设计第 15 节的表按元素 id 写成了“14 系统管理·权限、15 算法引擎·数字孪生”**（该表在提交 `40750c9` 随终版定稿进入），实施方案 D44 与我的实现照着这张表做，于是：①交付了设计里“沿用入口、仅显示轻量模型参数”的**算法引擎·数字孪生页**（模型页，原型里是四层算法，设计又把它削成参数页——这是设计与实现共同造出来的页）；②**没有通信·日志页**。而更早的前端（提交 `40750c9` 的 `app.js`，D36 之前）恰好是 `[1,2,4,5,12,14 通信·日志,15 系统管理·权限]`，后端有 `GET /api/communications`（协议读数与映射、实际错误与恢复记录，最近 500 条内存记录，`dev-docs/history/模拟现场使用说明.md` 第 59 行仍在描述它）。D36–D44 的重写与 D45 对旧链路的清除把这个页和这个接口一并丢了——这是我按设计表做的、没有向你单独指出的**功能丢失**，不是你要求的。**当前处置：此前已按用户指示移除数字孪生页及其专属接口。** 移除后的六页是过渡状态，目标七页未完成；本轮已按用户授权完成[通信页审核处置](HTSG_V1_通信日志页设计审核_v0.1.md#review-disposition)，回写终版并拟定实施方案，通信页代码尚未实现。此前提前细化的任务拆分曾撤回；本次以审核处置后的终版与实施方案为准，历史接口只作为功能丢失经过的证据。**2026-10-14：通信·日志页已实现并验收（D44a–D44f），现为七页，页面集合与用户意图一致。**
@@ -723,8 +733,8 @@ R04｜基线`946cb5d`之上的未提交工作区（R03b之后；2026-10-16实现
 ## 3. 交接（新会话从这里开始）
 
 **整改轮交接（更新于2026-10-23，模拟场景逐行取证之后）：**
-- **提交状态：** 用户2026-10-23指示：先回写设计侧旧状态陈述，再提交并标记为“初版开发完成”，然后推送（不开PR）。该提交含：覆盖表改动（第15行不设数值门槛、手段B已实现、新增“取证记录”一节）、设计侧状态回写（见下一条）、本交接、新脚本`scripts/observe_response.py`、`scripts/watch_lab.py`、新测试`tests/test_observe_response.py`（被`.gitignore`隐藏，已`git add -f`）；此前最新提交为`56536ca`。`htsg/`、`config/`、`htsg/static/`、schema无改动，候选摘要未变，所以`ed0dafd`上的G2（858/858）与G3证据仍有效；以`git log`与`git status`为准。
-- **设计侧状态陈述回写（2026-10-23）：** 终版第15节“当前六页／通信页设计已采纳、未实现”改为七页均已实现、通信·日志页已验收；实施方案头部状态、D44行⑤、Capstone G“当前尚未验收”、第12节“当前状态”、核验文件、交付记录、README对应陈述同步更新（旧陈述保留为带日期的历史并加状态更新）。终版规范化SHA-256由`a6bb0036…`变为`711888c0…`，实施方案头部已更新当前SHA并把原SHA列为上一设计基线。未改：终版第15节之外的设计内容；终版配置表（第370行起）里“待实现／待改写”一类计划措辞（双侧回差与派生阈值、旧timeout、JSON时限字段在代码中均已实现，但那是计划性措辞，不属于页面状态陈述，本次没动）；通信日志页设计审核等带日期的审核记录（保留为历史）。
+- **提交状态：** 用户2026-10-23指示：先回写设计侧旧状态陈述，再提交并标记为“初版开发完成”，然后推送（不开PR）。该提交含：覆盖表改动（第15行不设数值门槛、手段B已实现、新增“取证记录”一节）、设计侧状态回写（见下一条）、本交接、新脚本`scripts/observe_response.py`、`scripts/watch_lab.py`、新测试`tests/test_observe_response.py`（被`.gitignore`隐藏，已`git add -f`）；此前最新提交为`56536ca`。`htsg/`、`config/`、`htsg/static/`、schema无改动，候选摘要未变，所以`ed0dafd`上的G2（858/858）与G3证据仍有效；以`git log`与`git status`为准。（状态更新2026-10-25：该提交即`87d1194`，已推送到`origin/dev/htsg-v1-impl`。）
+- **设计侧状态陈述回写（2026-10-23）：** 终版第15节“当前六页／通信页设计已采纳、未实现”改为七页均已实现、通信·日志页已验收；实施方案头部状态、D44行⑤、Capstone G“当前尚未验收”、第12节“当前状态”、核验文件、交付记录、README对应陈述同步更新（旧陈述保留为带日期的历史并加状态更新）。终版规范化SHA-256由`a6bb0036…`变为`711888c0…`，实施方案头部已更新当前SHA并把原SHA列为上一设计基线。未改：终版第15节之外的设计内容；终版配置表（第370行起）里“待实现／待改写”一类计划措辞（双侧回差与派生阈值、旧timeout、JSON时限字段在代码中均已实现，但那是计划性措辞，不属于页面状态陈述，本次没动）；通信日志页设计审核等带日期的审核记录（保留为历史）。**补正（2026-10-25）：** 上面说README已同步，实际`87d1194`没有改README，“是什么”首段当时仍是2026-10-13的陈述；已于2026-10-25补上，见第1节末条“状态陈述补正”。
 - **取证：** 覆盖表15行逐行取证已做，位置`docs/evidence/scenario-20261023/`（本地不入库），总表`INDEX.md`；每行目录含配置、命令、注入标记、时间线、归档视图，提交`56536ca`。手段B用真实`Runtime`、协议测试夹具和一次性库`htsg_obs_*`（运行结束即删）；手段A用`watch_lab.py`观察运行中的研究现场并调用现有`trigger_scenario.trigger()`。**没有任何一行被我签为通过，是否签由用户决定。**
 - **用户2026-10-23裁定：** 第15行本机不设数值门槛，口径为“不瘫痪、采得到数据”（满量稳态不崩溃、异常后自动恢复采集）；延迟、队列、维护耗时只报告；页面文案要求撤回（此前已记）。
 - **取证缺口：** 页面只核对了第10行（自检页显示请求值与实际值、覆盖不可检测、不满足约束）和第15行（七页逐页打开、无控制台错误）；第1、2、3、5、7、9、13行的页面显示、第5行页面状态核对未做。第9、10行是夹具内注入，不是真实线上异常。默认60秒统计周期下的维护耗时、阻塞注入未做。
@@ -732,7 +742,7 @@ R04｜基线`946cb5d`之上的未提交工作区（R03b之后；2026-10-16实现
 - **取证中观察到的事实（供判断，未改任何行为）：** 确认故障距首次看到约5.95秒（5秒阈值后的下一个节拍）；OPC UA 6秒静默告警出现在静默6.96秒处；研究现场Modbus断连20秒后，后端在服务器回来后14.6秒才恢复（退避，建连失败计数到4）；服务端把保活升到5时，源每约5秒失效再恢复，无告警无重建，自检页逐条提示违反约束；归档里Modbus协议异常与沉默都记`MISSING_UNANSWERED`，原因码（如`EXCEPTION_CODE_4`）只在通信日志里。
 - **下一步由用户定：** 覆盖表逐行签字，或指定要补页面核对的行；终版配置表里的计划性措辞是否也回写；现场项（真实设备、真实网关、独立卷、现场长稳）与一年容量仍待处理。
 
-**整改轮交接（更新于2026-10-23，R03a收尾改动及其G2／G3之后）：**
+**整改轮交接（更新于2026-10-23，R03a收尾改动及其G2／G3之后）：** （状态更新2026-10-25：本段早于上一段；其中“未推送”“剩余：推送”已过时，2026-10-23已推送，见上一段“提交状态”。）
 - **提交状态：** R01–R07与审核补充已提交为`8dea1c5`，测试加固`082dd19`，记录`443190a`；均在本地分支`dev/htsg-v1-impl`，**未推送**（领先`origin/dev/htsg-v1-impl`数个提交，以`git status`为准；不开PR）。2026-10-20的代码改动（历史截断修复、第10项边界与void组钉子释放、SIM-01、R07端到端）已提交为`a8a6a0b`；其后只有文档提交，冻结候选＝文档提交。整改开发细则已入库并转为历史：[HTSG_V1_全量测试前整改开发细则_v0.1.md](HTSG_V1_全量测试前整改开发细则_v0.1.md)（适用于`946cb5d`至`082dd19`）。新测试`tests/test_web_failure_records.py`被`.gitignore`隐藏，已`git add -f`入库。
 - **三档状态，互不替代：**
   - **G2（单进程整套连续运行）：** 对`8dea1c5`／`082dd19`候选，第二次整套827/827干净通过（1002秒，无挂住）；第一次825/826、1失败（R05时序，已查明并加固）如实保留。对冻结候选`c761572`：842/842通过、983秒、无挂住（2026-10-20）。**对R03a收尾改动后的冻结候选`ed0dafd`：858/858通过、996.5秒、无挂住（2026-10-23）。**
@@ -752,20 +762,21 @@ R04｜基线`946cb5d`之上的未提交工作区（R03b之后；2026-10-16实现
 
 **状态（2026-10-14）：** D01–D48 的编码、测量与交付件都做了，旧链路已由用户删除；**通信·日志页（D44a–D44f）已实现并验收，现为七页**（总览、应变场、热应力、历史查询、自检、通信·日志、权限；只标标题、不标页序号、不做移动端布局）。全部测试文件分两段运行 **631 通过 / 0 失败 / 0 跳过**，其后三处小改各自复跑，现共 632 项（D44f 条目）。**但仍不能说收口**：① 整套**连续**运行没有通过记录——pymodbus 3.15.0 把取消改抛为 `ModbusIOException`、`ModbusAcquirer.poll` 当超时继续（`modbus.py` 的 `except (ModbusIOException, TimeoutError)` 一支）导致取消丢失，连续运行会随机挂住，用户定为独立问题本轮不修；另有一次 `test_capstone_c` 首个用例挂住未查明、未复现；开发库实例没起来也会让 DB 用例卡住（机器重启后实际发生过）；② **一年容量按终版口径不通过**（交付记录第 5 节）；③ 真实 Acheron、UA 网关、独立卷、现场长稳均未验证；④ **设计侧文档仍写着“通信页尚未实现”**（终版第 15 节表格与 15.1 开头、方案头部与第 12 节、核验文件），我没有动——终版哈希写在方案头，回写由用户决定。开发库实例开机后默认不启动，先 `bootstrap_db.py start`。
 
-**进入新会话的第一步：**
+**进入新会话的第一步（更新于2026-10-25）：**
 ```powershell
 .venv/Scripts/python.exe scripts/bootstrap_db.py start      # 开发库集群默认不启动；不启动则所有 DB 用例 130 秒后 ConnectionTimeout
-.venv/Scripts/python.exe -m pytest -q                        # 分段运行约 11 分钟（连续运行会随机挂住，见 H0 条目与 D44f 条目）；输出里的连接串含凭据，落盘前用 sed 脱敏
+.venv/Scripts/python.exe -m pytest -q -o faulthandler_timeout=300   # 整套单进程连续运行约 17 分钟（ed0dafd：858 项、996.5 秒、无挂住）；输出里的连接串含凭据，落盘前用 sed 脱敏
 git log --oneline -8; git status --short
 ```
+2026-10-14原文的pytest一行是“分段运行约 11 分钟（连续运行会随机挂住，见 H0 条目与 D44f 条目）”；挂住的原因（取消丢失）已由R01修复，此后整套连续运行在`c761572`、`ed0dafd`等候选上通过（见第1节各G2记录）。
 
-**新链路代码地图（均已就绪、已测，但 Runtime 尚未接线，D45 才切）：**
+**新链路代码地图（2026-10-14写成；当时“均已就绪、已测，但 Runtime 尚未接线，D45 才切”，现已由D45接线、旧链路已删除）：** 运行装配是`runtime.py`（D45，见D45–D48条目；停机收尾经R01、R04修改），模拟服务器保活适配是`sim_ua.py`（R06，只作用于本项目自建的asyncua服务器实例）；其余如下。
 `records.py`（记录与确定性 ID）→ `owner.py`（单所有者：批次接纳、有效性、派生、change 基线、来源状态机 WAITING/VALID/EXPIRED/RESYNC、告警、同代次恢复、段/时钟跳变/水位、归档状态 OK/LOST/RECOVERING、故障接入与缓冲）；`derive.py`（算子）；`fault_tracker.py`（5 秒计时/回差）；`ingress.py`（有序入口：批次+代次/断连/失步事件）；`modbus.py`、`ua.py`、`recovery.py`（采集与退避）；`commitq.py`（有序队列）→ `archive_router.py`（整组路由）→ `archive.py`（`ArchiveStore.write_group`）+ `archive_schema.sql`；`history.py`（读取、依据、故障列表）。通信·日志（D44a–D44f）：`commlog.py`（本次运行内存日志：聚合、500 条先进先出、详情脱敏截断）、`ingress.py` 的诊断入口（单独计数、上限 500）、`owner.py` 写日志与 `communication_inputs()`、`web.py` 的 `/api/health`、`static/app.js` 第七页；其测试 `test_resync_health.py`、`test_comm_log.py`、`test_comm_facts.py`、`test_comm_protocols.py`、`test_health_communication.py`、`test_web_comm.py`。测试支撑：`tests/owner_support.py`、`protocol_support.py`、`live_support.py`、`fault_support.py`、`conftest.py::archive_db_factory`。
 
-**D45 接线清单（Runtime 现仍是旧帧链路）：** `router.initialize(run_id)`+`bind_run` → `owner.start` → 每个启用源建 `ModbusAcquirer`/`UaAcquirer`，`hub=Ingress`，`owner.on_rebuild=uaa.request_rebuild`（多源需分派）→ `CommitQueue(on_committed=owner.committed, on_refused=owner.refused, is_void=owner.is_void)`，`owner.commit=queue.offer` → 事件循环里每秒 `owner.tick(time.time(), time.monotonic())`，`ingress.drain()` 由唤醒驱动 → 停止顺序：停采集、排空 ingress、`owner.shutdown`、`queue.stop`。要删的旧模块：`engine.py`、`runtime.py` 旧部分、`calculation.py`、`faults.py`、`adapters.py`（`decode_registers` 先搬进 `modbus.py`）、`storage.py`、`schema.sql`、`capture.py`；旧测试按第 1 节 D01 映射处理；`config.py` 中 `profiles/stale_after/max_age/derivative/aggregation/Source.timeout` 等旧字段随之删除。
+**D45 接线清单（历史：写于D45之前，当时Runtime仍是旧帧链路；D45已按此接线，下列旧模块与旧字段已删除，保留作记录）：** `router.initialize(run_id)`+`bind_run` → `owner.start` → 每个启用源建 `ModbusAcquirer`/`UaAcquirer`，`hub=Ingress`，`owner.on_rebuild=uaa.request_rebuild`（多源需分派）→ `CommitQueue(on_committed=owner.committed, on_refused=owner.refused, is_void=owner.is_void)`，`owner.commit=queue.offer` → 事件循环里每秒 `owner.tick(time.time(), time.monotonic())`，`ingress.drain()` 由唤醒驱动 → 停止顺序：停采集、排空 ingress、`owner.shutdown`、`queue.stop`。要删的旧模块：`engine.py`、`runtime.py` 旧部分、`calculation.py`、`faults.py`、`adapters.py`（`decode_registers` 先搬进 `modbus.py`）、`storage.py`、`schema.sql`、`capture.py`；旧测试按第 1 节 D01 映射处理；`config.py` 中 `profiles/stale_after/max_age/derivative/aggregation/Source.timeout` 等旧字段随之删除。
 
 **Capstone G 历史记录：曾按错误页面集合通过；纠偏后已重跑通过（15项，2026-10-14，见D44f条目，现为七页）。**（用例 `tests/test_capstone_g.py`，存证 `docs/evidence/capstone-g/`，重跑存证用 `HTSG_EVIDENCE_DIR=docs/evidence/capstone-g`）。
 
-**模块 G 历史实现记录（页面当前状态见本节首段）：** 后端 `publisher.py`（100 ms 打包、版本快照、心跳）、`stream_api.py`（有界发件箱、5 秒发送超时、重连取快照）、`web.py`（页面、身份、`/api/ui-config`、`/api/health`、账户与审计、历史路由）；前端 `htsg/static/{index.html,app.js,stream.js,replay.js,style.css}`，七页。`stream.js`/`replay.js` 是浏览器与 Node 测试共用的纯函数（`tests/js/*.mjs`）。测试台 `tests/web_rig.py`（服务线程里跑真实 owner/publisher/socket，可选一次性归档库，`feed_archive=False` 时由测试直接写归档）与 `conftest.py` 的 `browser/rig/archive_rig/replay_rig/page` 夹具；浏览器是 Playwright + 本机 Chrome（`channel="chrome"`）。新链路仍未接入运行入口（D45）；`scripts/validate_*.py` 针对旧页面，已失效。
+**模块 G 历史实现记录（页面当前状态见本节首段）：** 后端 `publisher.py`（100 ms 打包、版本快照、心跳）、`stream_api.py`（有界发件箱、5 秒发送超时、重连取快照）、`web.py`（页面、身份、`/api/ui-config`、`/api/health`、账户与审计、历史路由）；前端 `htsg/static/{index.html,app.js,stream.js,replay.js,style.css}`，七页。`stream.js`/`replay.js` 是浏览器与 Node 测试共用的纯函数（`tests/js/*.mjs`）。测试台 `tests/web_rig.py`（服务线程里跑真实 owner/publisher/socket，可选一次性归档库，`feed_archive=False` 时由测试直接写归档）与 `conftest.py` 的 `browser/rig/archive_rig/replay_rig/page` 夹具；浏览器是 Playwright + 本机 Chrome（`channel="chrome"`）。新链路仍未接入运行入口（D45）；`scripts/validate_*.py` 针对旧页面，已失效。（状态更新2026-10-25：上一句是D45之前的状态；新链路已于D45接入运行入口，`scripts/validate_*.py`已不在仓库中。）
 
 **工具坑：** Bash 工具里超过约 8–10 KB 的 heredoc 会被截断（报 `unexpected EOF`）——大补丁用 Write 写到 scratchpad 再 `python` 执行；`Edit` 前必须先 `Read`；Write 工具写出的文件在工作区是 LF，git 提交时按仓库约定统一成 CRLF（只会有"LF will be replaced by CRLF"告警）。pytest 输出在连接失败时会带凭据。Chrome 的 `datetime-local` 在秒为 00 时把 `value` 规范成不带秒，Playwright 的 `fill("…:00")` 会报 Malformed value，测试里用非零秒。Playwright 同步 API 的路由处理函数里不能阻塞等待（会卡死分发线程），要"扣住请求、测试体里再 `route.continue_()`"。变异试验不要在源码上原地改了再靠 `cp` 还原。 变异验证用 `scratchpad` 里的临时副本（复制 `htsg/ tests/ config/ .local/` 到别处，用 `.venv` 的 python 在副本目录跑，先核对 `htsg.__file__` 指向副本）。Windows 控制台输出中文会乱码，pytest 前设 `PYTHONUTF8=1`。Bash 工具会吃掉 heredoc 里一层反斜杠（写含 `\\` 的 JSON/正则时用 `chr(92)`）；`sleep` 被禁，等条件用 `until` 循环或 Monitor。工作区里 `.css`、记录文档是 CRLF，用脚本改要按二进制或指定换行写。
