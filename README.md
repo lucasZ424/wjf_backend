@@ -88,7 +88,7 @@ HTTP 传 `Authorization: Bearer <username:token>`，WebSocket 连接后 5 秒内
 
 ## 运行管理
 
-`scripts\register_task.ps1` 注册 Windows 任务计划（默认登录时启动；`-StartupCredential` 则开机启动，失败一分钟后重启，禁止并行实例），本开发机未注册，避免自动后台采集。现场必须安排 PostgreSQL 自动启动、服务账号目录权限与开机验证。
+现场部署与无人值守用 `scripts\deploy_databases.py` 与 `scripts\supervise.py`，用法见各脚本开头的说明，过程记录见[修复轮01](dev-docs/HTSG_V1_修复轮01_存储路径失效与无人值守_v0.1.md)。被取代的旧脚本在 `scripts\history\`，只用于回滚。
 
 **停止与崩溃：** Ctrl+C／Ctrl+Break 是正常停止，进程先停采集、处理完已收批次、登记运行结束并写完提交队列（结束原因 `NORMAL`）。任务计划的“结束任务”或强行终止是硬杀，没有这一步：下次启动时，未结束的运行按各段已持久化的水位收尾（`ABNORMAL_EXIT`；没有水位的段取段起点），不猜测崩溃时刻；收尾只读小表，耗时不随崩溃运行的大小增长。
 

@@ -1,3 +1,7 @@
+# HISTORICAL - not in use since 2026-10-26.  Superseded by `python scripts/deploy_databases.py register` (the backend runs as a
+# SYSTEM task at boot and every five minutes, kept alive by scripts/supervise.py; see the fix-round 01 record in dev-docs).
+# Kept only to support a rollback.  It expects to sit in scripts/ (its project path is the parent of its own folder), so move it
+# back first: git mv scripts/history/register_task.ps1 scripts/
 param([string]$TaskName = 'HTSG-Backend', [string]$Config = 'config/development.json', [PSCredential]$StartupCredential)
 $ErrorActionPreference = 'Stop'
 $projectPath = Split-Path -Parent $PSScriptRoot

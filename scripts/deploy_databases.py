@@ -52,7 +52,7 @@ PG_MAJOR = 18  # the PostgreSQL the archive was developed and tested with
 MIN_FREE = 20 * 1024**3
 SERVICE_ACCOUNT = r"NT AUTHORITY\NetworkService"
 SERVICE_SID = "*S-1-5-20"  # NetworkService under any language edition of Windows
-TASK = "HTSG-Backend"  # the same name scripts/register_task.ps1 used: registering here replaces that task
+TASK = "HTSG-Backend"  # the name the superseded scripts/history/register_task.ps1 used: registering here replaces that task
 # Appended to postgresql.conf of a new cluster.  max_connections: the backend keeps one connection per worker thread that has read the
 # history (up to the size of the default thread pool, 20 on a 16-thread CPU) plus the writer's; 60 leaves room for maintenance.
 SETTINGS = """
