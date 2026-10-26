@@ -2,8 +2,10 @@
 (终版 §13.5: the normal, the removable and the emergency database; the removable one on a volume of its own).
 
     python scripts/deploy_databases.py plan      what would be done, and what stands in the way; changes nothing (the default)
-    python scripts/deploy_databases.py install   folders, clusters, databases with their schema, then the connection file and the
-                                                 storage paths of the deployment configuration
+    python scripts/deploy_databases.py install   folders, clusters, databases with their schema, then the connection file, the
+                                                 only administrator (in the primary database and in accounts.json beside the
+                                                 connection file; its credential in initial-credentials.json, for the owner) and
+                                                 the storage paths of the deployment configuration
     python scripts/deploy_databases.py register  (elevated PowerShell) every cluster becomes an automatic Windows service that is
                                                  restarted when it stops by itself; then the task HTSG-Backend runs the supervisor
                                                  (scripts/supervise.py) as SYSTEM at boot and every five minutes; all are started
@@ -325,6 +327,7 @@ def install(inp: dict, volume_of=volume):
     import psycopg
 
     from htsg.archive import ArchiveStore, SchemaError
+    from htsg.cli import init_accounts
     from htsg.config import Settings
 
     roles, facts, problems, notes = plan(inp, volume_of)
@@ -370,6 +373,9 @@ def install(inp: dict, volume_of=volume):
         if existing != connections:
             write_atomically(inp["database_file"], json.dumps(connections))
             print(f"connections written to {inp['database_file']} (not printed)")
+        # 修复轮02: the deployment never reaches its first start without an account; read-only users are added on the page
+        saved = init_accounts(inp["database_file"].with_name("accounts.json"), connections["primary"], settings.timing)
+        print(f"administrator created: its credential is in {saved} - hand it to the owner (not printed)" if saved else "administrator: already there")
         if updated != config_raw:
             backup = inp["config"].with_name(f"{inp['config'].name}.bak-{time.strftime('%Y%m%d-%H%M%S')}")
             shutil.copy2(inp["config"], backup)

@@ -648,7 +648,9 @@ def test_no_route_changes_a_channel_a_threshold_or_the_configuration_for_anyone(
     sign_in(page, archive_rig, "viewer")
     spec = page.request.get(archive_rig.url + "/openapi.json").json()
     writes = sorted((method.upper(), path) for path, ops in spec["paths"].items() for method in ops if method in {"post", "put", "patch", "delete"})
-    assert writes == [("DELETE", "/api/admin/accounts/{username}"), ("POST", "/api/admin/accounts")], "only accounts can be written"
+    assert writes == [("DELETE", "/api/admin/accounts/{username}"), ("POST", "/api/admin/accounts"), ("POST", "/api/admin/password")], (
+        "only accounts can be written: made, stopped, and the administrator's own password (修复轮02)"
+    )
     before = page.request.get(archive_rig.url + "/api/ui-config", headers={"Authorization": "Bearer " + archive_rig.credentials["viewer"]}).json()
     for who in ("viewer", "admin"):
         headers = {"Authorization": "Bearer " + archive_rig.credentials[who], "Content-Type": "application/json"}

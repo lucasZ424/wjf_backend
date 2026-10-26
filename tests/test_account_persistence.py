@@ -1,4 +1,5 @@
 import copy
+import os
 from pathlib import Path
 
 import psycopg
@@ -96,12 +97,50 @@ def test_unknown_database_result_requires_reconciliation_before_authentication(a
     assert len(store.audit) == int(committed)
 
 
-def test_pending_change_cannot_bootstrap_database_from_stale_cache(account_setup):
-    accounts, _, _, _ = account_setup
+def test_pending_change_over_an_empty_database_bootstraps_it_from_the_local_copy(account_setup):
+    """A first start stopped between the marker and the database (a power loss, the database gone) used to refuse every
+    later start with RuntimeError.  The database holds nothing, so the local copy is all there is (修复轮02, user ruling
+    2026-10-26): it bootstraps the database, and a change that never reached the database stays undone."""
+    accounts, _, admin, _ = account_setup
     accounts.begin_update()
-    with pytest.raises(RuntimeError, match="empty database"):
-        accounts.reconcile(AccountStore())
-    assert accounts.uncertain
+    empty = AccountStore()
+    accounts.persist = empty.sync_accounts
+    accounts.reconcile(empty)
+    assert not accounts.uncertain and not accounts.pending_path.exists()
+    assert empty.users == accounts.users and accounts.verify(admin)["role"] == "admin"
+
+
+@pytest.mark.parametrize("contents", [b"", b'{"admin": {"role": "adm', b"\0" * 512, b"\xff\xfe\x00\x81"], ids=["empty", "torn", "zeroed", "garbled"])
+def test_a_damaged_account_file_counts_as_no_local_copy_and_is_rewritten_from_the_database(tmp_path, contents):
+    """What a power loss can leave (review item 3).  The file only caches the database copy: a damaged one lets nobody in
+    from it, says why, and reading the database copy writes it whole again.  Before, the constructor raised, so the
+    backend could not start."""
+    earlier = Accounts(tmp_path / "earlier.json")
+    admin = earlier.create("admin", "admin")
+    store = AccountStore()
+    store.users = copy.deepcopy(earlier.users)
+    path = tmp_path / "accounts.json"
+    path.write_bytes(contents)
+    accounts = Accounts(path)
+    assert accounts.users == {} and accounts.unreadable and accounts.verify(admin) is None
+    accounts.persist = store.sync_accounts
+    accounts.reconcile(store)
+    assert accounts.verify(admin)["role"] == "admin" and Accounts(path).users == store.users
+
+
+def test_the_account_file_is_on_the_disk_before_its_name_points_to_it(tmp_path, monkeypatch):
+    """Without a flush to the disk a power loss right after the rename can leave the name over contents that never got
+    there - an empty or zeroed file (review item 3).  So: the marker is on the disk before the database is asked, and the
+    new file before it replaces the old one."""
+    events = []
+    real_fsync, real_replace = os.fsync, Path.replace
+    monkeypatch.setattr(os, "fsync", lambda fd: (events.append("fsync"), real_fsync(fd))[1])
+    monkeypatch.setattr(Path, "replace", lambda self, target: (events.append("replace " + self.suffix), real_replace(self, target))[1])
+    accounts = Accounts(tmp_path / "accounts.json")
+    accounts.persist = lambda users, audit=None: events.append("database")
+    accounts.create("admin", "admin", {"result": "COMMITTED"})
+    assert events == ["fsync", "database", "fsync", "replace .tmp"]
+    assert Accounts(accounts.path).users.keys() == {"admin"}
 
 
 def test_database_snapshot_wins_over_clean_stale_cache(account_setup):
@@ -115,11 +154,12 @@ def test_database_snapshot_wins_over_clean_stale_cache(account_setup):
 @pytest.mark.parametrize("pending", [False, True])
 async def test_offline_cache_allowed_only_without_unresolved_change(archive_db_factory, tmp_path, monkeypatch, pending):
     """The runtime settles the accounts with the database when it starts (終版 §2.3): a clean local cache may carry on
-    while the database cannot be read, an unfinished change may not - then the backend does not start at all."""
+    while the database cannot be read, an unfinished change may not - nobody signs in, yet the backend starts (account
+    trouble never stops the run, 修复轮02; it used not to start at all) and settles later (test_account_startup)."""
     config = small_config(sources=[{"id": "mb", "kind": "modbus"}, {"id": "ua", "kind": "opcua"}])
     router = ArchiveRouter(config, archive_db_factory("primary"), archive_db_factory("emergency"), disk_usage=Disks())
     accounts = Accounts(tmp_path / "accounts.json")
-    accounts.create("admin", "admin")
+    admin = accounts.create("admin", "admin")
     if pending:
         accounts.begin_update()
 
@@ -128,16 +168,15 @@ async def test_offline_cache_allowed_only_without_unresolved_change(archive_db_f
 
     monkeypatch.setattr(router.primary, "read_accounts", unavailable)
     runtime = Runtime(config, router, accounts)
-    if pending:
-        with pytest.raises(psycopg.OperationalError):
-            await runtime.start()
-        assert not runtime.running and runtime.health["accounts"] == "RECONCILIATION_REQUIRED"
-    else:
-        await runtime.start()
-        try:
-            assert runtime.health["accounts"] == "LOCAL_VERIFICATION_CACHE_ONLY"
-        finally:
-            await runtime.stop()
+    await runtime.start()
+    try:
+        assert runtime.running
+        if pending:
+            assert runtime.health["accounts"] == "RECONCILIATION_REQUIRED" and accounts.verify(admin) is None
+        else:
+            assert runtime.health["accounts"] == "LOCAL_VERIFICATION_CACHE_ONLY" and accounts.verify(admin)
+    finally:
+        await runtime.stop()
 
 
 def test_invalid_audit_rolls_back_account_transaction(archive_db_factory, tmp_path):

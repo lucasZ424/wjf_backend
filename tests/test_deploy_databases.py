@@ -14,6 +14,7 @@ from pathlib import Path
 import psycopg
 import pytest
 
+from htsg.auth import Accounts
 from scripts import deploy_databases as deploy
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -135,14 +136,21 @@ def test_install_builds_one_cluster_per_disk_writes_the_same_folders_into_the_co
         assert len(list(tmp_path.glob("production.json.bak-*"))) == 1, "the previous configuration is kept"
         connections = json.loads((tmp_path / "database.json").read_text(encoding="utf-8"))
         assert set(connections) == {"primary", "emergency", "password"}
+        handed = json.loads((tmp_path / "initial-credentials.json").read_text(encoding="utf-8"))["admin"]
+        local = Accounts(tmp_path / "accounts.json")
+        assert list(local.users) == ["admin"] and local.verify(handed)["role"] == "admin", (
+            "the deployment makes the only account, the administrator, next to the connection file (修复轮02)"
+        )
         for role, folder in folders.items():  # install stops what it started: the services take over; here pg_ctl does
             subprocess.run([str(PG_BIN / "pg_ctl.exe"), "-D", str(folder / "pgdata"), "-l", str(folder / "t.log"), "-w", "start"],
                            check=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)  # fmt: skip
             with psycopg.connect(connections[role], connect_timeout=10) as conn:
                 generation = conn.execute("SELECT value FROM htsg_meta WHERE key='schema_generation'").fetchone()[0]
                 data_dir = conn.execute("SHOW data_directory").fetchone()[0]
+                accounts = conn.execute("SELECT username, role FROM account").fetchall()
             assert generation == "5" and Path(data_dir) == folder / "pgdata"
-        before = {p: p.read_bytes() for p in (tmp_path / "database.json", tmp_path / "production.json")}
+            assert accounts == ([("admin", "admin")] if role == "primary" else []), "the administrator is in the primary database too"
+        before = {p: p.read_bytes() for p in (tmp_path / "database.json", tmp_path / "production.json", tmp_path / "accounts.json", tmp_path / "initial-credentials.json")}
         deploy.install(inp, distinct_volumes)  # clusters running, files in place: nothing to do
         assert {p: p.read_bytes() for p in before} == before, "a second run rewrites nothing"
         assert len(list(tmp_path.glob("production.json.bak-*"))) == 1

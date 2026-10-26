@@ -422,6 +422,48 @@
         }
       }
     },
+    "/api/admin/password": {
+      "post": {
+        "summary": "Set Password",
+        "description": "The administrator's own password (修复轮02): the credential in use stops working.",
+        "operationId": "set_password_api_admin_password_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewSecret"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/admin/audit": {
       "get": {
         "summary": "Audit History",
@@ -759,6 +801,20 @@
           "role"
         ],
         "title": "NewAccount"
+      },
+      "NewSecret": {
+        "properties": {
+          "secret": {
+            "type": "string",
+            "title": "Secret"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "secret"
+        ],
+        "title": "NewSecret"
       },
       "ValidationError": {
         "properties": {

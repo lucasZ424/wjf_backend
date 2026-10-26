@@ -84,14 +84,29 @@ class Runtime:
         if self.accounts is None:
             return
         self.accounts.persist = self.router.primary.sync_accounts  # account changes and their audit go to the archive
+        if self.accounts.unreadable:
+            log.warning("account file unreadable (%s): it is rewritten from the database copy", self.accounts.unreadable)
+        self._settle_accounts()
+
+    def _settle_accounts(self):
+        """Read the database copy of the accounts (authoritative) into the local one.  Account trouble never stops the run
+        (修复轮02): until this succeeds an unfinished change lets nobody sign in, and maintenance tries again."""
         try:
             self.accounts.reconcile(self.router.primary)
-            self.health["accounts"] = "DATABASE_AUTHORITATIVE"
-        except psycopg.Error:
-            if self.accounts.uncertain:  # an unfinished change cannot be settled: nobody may sign in on a guess
-                self.health["accounts"] = "RECONCILIATION_REQUIRED"
-                raise
-            self.health["accounts"] = "LOCAL_VERIFICATION_CACHE_ONLY"
+        except (psycopg.Error, OSError) as error:
+            # an unfinished change cannot be settled: nobody may sign in on a guess
+            state = "RECONCILIATION_REQUIRED" if self.accounts.uncertain else "LOCAL_VERIFICATION_CACHE_ONLY"
+            if self.health["accounts"] != state:
+                log.warning("accounts not settled with the database (%s): %s, tried again later", type(error).__name__, state)
+            self.health["accounts"] = state
+            return
+        self.health["accounts"] = "DATABASE_AUTHORITATIVE"
+        if not self.accounts.users:
+            log.warning("no account in the database or the account file: nobody can sign in; run init-accounts, then restart")
+
+    def _accounts_unsettled(self) -> bool:
+        """The database copy could not be read at the start, or a change since then was not confirmed."""
+        return self.accounts is not None and (self.accounts.uncertain or self.health["accounts"] != "DATABASE_AUTHORITATIVE")
 
     async def start(self):
         await asyncio.get_running_loop().run_in_executor(self.queue.io, self._open_archive)
@@ -143,10 +158,16 @@ class Runtime:
 
     async def _maintain(self):
         loop = asyncio.get_running_loop()
+        accounts_tried = time.monotonic()
         while True:
             await asyncio.sleep(self.config.timing.status_interval)
             started = time.monotonic()
             await loop.run_in_executor(self.queue.io, self.router.maintain)  # the writer's thread: never beside a write
+            if self._accounts_unsettled() and started - accounts_tried >= self.config.timing.stats_interval:
+                accounts_tried = started  # database work like the statistics: at most once per stats_interval
+                await loop.run_in_executor(self.queue.io, self._settle_accounts)
+                if not self._accounts_unsettled():
+                    log.info("accounts settled with the database")
             took = time.monotonic() - started
             self.health["maintenance_max_seconds"] = max(self.health["maintenance_max_seconds"], took)
 

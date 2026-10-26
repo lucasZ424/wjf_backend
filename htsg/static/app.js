@@ -752,9 +752,9 @@ function drawComm() {
 
 // ------------------------------------------------------------------------- page 14: roles and accounts
 
-const people = {list: null, audit: null, auditError: "", created: "", error: "", confirming: null};
+const people = {list: null, audit: null, auditError: "", created: "", error: "", note: "", confirming: null};
 function mountPeople() {
-  people.created = "";  // a new credential is shown once, and not again when the page is entered later
+  people.created = people.note = "";  // a new credential (or a changed password's note) is shown once, not again later
   loadPeople();
 }
 async function loadPeople() {
@@ -768,7 +768,7 @@ async function loadPeople() {
 function permissionsHtml() {
   return `<div class="grid two"><div class="card"><h3>权限</h3><p id="whoami"></p>${table(["操作", "只读用户", "管理员"], [
       ["查看实时值、历史回溯、故障记录、系统自检；导出当前显示的 CSV", "允许", "允许"],
-      ["创建、停用账户；查看管理操作记录", "不允许", "允许"],
+      ["创建、停用只读账户；修改自己的口令；查看管理操作记录", "不允许", "允许"],
       ["在线增加、删除或修改通道、阈值与配置", "不允许", "不允许（改配置文件后由部署人员重启）"],
     ])}<p class="chart-caption">显示的是实际账户状态；不推算在线用户数量。配置不会在运行中热切换。</p></div>
     <div class="card"><h3>账户管理</h3><div id="account-area"></div></div></div>
@@ -784,14 +784,28 @@ function drawPeople() {
   }
   const rows = (people.list || []).map(a => [esc(a.username), esc(ROLES[a.role] || a.role), a.active ? "有效" : "已停用",
     !a.active ? "—" : people.confirming === a.username ? `<button data-revoke="${esc(a.username)}" class="primary">确认停用 ${esc(a.username)}</button>` : `<button data-revoke="${esc(a.username)}">停用</button>`]);
-  $("account-area").innerHTML = `${people.created ? `<div class="credential-result" id="new-credential">仅此一次显示，请保存新凭据：${esc(people.created)}</div>` : ""}${people.error ? `<p class="log-error">${esc(people.error)}</p>` : ""}
-    <form id="account-form" class="controls"><input name="username" aria-label="新用户名" placeholder="新用户名" required maxlength="64" pattern="[A-Za-z0-9_\\-]+"><select name="role" aria-label="账户角色"><option value="viewer">只读用户</option><option value="admin">管理员</option></select><button type="submit">创建账户</button></form>${table(["账户", "角色", "状态", "操作"], rows)}`;
+  $("account-area").innerHTML = `${people.created ? `<div class="credential-result" id="new-credential">仅此一次显示，请保存新凭据：${esc(people.created)}</div>` : ""}${people.error ? `<p class="log-error">${esc(people.error)}</p>` : ""}${people.note ? `<p class="muted">${esc(people.note)}</p>` : ""}
+    <form id="account-form" class="controls"><input name="username" aria-label="新用户名" placeholder="新用户名" required maxlength="64" pattern="[A-Za-z0-9_\\-]+"><input type="hidden" name="role" value="viewer"><button type="submit">创建只读账户</button></form>${table(["账户", "角色", "状态", "操作"], rows)}
+    <form id="password-form" class="controls"><input name="secret" type="password" aria-label="我的新口令" placeholder="我的新口令（至少 8 位）" required minlength="8" autocomplete="new-password"><input name="confirm" type="password" aria-label="再输一次新口令" placeholder="再输一次" required autocomplete="new-password"><button type="submit">修改我的口令</button></form>`;
   $("account-form").onsubmit = async event => {
     event.preventDefault();
-    people.error = "";
+    people.error = people.note = "";
     try {
       people.created = (await api("/api/admin/accounts", {method: "POST", body: JSON.stringify(Object.fromEntries(new FormData(event.target)))})).credential;
     } catch (error) { people.created = ""; people.error = error.message; }
+    loadPeople();
+  };
+  $("password-form").onsubmit = async event => {
+    event.preventDefault();
+    const {secret, confirm} = Object.fromEntries(new FormData(event.target));
+    people.error = people.note = "";
+    if (secret !== confirm) { people.error = "两次输入的口令不一致"; drawPeople(); return; }
+    try {
+      await api("/api/admin/password", {method: "POST", body: JSON.stringify({secret})});
+      state.credential = `${state.me.username}:${secret}`;  // the credential in use stopped working: the page goes on with the new one
+      sessionStorage.setItem("htsg.credential", state.credential);
+      people.note = `口令已修改：本页已改用新口令；下次登录输入 ${state.me.username}:新口令。`;
+    } catch (error) { people.error = error.message; }
     loadPeople();
   };
   $("account-area").querySelectorAll("[data-revoke]").forEach(b => b.onclick = async () => {
@@ -913,7 +927,7 @@ function logout(message = "") {
   $("stream-time").textContent = "等待后端数据";
   $("archive-banner").hidden = true;
   health.data = null;
-  Object.assign(people, {list: null, audit: null, created: "", error: "", confirming: null});
+  Object.assign(people, {list: null, audit: null, created: "", error: "", note: "", confirming: null});
   notice("");
   $("login-error").textContent = message;
 }

@@ -43,7 +43,7 @@ py -3.13 -m venv .venv
 .\.venv\Scripts\python.exe scripts\bootstrap_db.py install    # 首次
 .\.venv\Scripts\python.exe scripts\bootstrap_db.py start      # 开发实例默认不启动；不启动则数据库用例超时；只建空库 htsg
 .\.venv\Scripts\python.exe scripts\bootstrap_db.py build      # 把两实例的 htsg 建到当前归档代（建表）；旧的帧式库会被拒绝，须删库重建
-.\.venv\Scripts\python.exe -m htsg.cli init-accounts
+.\.venv\Scripts\python.exe -m htsg.cli init-accounts         # 唯一管理员，写进主库和账户文件；现场由 deploy_databases.py install 完成
 .\scripts\run.ps1                                              # 默认 config/development.json，127.0.0.1:8000
 ```
 
@@ -75,10 +75,10 @@ HTTP 传 `Authorization: Bearer <username:token>`，WebSocket 连接后 5 秒内
 | `GET /api/replay` | 窗口内的全部实收与变化记录（含批次号、批内序号、来源、缺口、窗口起点保持值），跨库合并，单库不可读则标注部分可用 |
 | `GET /api/replay/basis/{result_id}` | 一个结果的输入依据 |
 | `GET /api/faults` | 已归档的故障记录，按确认时间倒序分页 |
-| `GET/POST /api/admin/accounts`、`DELETE /api/admin/accounts/{username}`、`GET /api/admin/audit` | 账户与管理操作记录（仅管理员；变更先写主库，结果未确认时返回 503） |
+| `GET/POST /api/admin/accounts`、`DELETE /api/admin/accounts/{username}`、`POST /api/admin/password`、`GET /api/admin/audit` | 账户、管理员自己的口令与管理操作记录（仅管理员；只能建只读账户；变更先写主库，结果未确认时返回 503） |
 | `WS /api/stream` | 先发带发布序号的完整快照，再按序发布整组；慢客户端立即断开，重连取新快照 |
 
-这是全部的写入口：只有账户的创建与停用。只读用户看不到管理页的数据，对 `/api/admin/*` 得 403。
+这是全部的写入口：只读账户的创建与停用，以及管理员改自己的口令。只读用户看不到管理页的数据，对 `/api/admin/*` 得 403。
 
 ## 存储与路由
 
@@ -91,6 +91,8 @@ HTTP 传 `Authorization: Bearer <username:token>`，WebSocket 连接后 5 秒内
 现场部署与无人值守用 `scripts\deploy_databases.py` 与 `scripts\supervise.py`，用法见各脚本开头的说明，过程记录见[修复轮01](dev-docs/HTSG_V1_修复轮01_存储路径失效与无人值守_v0.1.md)。被取代的旧脚本在 `scripts\history\`，只用于回滚。
 
 **停止与崩溃：** Ctrl+C／Ctrl+Break 是正常停止，进程先停采集、处理完已收批次、登记运行结束并写完提交队列（结束原因 `NORMAL`）。任务计划的“结束任务”或强行终止是硬杀，没有这一步：下次启动时，未结束的运行按各段已持久化的水位收尾（`ABNORMAL_EXIT`；没有水位的段取段起点），不猜测崩溃时刻；收尾只读小表，耗时不随崩溃运行的大小增长。
+
+**账户：** 每套部署只有一个管理员，由部署（`deploy_databases.py install` 或 `init-accounts`）写进主库和账户文件，初始凭据在 `.local/initial-credentials.json`，交给业主；管理员在“系统管理·权限”页添加、停用只读用户，并可随时修改自己的口令。`.local/accounts.json` 只是主库账户表的本机副本，读不了或丢了都不阻止启动和采集，启动后按主库副本重写。没和主库核对上（主库读不了，或改账户的结果未确认）时谁也登录不了，维护周期每 `stats_interval`（默认60秒）重试，核对上即恢复，不用重启。主库和文件都没有账户时照常采集，日志提示运行 `init-accounts` 后重启。
 
 ## 验证
 

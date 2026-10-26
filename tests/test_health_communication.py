@@ -231,8 +231,8 @@ def test_no_path_was_added_and_the_old_communications_interface_did_not_come_bac
     paths = set(build_documented_app(tmp_path).openapi()["paths"])
     assert paths == {
         "/live", "/api/me", "/api/ui-config", "/api/health", "/api/admin/accounts", "/api/admin/accounts/{username}",
-        "/api/admin/audit", "/api/channels", "/api/faults", "/api/replay", "/api/replay/basis/{result_id}",
-    }  # fmt: skip
+        "/api/admin/password", "/api/admin/audit", "/api/channels", "/api/faults", "/api/replay", "/api/replay/basis/{result_id}",
+    }  # fmt: skip  (/api/admin/password: the administrator's own password, 修复轮02)
     assert not [p for p in paths if "communication" in p or "cursor" in p]
 
 

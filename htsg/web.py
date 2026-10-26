@@ -32,6 +32,11 @@ class NewAccount(BaseModel):
     role: str
 
 
+class NewSecret(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    secret: str
+
+
 def audit_entry(identity, action, target, result="COMMITTED"):
     return {"id": str(uuid4()), "time": time.time(), "actor": identity["username"], "action": action, "target": target, "result": result}
 
@@ -240,6 +245,15 @@ def create_web_app(*, config, accounts, publisher, archive_router=None, queue=No
         except ValueError as error:
             raise HTTPException(409, str(error)) from error
         return {"revoked": username}
+
+    @app.post("/api/admin/password")
+    async def set_password(body: NewSecret, identity=Depends(admin)):
+        """The administrator's own password (修复轮02): the credential in use stops working."""
+        try:
+            await asyncio.to_thread(accounts.set_secret, identity["username"], body.secret, audit_entry(identity, "SET_PASSWORD", identity["username"]))
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from error
+        return {"changed": identity["username"]}
 
     @app.get("/api/admin/audit", dependencies=[Depends(admin)])
     async def audit_history():

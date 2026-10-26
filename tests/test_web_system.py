@@ -197,6 +197,37 @@ def test_removing_the_model_page_and_its_config_payload_keeps_live_thermal_resul
     assert page.errors == []
 
 
+def test_the_administrator_changes_their_own_password_on_the_page_and_only_read_only_users_are_added(page, archive_rig):
+    """修复轮02 (user ruling 2026-10-26): one administrator, made by the deployment; on the page only read-only users are
+    added, and the administrator sets a password of their own whenever they want - the page carries on with it."""
+    old, new = archive_rig.credentials["admin"], "a-password-of-my-own"
+    sign_in(page, archive_rig, "admin")
+    page.get_by_role("button", name="系统管理·权限").click()
+    form = page.locator("#account-form")
+    form.wait_for()
+    assert form.locator('[name="role"]').get_attribute("value") == "viewer" and "管理员" not in form.inner_text(), "no second administrator"
+    password = page.locator("#password-form")
+    password.locator('[name="secret"]').fill(new)
+    password.locator('[name="confirm"]').fill(new + "x")
+    password.locator("button").click()
+    page.locator("#account-area").get_by_text("两次输入的口令不一致").wait_for()
+    assert api(page, archive_rig, "GET", "/api/me", old).status == 200, "a mistyped confirmation changes nothing"
+    try:
+        password.locator('[name="secret"]').fill(new)
+        password.locator('[name="confirm"]').fill(new)
+        password.locator("button").click()
+        page.locator("#account-area").get_by_text("口令已修改").wait_for()
+        assert api(page, archive_rig, "GET", "/api/me", old).status == 401, "the old credential stops working"
+        assert api(page, archive_rig, "GET", "/api/me", "admin:" + new).status == 200
+        page.get_by_role("button", name="历史查询").click()
+        page.get_by_role("button", name="系统管理·权限").click()  # the page goes on with the new credential: no new sign-in
+        page.locator("#audit-log tbody tr", has_text="SET_PASSWORD").first.wait_for()
+        assert page.locator("#workspace").is_visible()
+    finally:  # the rig is shared by the module: what the other tests sign in with works again
+        api(page, archive_rig, "POST", "/api/admin/password", "admin:" + new, data=json.dumps({"secret": old.split(":", 1)[1]}))
+    assert page.errors == []
+
+
 def test_a_database_failure_while_changing_an_account_is_reported_as_unconfirmed_not_as_a_crash(tmp_path):
     accounts = Accounts(tmp_path / "accounts.json")
     admin = accounts.create("admin", "admin")

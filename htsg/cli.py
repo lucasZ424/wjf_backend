@@ -32,6 +32,27 @@ def deployment_lock(path=Path(".local/backend.lock")):
             msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
 
 
+def init_accounts(accounts: Path, primary_dsn: str, timing=None) -> Path | None:
+    """The deployment's only administrator, written into the primary database and the account file together, so that a
+    deployment never reaches its first start without an account (修复轮02).  Returns where its credential was saved, or None
+    when the database or the file holds the administrator already.  Read-only users are added on the page."""
+    from .archive import ArchiveStore
+    from .web import audit_entry
+
+    local, store = Accounts(accounts), ArchiveStore(primary_dsn, timing)
+    try:
+        local.persist = store.sync_accounts
+        local.reconcile(store)  # the database copy first: it may hold the administrator already
+        if any(user["role"] == "admin" for user in local.users.values()):
+            return None
+        credential = local.create("admin", "admin", audit_entry({"username": "init-accounts"}, "CREATE_ACCOUNT", "admin"))
+    finally:
+        store.close()
+    destination = accounts.with_name("initial-credentials.json")
+    destination.write_text(json.dumps({"admin": credential}), encoding="utf-8")
+    return destination
+
+
 def main(*, deployment_locked=False):
     parser = argparse.ArgumentParser(description="HTSG local monitoring backend")
     parser.add_argument("command", choices=["run", "check", "init-accounts", "capacity"])
@@ -58,17 +79,18 @@ def main(*, deployment_locked=False):
                 )
             )
     elif args.command == "init-accounts":
-        accounts = Accounts(Path(args.accounts))
-        credentials = {}
-        for name in ("admin", "viewer"):
-            if name not in accounts.users:
-                credentials[name] = accounts.create(name, name)
-        if credentials:
-            destination = Path(args.accounts).with_name("initial-credentials.json")
-            destination.write_text(json.dumps(credentials), encoding="utf-8")
-            print(f"Initial credentials saved to {destination}; never commit this file.")
+        import psycopg
+
+        try:
+            saved = init_accounts(Path(args.accounts), json.loads(Path(args.database).read_text())["primary"], config.timing)
+        except psycopg.Error as error:
+            raise SystemExit(
+                f"The primary database cannot be used ({type(error).__name__}): the administrator goes into it and the account file together"
+            ) from None
+        if saved:
+            print(f"Administrator created; its credential is in {saved}: hand it to the owner, never commit this file.")
         else:
-            print("Accounts already initialized; no changes.")
+            print("The administrator already exists; no changes.")
     else:
         with nullcontext() if deployment_locked else deployment_lock():
             _run(args, config)
@@ -85,9 +107,7 @@ def _run(args, config):
     databases = json.loads(Path(args.database).read_text())
     if config.storage.external_enabled and not databases.get("external"):
         raise SystemExit("Enabled external storage requires an external database binding")
-    accounts = Accounts(Path(args.accounts))
-    if not accounts.users:
-        raise SystemExit("Run init-accounts first")
+    accounts = Accounts(Path(args.accounts))  # unreadable or empty stops nothing: the runtime settles it
     stores = {name: ArchiveStore(databases[name], config.timing) for name in ("primary", "emergency")}
     external = ArchiveStore(databases["external"], config.timing) if databases.get("external") else None
     router = ArchiveRouter(config, stores["primary"], stores["emergency"], external)
