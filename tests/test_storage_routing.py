@@ -5,6 +5,9 @@ routing decides which database holds each group; a wrong switch, a silent quota 
 maintenance step would lose or hide history.
 """
 
+import asyncio
+from uuid import uuid4
+
 import psycopg
 import pytest
 from owner_support import small_config
@@ -12,8 +15,9 @@ from pydantic import ValidationError
 from test_archive_router import Disks, config
 from test_archive_write import make_group
 
-from htsg.archive import ArchiveStore
+from htsg.archive import ArchiveStore, WriteOutcome
 from htsg.archive_router import ArchiveRouter
+from htsg.commitq import CommitQueue
 from htsg.config import Settings
 
 GIB = 1024**3
@@ -250,3 +254,116 @@ def test_a_development_budget_that_would_bypass_the_quota_is_rejected(bad):
 def test_the_boundary_budgets_are_valid(good):
     cfg = Settings.model_validate({"sources": [{"id": "s", "kind": "modbus"}], "storage": {"development_budget_bytes": good}})
     assert cfg.storage.development_budget_bytes == good
+
+
+# ------------------------------------------------- storage paths that cannot be read (review 2026-10-26, no. 1)
+
+
+class Unreadable(Disks):
+    """Disk readings in which some paths cannot be read at all: the disk is gone, its letter changed, the folder was removed."""
+
+    def __init__(self):
+        super().__init__()
+        self.missing = set()
+
+    def __call__(self, path):
+        if path in self.missing:
+            raise FileNotFoundError(f"[WinError 3] the system cannot find the path specified: {path}")
+        return super().__call__(path)
+
+
+def two_databases(archive_db_factory, disks, **storage):
+    cfg = config(**storage)
+    router = ArchiveRouter(cfg, archive_db_factory("primary"), archive_db_factory("emergency"), disk_usage=disks)
+    router.initialize()
+    router.bind_run("run1", cfg.config_id, 999.0)
+    return router, cfg
+
+
+def committed(store):
+    with store.session() as conn:
+        return [row["group_id"] for row in conn.execute("SELECT group_id FROM commit_group ORDER BY order_no").fetchall()]
+
+
+def test_a_primary_volume_that_cannot_be_read_holds_the_group_back_and_the_same_group_is_written_once_it_can(archive_db_factory):
+    """An unreadable storage path used to raise out of the writer and end the process, and on restart the first write raised
+    again.  Without the primary's reading the 95 % decision cannot be made, so the group waits: FAILED is retried with the same
+    group and the same ids - nothing is guessed, nothing is written elsewhere, and nothing is lost while it lasts."""
+    disks = Unreadable()
+    router, cfg = two_databases(archive_db_factory, disks)
+    disks.missing.add("D:/a")
+    group = make_group(config_id=cfg.config_id)
+    result = router.write_group(group)
+    assert (result.status, result.reason) == ("FAILED", "PRIMARY_DISK_UNAVAILABLE")
+    assert router.health["primary_disk"] == "UNAVAILABLE"
+    assert committed(router.primary) == [] and committed(router.emergency) == []
+    disks.missing.clear()
+    assert router.write_group(group).target == "primary"
+    assert "primary_disk" not in router.health, "a readable volume clears the report"
+
+
+def test_an_unreadable_emergency_volume_matters_only_when_the_emergency_route_is_needed(archive_db_factory):
+    disks = Unreadable()
+    router, cfg = two_databases(archive_db_factory, disks)
+    disks.missing.add("D:/b")
+    assert router.write_group(make_group(order=1, config_id=cfg.config_id)).target == "primary", "the primary has room"
+    disks.used["D:/a"] = 0.96
+    waiting = make_group(order=2, config_id=cfg.config_id)
+    result = router.write_group(waiting)
+    assert (result.status, result.reason) == ("FAILED", "EMERGENCY_DISK_UNAVAILABLE"), "its reserve cannot be checked: wait"
+    assert router.health["emergency_disk"] == "UNAVAILABLE"
+    disks.missing.clear()
+    assert router.write_group(waiting).target == "emergency"
+    assert committed(router.emergency) == [waiting.group_id]
+
+
+def test_a_failed_removable_write_does_not_fall_back_blind_when_the_emergency_volume_cannot_be_read(rig):
+    assert rig.write(primary=0.96, external=0.20).target == "external"
+    disks = Unreadable()
+    disks.used = rig.disks.used
+    rig.router.disk_usage = disks
+    disks.missing.add("D:/b")
+    rig.external.write_group = lambda group: WriteOutcome("FAILED", "OperationalError")
+    result = rig.write()
+    assert (result.status, result.reason) == ("FAILED", "EMERGENCY_DISK_UNAVAILABLE")
+
+
+def test_a_failed_removable_write_with_an_unreachable_emergency_database_keeps_the_group_and_the_writer(rig):
+    """In the removable-disk mode a failed write falls back to the emergency database.  When that database could not be reached
+    either, recording the switch raised out of the writer and ended the process (review 2026-10-26, no. 2).  Now the group waits
+    and the switch is made only once it is recorded; the same group goes to the emergency database when it answers."""
+    assert rig.write(primary=0.96, external=0.20).target == "external"
+    rig.external.write_group = lambda group: WriteOutcome("FAILED", "OperationalError")
+    recorded = rig.emergency.routing_mode
+
+    def unreachable(value=None):
+        raise psycopg.OperationalError("connection refused")
+
+    rig.emergency.routing_mode = unreachable
+    group = make_group(order=99, config_id=rig.cfg.config_id)
+    result = rig.router.write_group(group)
+    assert (result.status, result.reason) == ("FAILED", "OperationalError")
+    assert rig.router.mode == "EXTERNAL", "the switch is not made while it cannot be recorded"
+    rig.emergency.routing_mode = recorded
+    assert rig.router.write_group(group).target == "emergency", "the same group, once the emergency database answers"
+    assert rig.where()[group.group_id] == ["emergency"]
+
+
+async def test_the_writer_keeps_running_when_a_configured_storage_path_does_not_exist(archive_db_factory):
+    """The real disk reading, no injection, on a path that is not there: the writer task stays and keeps the group."""
+    cfg = config(primary_path="D:/htsg-missing-" + uuid4().hex + "/primary")
+    router = ArchiveRouter(cfg, archive_db_factory("primary"), archive_db_factory("emergency"))
+    router.initialize()
+    router.bind_run("run1", cfg.config_id, 999.0)
+    queue = CommitQueue(router, 10, retry_delay=(0.05, 0.1))
+    queue.offer(make_group(config_id=cfg.config_id))
+    task = asyncio.create_task(queue.run())
+    try:
+        await asyncio.sleep(0.5)
+        assert not task.done(), "the writer is still there"
+        assert queue.stats["failures"] >= 2 and queue.stats["last_error"] == "PRIMARY_DISK_UNAVAILABLE"
+        assert queue.depth == 1, "the group waits at the head of the queue"
+    finally:
+        await queue.stop(0.1)
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)

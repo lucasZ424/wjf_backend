@@ -188,8 +188,9 @@ class ArchiveRouter:
 
     # ------------------------------------------------------------------ routing decision
 
-    def route(self, primary_used: float, emergency_free: int, external_used: float | None = None) -> bool:
-        """Pick the target for the next group.  Inputs are injectable: never fill a real disk to test."""
+    def route(self, primary_used: float, emergency_free: int | None, external_used: float | None = None) -> bool:
+        """Pick the target for the next group.  Inputs are injectable: never fill a real disk to test.  `emergency_free` is None
+        when the emergency volume cannot be read: the emergency route is then not allowed, its reserve cannot be checked."""
         policy = self.config.storage
         if self.mode == "UNKNOWN":
             self.mode = self.emergency.routing_mode()
@@ -236,7 +237,9 @@ class ArchiveRouter:
                 self.health["switchback"] = "OK"
         self.health["active_target"] = self.mode
         self.health["external_selected"] = self.external_selected
-        return self.mode != "EMERGENCY" or emergency_free > self.reserve() + policy.batch_budget_bytes
+        return self.mode != "EMERGENCY" or (
+            emergency_free is not None and emergency_free > self.reserve() + policy.batch_budget_bytes
+        )
 
     def reserve(self) -> int:
         return DEV_RESERVE if self.config.mode == "development" else self.config.storage.emergency_reserve_bytes
@@ -303,9 +306,12 @@ class ArchiveRouter:
         if size > policy.batch_budget_bytes:
             return RouteResult("REFUSED", None, "WRITE_BATCH_BUDGET")  # whole group, never split
         try:
-            primary = self.disk_usage(policy.primary_path)
-            emergency = self.disk_usage(policy.emergency_path)
-            if self.config.mode == "development" and min(primary.free, emergency.free) < DEV_RESERVE:
+            primary = self._disk("primary", policy.primary_path)
+            if primary is None:  # the 95 % decision cannot be made without it: the group waits, nothing is guessed
+                return RouteResult("FAILED", None, "PRIMARY_DISK_UNAVAILABLE")
+            emergency = self._disk("emergency", policy.emergency_path)
+            free = [primary.free] if emergency is None else [primary.free, emergency.free]
+            if self.config.mode == "development" and min(free) < DEV_RESERVE:
                 raise PolicyRefusal("DEVELOPMENT_DISK_RESERVE")
             external_used = None
             if self.external is not None:
@@ -317,10 +323,12 @@ class ArchiveRouter:
                 except OSError:
                     self.health["external"] = "DISK_UNAVAILABLE"
             previous = self.mode
-            allowed = self.route(1 - primary.free / primary.total, emergency.free, external_used)
+            allowed = self.route(1 - primary.free / primary.total, None if emergency is None else emergency.free, external_used)
             if self.config.mode == "development":
                 self._development_budget(size)
             if not allowed:
+                if emergency is None:  # the target is the emergency route and its reserve cannot be checked: wait, do not refuse
+                    return RouteResult("FAILED", None, "EMERGENCY_DISK_UNAVAILABLE")
                 raise PolicyRefusal("EMERGENCY_RESERVE")
         except PolicyRefusal as refusal:
             return RouteResult("REFUSED", None, str(refusal))
@@ -330,16 +338,32 @@ class ArchiveRouter:
         result = self._write_to(name, group)
         if result.status == "FAILED" and self._may_fall_back(name, previous):
             # nothing was committed (FAILED is certain), so a different target cannot duplicate the group
-            self.mode = "EMERGENCY"
-            self.emergency.routing_mode("EMERGENCY")
-            self.health["active_target"] = "EMERGENCY"
             self.health["switchback"] = result.reason
+            try:
+                self.emergency.routing_mode("EMERGENCY")
+            except psycopg.Error as error:  # the emergency database cannot be reached either: the group waits, the writer stays
+                return RouteResult("FAILED", None, type(error).__name__)
+            self.mode = "EMERGENCY"  # only once the switch is recorded
+            self.health["active_target"] = "EMERGENCY"
+            if emergency is None:
+                return RouteResult("FAILED", None, "EMERGENCY_DISK_UNAVAILABLE")
             if emergency.free <= self.reserve() + policy.batch_budget_bytes:
                 return RouteResult("REFUSED", None, "EMERGENCY_RESERVE")
             result = self._write_to("emergency", group)
         if result.durable:
             self.bytes_written += size
         return result
+
+    def _disk(self, role: str, path: str):
+        """The reading of a storage volume, or None when its path cannot be read (the disk is gone, its letter changed, the folder
+        was removed).  That is reported in `health` and routed around - it never ends the writer."""
+        try:
+            usage = self.disk_usage(path)
+        except OSError:
+            self.health[role + "_disk"] = "UNAVAILABLE"
+            return None
+        self.health.pop(role + "_disk", None)
+        return usage
 
     def _may_fall_back(self, name: str, previous: str) -> bool:
         return name == "external" or (previous == "EMERGENCY" and name == "primary")

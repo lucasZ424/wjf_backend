@@ -1,0 +1,107 @@
+"""The supervisor that keeps the backend running with nobody at the machine (scripts/supervise.py).
+
+Why it matters: after a power cut or a crash the system must come back by itself (项目硬规则).  The supervisor must start the backend
+again whenever it ends - with growing pauses while it keeps ending, so a backend that cannot start does not spin - never start a second
+backend next to one that already owns the deployment, start the database services that are not running (a removable disk plugged in
+late), and stop everything the normal way and start nothing while the maintenance file STOP is there.
+"""
+
+import logging
+import msvcrt
+import sys
+import threading
+import time
+
+import pytest
+
+from scripts import supervise as sup
+
+QUICK = [sys.executable, "-c", "import sys; sys.exit(3)"]
+LONG = [sys.executable, "-c", "import time; time.sleep(60)"]
+
+
+@pytest.fixture
+def fast(monkeypatch, tmp_path):
+    """Short settings, no services, and pauses that are recorded instead of slept."""
+    monkeypatch.setattr(sup, "FIRST_DELAY", 1.0)
+    monkeypatch.setattr(sup, "MAX_DELAY", 8.0)
+    monkeypatch.setattr(sup, "STOP_GRACE", 10.0)
+    pauses = []
+    monkeypatch.setattr(sup, "pause", lambda seconds, stop_file: pauses.append(seconds))
+    files = {"stop_file": tmp_path / "STOP", "backend_lock": tmp_path / "backend.lock", "console": tmp_path / "console.log"}
+    return pauses, files
+
+
+def test_a_backend_that_keeps_ending_is_started_again_with_growing_pauses(fast):
+    pauses, files = fast
+    assert sup.supervise(QUICK, [], None, max_runs=5, **files) == 5
+    assert pauses == [1.0, 2.0, 4.0, 8.0], "doubling up to the maximum (5 s to 60 s in the real settings)"
+
+
+def test_a_run_that_lasted_starts_the_pauses_over(fast, monkeypatch):
+    pauses, files = fast
+    monkeypatch.setattr(sup, "STABLE", 0.0)  # every run counts as one that lasted
+    sup.supervise(QUICK, [], None, max_runs=3, **files)
+    assert pauses == [1.0, 1.0]
+
+
+def test_the_stop_file_ends_the_backend_and_the_supervisor_and_nothing_starts_while_it_is_there(fast):
+    _, files = fast
+    timer = threading.Timer(1.0, files["stop_file"].write_text, args=("maintenance",))
+    timer.start()
+    began = time.monotonic()
+    assert sup.supervise(LONG, [], None, **files) == 1
+    assert time.monotonic() - began < 20, "the backend was stopped, not waited out"
+    assert sup.supervise(QUICK, [], None, **files) == 0, "while STOP is there nothing is started"
+
+
+def test_a_backend_that_already_owns_the_deployment_is_waited_for_and_never_doubled(fast, monkeypatch):
+    pauses, files = fast
+    other = sup.lock(files["backend_lock"])  # a backend left behind by a supervisor that was ended
+    assert other is not None
+
+    def pause(seconds, stop_file):
+        pauses.append(seconds)
+        if len(pauses) == 3:  # that backend ends
+            other.seek(0)
+            msvcrt.locking(other.fileno(), msvcrt.LK_UNLCK, 1)
+            other.close()
+
+    monkeypatch.setattr(sup, "pause", pause)
+    console = files["console"]
+    assert sup.supervise(QUICK, [], None, max_runs=1, **files) == 1
+    assert pauses[:3] == [sup.SERVICE_CHECK] * 3, "it waited while the other one held the deployment"
+    assert console.exists(), "and started its own once it was free"
+
+
+def test_the_backend_starts_without_the_database_once_the_wait_is_over(fast, monkeypatch):
+    _, files = fast
+    asked = []
+    monkeypatch.setattr(sup, "WAIT_DB", 0.3)
+    monkeypatch.setattr(sup, "database_answers", lambda dsn: asked.append(dsn) or False)
+    assert sup.supervise(QUICK, [], "postgresql://nobody@127.0.0.1:1/x", max_runs=1, **files) == 1
+    assert asked, "the database was asked before the start"
+
+
+def test_stopped_database_services_are_started_every_round_and_a_change_is_logged_once(monkeypatch, caplog):
+    states = {"HTSG-PostgreSQL-primary": "RUNNING", "HTSG-PostgreSQL-external": "STOPPED"}
+    started = []
+    plugged_in = {"now": False}
+    monkeypatch.setattr(sup, "service_state", lambda name: states[name])
+
+    def start(name):
+        started.append(name)
+        if plugged_in["now"]:
+            states[name] = "RUNNING"
+
+    monkeypatch.setattr(sup, "start_service", start)
+    seen = {}
+    with caplog.at_level(logging.INFO, logger="htsg.supervisor"):
+        sup.ensure_services(list(states), seen)  # the removable disk is not there: its database cannot start
+        sup.ensure_services(list(states), seen)
+        plugged_in["now"] = True
+        sup.ensure_services(list(states), seen)
+    assert started == ["HTSG-PostgreSQL-external"] * 3, "tried every round, the running one is left alone"
+    assert seen == {"HTSG-PostgreSQL-primary": "RUNNING", "HTSG-PostgreSQL-external": "RUNNING"}
+    external = [r.getMessage() for r in caplog.records if "external" in r.getMessage()]
+    assert external == ["service HTSG-PostgreSQL-external: STOPPED", "service HTSG-PostgreSQL-external: RUNNING"]
