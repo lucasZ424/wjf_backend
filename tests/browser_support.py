@@ -1,6 +1,5 @@
 """Helpers for tests that drive a real browser; the fixtures (`browser`, `rig`, `page`) are in conftest.py."""
 
-import json
 import os
 import re
 from pathlib import Path
@@ -15,22 +14,6 @@ def sign_in(page, rig, who="viewer"):
     page.locator("#credential").fill(rig.credentials[who])
     page.locator("#login-form button").click()
     page.locator("#workspace").wait_for(state="visible")
-
-
-def watch_socket(page):
-    """Every message the page receives on its realtime sockets, as (socket number, message); call before `goto`."""
-    log, sockets = [], []
-
-    def opened(ws):
-        number = len(sockets)
-        sockets.append(ws)
-        ws.on(
-            "framereceived",
-            lambda payload: log.append((number, json.loads(payload if isinstance(payload, str) else payload.decode()))),
-        )
-
-    page.on("websocket", opened)
-    return log
 
 
 def number(text):

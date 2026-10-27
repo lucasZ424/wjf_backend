@@ -128,8 +128,6 @@ class Derived(StrictModel):
 class Limits(StrictModel):
     ingress: int = Field(4096, ge=1, le=100000)  # input batches waiting for the owner
     commit_queue: int = Field(400, ge=1, le=100000)  # commit groups waiting for the one archive writer
-    ws_queue: int = Field(64, ge=2, le=1000)  # messages waiting to leave for one browser
-    max_clients: int = Field(16, ge=1, le=128)
 
 
 class Timing(StrictModel):
@@ -164,9 +162,8 @@ class Timing(StrictModel):
     watermark_interval: float = Field(10, gt=0)
     stats_interval: float = Field(60, gt=0)
     status_interval: float = Field(1, gt=0)
-    push_coalesce: float = Field(0.1, gt=0)
-    push_heartbeat: float = Field(1, gt=0)
-    client_send_timeout: float = Field(5, gt=0)
+    ui_poll_interval: float = Field(1, gt=0)  # 修复轮05: the page reads the whole current state, nothing is pushed
+    ui_poll_timeout: float = Field(5, gt=0)  # one reading, from the request to the whole answer read and checked
     ui_stall_notice: float = Field(3, gt=0)
     fault_confirm_seconds: float = Field(5, gt=0)
     fault_buffer_limit: int = Field(1000, ge=1)
@@ -196,8 +193,8 @@ class Timing(StrictModel):
     @model_validator(mode="after")
     def relations(self):
         found = self.problems(self.ua_publish_interval, self.ua_keepalive_count, self.ua_lifetime_count)
-        if self.ui_stall_notice <= 2 * self.push_heartbeat:
-            found.append("UI stall notice must exceed two heartbeat intervals")
+        if self.ui_stall_notice <= 2 * self.ui_poll_interval:  # a reading may wait longer than the notice: no relation there
+            found.append("UI stall notice must exceed two poll intervals")
         if self.backoff_initial > self.backoff_max:
             found.append("backoff_initial must not exceed backoff_max")
         if found:
@@ -240,7 +237,6 @@ class Settings(StrictModel):
     limits: Limits = Limits()
     timing: Timing = Timing()
     storage: Storage = Storage()
-    allowed_origins: tuple[str, ...] = ()
     project: Project = Project()
     simulation: Simulation = Simulation()
     ui: UI = UI()

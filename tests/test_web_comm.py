@@ -125,7 +125,7 @@ def test_each_row_shows_its_mapping_value_quality_validity_and_its_two_times(pag
 
 
 def test_the_table_is_replaced_by_each_reading_and_never_patched_by_the_live_stream(page, fresh):
-    """S3: values keep changing on the live stream, yet the table holds one reading until the next poll replaces it."""
+    """S3: values keep changing in the live readings, yet the table holds one health reading until the next poll replaces it."""
     pid = next(p.id for p in fresh.config.points if p.source == UA and "temp_inner" in p.id)
     open_page(page, fresh)
     page.evaluate(
@@ -139,13 +139,13 @@ def test_the_table_is_replaced_by_each_reading_and_never_patched_by_the_live_str
         }""",
         pid,
     )
-    seq0 = page.evaluate("Number(document.querySelector('#stream-time').textContent.split('序号 ')[1])")
+    taken0 = page.evaluate("Number(document.querySelector('#stream-time').dataset.taken)")
     for k in range(48):  # a new observation four times a second for 12 s
         fresh.call(fresh.ua, [(pid, 500.0 + k)])
         page.wait_for_timeout(250)
-    seq1 = page.evaluate("Number(document.querySelector('#stream-time').textContent.split('序号 ')[1])")
+    taken1 = page.evaluate("Number(document.querySelector('#stream-time').dataset.taken)")
     seen = page.evaluate("window.__seen")
-    assert seq1 - seq0 >= 40, "the live stream really was delivering the changes meanwhile"
+    assert taken1 - taken0 >= 10, "the live pages really were reading the changes meanwhile (修复轮05: once a second)"
     values = [float(v.split()[0].replace(",", "")) for _, v in seen]
     assert 1 <= len(values) <= 4, f"one change per poll, not one per live message: {values}"
     assert all(500.0 <= v < 548.0 for v in values) and values == sorted(values)
@@ -374,8 +374,8 @@ def test_the_live_pages_still_update_while_the_communication_page_exists(page, r
     page.get_by_role("button", name="系统总览").click()
     try:
         rig.call(rig.ua, [(point, 471.0)])
-        seq = rig.call(lambda: rig.owner.pub_seq)
-        page.wait_for_function("seq => Number(document.querySelector('#stream-time').textContent.split('序号 ')[1]) >= seq", arg=seq)
+        changed = time.time()  # a reading taken after this holds the change
+        page.wait_for_function("t => Number(document.querySelector('#stream-time').dataset.taken) >= t", arg=changed)
     finally:
         rig.call(rig.ua, [(point, nominal()[point])])
     assert page.errors == []

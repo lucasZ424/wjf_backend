@@ -1,12 +1,12 @@
 "use strict";
-import {apply, newLive, Rejected} from "/static/stream.js";
+import {newLive, Rejected, take} from "/static/stream.js";
 import {buildCsv, channelRows, ENDS, gapMark, ORIGINS, reasonText, rowState} from "/static/replay.js";
 
 const $ = id => document.getElementById(id);
 const esc = value => String(value ?? "—").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 const state = {
   credential: sessionStorage.getItem("htsg.credential") || "", me: null, config: null, page: 1,
-  live: newLive(), ws: null, stopped: true, reconnect: null, lastMessage: 0, stalled: false, drawing: false,
+  live: newLive(), stopped: true, stalled: false, drawing: false,
 };
 
 // ------------------------------------------------------------------------------------------ helpers
@@ -78,9 +78,10 @@ function renderLive() {
   currentPage().update?.();
   renderBanner();
   const live = state.live;
-  $("stream-time").textContent = live.channels ? `最新消息：${clock(state.lastMessage / 1000)} · 序号 ${live.seq}` : "等待后端数据";
+  $("stream-time").textContent = live.channels ? `最新读取：${clock(live.taken)}` : "等待后端数据";
+  $("stream-time").dataset.taken = live.taken ?? "";  // the exact time of the reading shown
 }
-// Many messages can arrive in one frame; the page is drawn once per frame, from the state as it then is.
+// The page is drawn once per frame, from the state as it then is.
 function invalidate() {
   if (state.drawing) return;
   state.drawing = true;
@@ -155,7 +156,7 @@ function updateStrain() {
 
 // ----------------------------------------------------------------- page 4: live three-panel trend (终版 §17.3)
 
-// Only what this page receives is plotted: the groups since it connected.  Custom history lives on page 5.
+// Only what this page reads is plotted: the readings since it signed in.  Custom history lives on page 5.
 const TREND_SECONDS = 300, KEEP_SECONDS = 600;
 const trend = {series: new Map(), pair: 0, cursor: null};
 const signed = (value, digits = 2) => typeof value === "number" && Number.isFinite(value) ? (value > 0 ? "+" : "") + fmt(value, digits) : "—";
@@ -188,6 +189,14 @@ function trendNote(channels, wall) {
 }
 function trendBreak(wall) {
   for (const list of trend.series.values()) if (list.length && list[list.length - 1].valid) list.push({t: wall, v: null, valid: false});
+}
+// The live trend observes the current state (终版 §13.3, 修复轮05): a point is what a reading showed, at the time the
+// reading was taken.  A stretch ends where two readings are more than the notice apart or the run changed; a reading
+// time that went back starts the trend over, so the points stay in time order.
+function trendReading(reading, before) {
+  if (before.taken !== null && reading.taken_time < before.taken) trend.series.clear();
+  else if (before.taken !== null && (reading.run_id !== before.run || reading.taken_time - before.taken > state.config.timing.ui_stall_notice)) trendBreak(before.taken);
+  trendNote(reading.channels, reading.taken_time);
 }
 const valueAt = (list, t) => { let found = null; for (const p of list) { if (p.t <= t) found = p; else break; } return found; };
 
@@ -671,14 +680,14 @@ function updateSelfcheck() {
     + `<p class="chart-caption">故障记录在写入数据库之前只在内存中，进程退出会丢失。缓冲满额时保留已有记录、拒绝新记录，不覆盖、不阻塞采集。</p>`;
   $("check-timing").innerHTML = table(["项目", "值"], [
     ["故障确认时长", `${timing.fault_confirm_seconds} 秒`], ["OPC UA 数据有效期 / 断连告警", `${timing.ua_data_validity} 秒 / ${timing.ua_alarm_seconds} 秒`], ["Modbus 断连告警", `${timing.modbus_alarm_seconds} 秒`],
-    ["推送合并 / 空闲心跳", `${timing.push_coalesce * 1000} 毫秒 / ${timing.push_heartbeat} 秒`], ["前端消息延迟提示", `${timing.ui_stall_notice} 秒`], ["故障缓冲上限", `${timing.fault_buffer_limit} 条`], ["水位提交间隔", `${timing.watermark_interval} 秒`],
+    ["页面读取间隔 / 单次读取上限", `${timing.ui_poll_interval} 秒 / ${timing.ui_poll_timeout} 秒`], ["前端数据中断提示", `${timing.ui_stall_notice} 秒`], ["故障缓冲上限", `${timing.fault_buffer_limit} 条`], ["水位提交间隔", `${timing.watermark_interval} 秒`],
   ]);
 }
 
 // ------------------------------------------------------------------------ page 13: communication and log (终版 §15.1)
 
 // Everything on this page comes from ONE /api/health answer, read every 5 s while the page is in front and replaced as a
-// whole - the input table is never patched with live (WebSocket) values, so a row cannot mix two observations and the
+// whole - the input table is never patched with the live readings, so a row cannot mix two observations and the
 // page cannot look fresher than the moment it was read.  The log is this run's memory only, no level, no history.
 const COMM_EVENTS = {
   NEW_GENERATION: "新连接/订阅代次建立", FIRST_COMM: "首次有效通信", COMM_RECOVERED: "通信恢复（中断后首个有效响应）",
@@ -837,62 +846,82 @@ function drawPeople() {
   $("audit-log").innerHTML = people.audit ? table(["时间", "操作者", "操作", "对象", "结果"], people.audit.map(a => [stamp(a.time), esc(a.actor), esc(a.action), esc(a.target), esc(a.result)])) : `<p class="muted">管理操作记录不可用：${esc(people.auditError || "正在读取…")}</p>`;
 }
 
-// ---------------------------------------------------------------------------------- the realtime socket
+// --------------------------------------------------------------------- the current state, read once a second
 
 function setConnection(text, kind) {
   $("connection").textContent = text;
   $("connection").className = `badge ${kind}`;
 }
-function connect() {
-  if (state.stopped) return;
-  const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/stream`);
-  state.ws = ws;
-  ws.onopen = () => ws.send(JSON.stringify({credential: state.credential}));
-  ws.onmessage = event => receive(ws, event.data);
-  ws.onclose = event => lost(ws, event.code);
-  ws.onerror = () => ws.close();
+// One reading at a time (终版 §13.3, 修复轮05): a tick that finds a reading outstanding is skipped, never queued, so
+// nothing piles up and nothing is made up afterwards.  A reading is given up at its limit; only a reading that is
+// whole replaces what is shown.  Durations use the page's monotonic clock; the trend keeps the server's.
+const reader = {timer: null, busy: false, controller: null, began: 0, good: 0, run: null, taken: null, failure: ""};
+function startReading() {
+  stopReading();
+  Object.assign(reader, {began: performance.now(), good: 0, run: null, taken: null, failure: ""});
+  state.stalled = false;
+  setConnection("连接中", "warn");
+  reader.timer = setInterval(readNow, state.config.timing.ui_poll_interval * 1000);
+  readNow();
 }
-function receive(ws, text) {
-  if (ws !== state.ws) return;
-  let result, message;
+function stopReading() {
+  clearInterval(reader.timer);
+  const outstanding = reader.controller;
+  Object.assign(reader, {timer: null, busy: false, controller: null});
+  outstanding?.abort();
+}
+async function readNow() {
+  if (state.stopped || reader.busy) return;
+  const controller = new AbortController();
+  const limit = setTimeout(() => controller.abort(), state.config.timing.ui_poll_timeout * 1000);  // up to the whole answer
+  Object.assign(reader, {busy: true, controller});
+  let response = null, reading, read = false;
   try {
-    message = JSON.parse(text);
-    result = apply(state.live, message);
+    response = await fetch("/api/snapshot", {headers: {Authorization: `Bearer ${state.credential}`}, cache: "no-store", signal: controller.signal});
+    if (response.ok) { reading = await response.json(); read = true; }
   } catch (error) {
-    if (!(error instanceof Rejected) && !(error instanceof SyntaxError)) throw error;
-    // nothing was applied: drop the connection and take a new snapshot rather than show half of a message
-    state.rejected = true;
-    notice(`实时消息未通过校验（${error.message}），已整条丢弃并重新同步。`);
-    ws.close();
+    if (reader.controller === controller) {
+      reader.failure = error.name === "AbortError" ? "超过时限未取得完整答复" : error instanceof SyntaxError ? "答复无法解析" : "网络不可用或后端未答复";
+    }
+  } finally {
+    clearTimeout(limit);
+  }
+  if (reader.controller !== controller) return;  // signed out, or reading started over, meanwhile
+  Object.assign(reader, {busy: false, controller: null});
+  if (response?.status === 401) { logout("凭据无效或账户已停用，请重新登录。"); return; }
+  if (!read) {
+    if (response && !response.ok) reader.failure = `后端答复 ${response.status}`;
     return;
   }
-  state.lastMessage = Date.now();
-  if (Number.isFinite(message.wall)) state.serverWall = message.wall;  // the server's clock: the trend never mixes in this PC's
-  if (result.snapshot) trendNote(state.live.channels, state.serverWall);
-  for (const group of result.groups) trendNote(group.channels, group.wall);
+  const before = {run: reader.run, taken: reader.taken};
+  try {
+    take(state.live, reading);  // whole or nothing: a refused reading changes nothing and is no answer
+  } catch (error) {
+    if (!(error instanceof Rejected)) throw error;
+    reader.failure = `数据未通过校验：${error.message}`;
+    return;
+  }
+  Object.assign(reader, {good: performance.now(), run: reading.run_id, taken: reading.taken_time, failure: ""});
+  trendReading(reading, before);
+  state.serverWall = reading.taken_time;  // the server's clock: the trend never mixes in this PC's
   if (state.stalled) { state.stalled = false; notice(""); }
-  else if (state.rejected && result.snapshot) { state.rejected = false; notice(""); }
   setConnection("实时连接", "ok");
   invalidate();
 }
-function lost(ws, code) {
-  if (ws !== state.ws || state.stopped) return;
-  state.ws = null;
-  trendBreak(state.serverWall);
-  state.live = newLive();  // a snapshot replaces everything on reconnect; nothing partial is kept meanwhile
-  if (code === 1008) { logout("实时通道认证失败，请重新登录。"); return; }
-  setConnection("重连中", "warn");
-  renderLive();
-  state.reconnect = setTimeout(connect, 1000);
-}
-// Heartbeats come every second, so three seconds of nothing means the messages themselves have stopped.
+// Back on the page: read at once, unless a reading is outstanding; what was missed meanwhile is not made up.
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") readNow(); });
+// Three seconds without a good reading - counted from the start of reading if none came yet - and the page says so;
+// what it showed is taken off the screen rather than left looking current.
 setInterval(() => {
-  const limit = (state.config?.timing?.ui_stall_notice ?? 3) * 1000;
-  if (!state.stopped && state.live.channels && Date.now() - state.lastMessage > limit) {
-    state.stalled = true;
-    setConnection("消息中断", "bad");
-    notice(`已超过 ${Math.round(limit / 1000)} 秒没有收到后端消息，显示的数值可能已过时；这不代表数据源状态。`);
-  }
+  if (state.stopped || state.stalled || !state.config) return;
+  const limit = state.config.timing.ui_stall_notice * 1000;
+  if (performance.now() - (reader.good || reader.began) <= limit) return;
+  state.stalled = true;
+  trendBreak(state.serverWall);
+  state.live = newLive();
+  setConnection("数据中断", "bad");
+  notice(`已超过 ${Math.round(limit / 1000)} 秒没有取得可用的后端数据${reader.failure ? `（最近一次：${reader.failure}）` : ""}，此前的数值已不再显示；这不代表数据源状态。`);
+  renderLive();
 }, 500);
 
 // -------------------------------------------------------------------------------------- login / logout
@@ -922,15 +951,15 @@ async function login() {
     $("credential").value = "";
     notice("");
     renderPage();
-    connect();
+    startReading();
   } catch (error) {
     $("login-error").textContent = `连接失败：${error.message}`;
   }
 }
 function logout(message = "") {
   state.stopped = true;
-  clearTimeout(state.reconnect);
-  if (state.ws) { const ws = state.ws; state.ws = null; ws.close(); }
+  stopReading();
+  state.stalled = false;
   state.credential = "";
   trend.series.clear();
   state.live = newLive();

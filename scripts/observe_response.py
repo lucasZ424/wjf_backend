@@ -198,7 +198,7 @@ class Observation:
 
         self.runtime.owner.commit = noting_offer
         self.app = create_web_app(
-            config=self.config, accounts=accounts, publisher=self.runtime.publisher, archive_router=self.router,
+            config=self.config, accounts=accounts, owner=self.runtime.owner, archive_router=self.router,
             queue=self.runtime.queue, diagnostics=self.runtime.diagnostics, lifecycle=self.runtime,
         )  # fmt: skip
         self.web = None

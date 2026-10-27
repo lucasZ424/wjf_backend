@@ -1,5 +1,6 @@
-"""Assembly of the batch-driven chain (方案 D45): protocol tasks -> ordered ingress -> the single owner ->
-(realtime publisher, ordered commit queue -> archive router).
+"""Assembly of the batch-driven chain (方案 D45): protocol tasks -> ordered ingress -> the single owner -> ordered
+commit queue -> archive router.  The pages read the owner's current state on request (修复轮05); nothing on this
+path encodes or sends anything for them.
 
 Nothing here decides anything about data.  The acquirers deliver batches and lifecycle events to `Ingress`, one
 task drains it into the owner and ticks the owner once a second, the commit queue's own task writes whole
@@ -20,7 +21,6 @@ from .commitq import CommitQueue
 from .ingress import Ingress
 from .modbus import ModbusAcquirer
 from .owner import Owner
-from .publisher import Publisher
 from .ua import UaAcquirer
 
 log = logging.getLogger(__name__)
@@ -45,11 +45,7 @@ class Runtime:
             on_refused=lambda group, reason: self.owner.refused(group, reason),
             is_void=lambda group: self.owner.is_void(group),
         )  # fmt: skip
-        self.owner = Owner(
-            config, time.time(), time.monotonic(), commit=self.queue.offer,
-            publish=lambda group: self.publisher.offer(group), run_id=self.run_id,
-        )  # fmt: skip
-        self.publisher = Publisher(self.owner)
+        self.owner = Owner(config, time.time(), time.monotonic(), commit=self.queue.offer, run_id=self.run_id)
         self.ingress = Ingress(self.owner, config.limits.ingress)
         self.ingress.wakeup = self.wake.set
         self.owner.on_rebuild = self._rebuild

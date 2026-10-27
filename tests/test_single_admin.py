@@ -16,7 +16,6 @@ from test_account_persistence import AccountStore
 from htsg import cli
 from htsg.auth import Accounts
 from htsg.owner import Owner
-from htsg.publisher import Publisher
 from htsg.web import create_web_app
 
 NEW = "a-password-of-my-own"
@@ -57,7 +56,7 @@ def test_through_the_api_only_read_only_users_are_added_and_only_the_administrat
     accounts = Accounts(tmp_path / "accounts.json")
     admin, viewer = accounts.create("admin", "admin"), accounts.create("viewer", "viewer")
     owner = Owner(small_config(), 1000.0, 100.0, run_id="t")
-    app = create_web_app(config=owner.config, accounts=accounts, publisher=Publisher(owner))
+    app = create_web_app(config=owner.config, accounts=accounts, owner=owner)
     with TestClient(app) as client:
 
         def call(method, path, credential, body=None):

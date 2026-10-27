@@ -61,7 +61,7 @@ def build(field, tmp_path, primary, emergency):
     credentials = {"viewer": accounts.create("viewer", "viewer"), "admin": accounts.create("admin", "admin")}
     runtime = Runtime(field.config, router, accounts)
     app = create_web_app(
-        config=field.config, accounts=accounts, publisher=runtime.publisher, archive_router=router,
+        config=field.config, accounts=accounts, owner=runtime.owner, archive_router=router,
         queue=runtime.queue, diagnostics=runtime.diagnostics, lifecycle=runtime,
     )  # fmt: skip
     return runtime, app, credentials

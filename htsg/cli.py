@@ -118,7 +118,7 @@ def _run(args, config):
     )
     logging.basicConfig(level=logging.INFO, handlers=[handler])
     app = create_web_app(
-        config=config, accounts=accounts, publisher=runtime.publisher, archive_router=router,
+        config=config, accounts=accounts, owner=runtime.owner, archive_router=router,
         queue=runtime.queue, diagnostics=runtime.diagnostics, lifecycle=runtime,
     )  # fmt: skip
     server = uvicorn.Server(

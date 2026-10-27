@@ -3,7 +3,7 @@
 Real Modbus and OPC UA servers (the independent research simulator: 8 bridges + 200 monitored items), the real
 runtime with its owner, ordered ingress, commit queue and archive router, throw-away PostgreSQL databases on the
 development clusters (created here, dropped here, nothing else is touched) and, with --browser, a real Chrome on
-page 4 that applies and draws every pushed group.  It reports what happened; it does not decide whether that is
+page 4 that reads the whole current state once a second and draws it.  It reports what happened; it does not decide whether that is
 enough (终版 §16: measure, then compare with the requirement).
 
     python scripts/measure.py --steady 120 --outage 25 --browser --out docs/evidence/d46
@@ -121,26 +121,41 @@ class Databases:
                 conn.execute(sql.SQL("DROP DATABASE {} WITH (FORCE)").format(sql.Identifier(name)))
 
 
-# Page side of the latency measurement: arrival of every pushed message, and the end of the first animation frame
-# after it (the page draws once per frame).  The application itself is not touched.
+# Page side of the display measurement (方案 D46④, 修复轮05): every reading the page takes - when it was asked for,
+# when the whole answer was read, when the page had checked and applied it (the next task), the end of the first frame
+# after that - and what it carried: its time, its run and the observation behind each received input.  Durations use
+# the page's monotonic clock; the wall clock is noted at the start and at the frame, so a step in it shows.  The
+# application itself is not touched.
 PAGE_PROBE = """
 (() => {
-  const log = window.__push = [], waiting = [], Native = window.WebSocket;
-  window.WebSocket = class extends Native {
-    constructor(...args) {
-      super(...args);
-      this.addEventListener("message", event => {
-        const found = typeof event.data === "string" && event.data.match(/^\\{"type":"groups","first":(\\d+),"last":(\\d+)/);
-        if (found) { const rec = {first: +found[1], last: +found[2], arrived: performance.timeOrigin + performance.now(), drawn: null}; log.push(rec); waiting.push(rec); }
-      });
-    }
+  const log = window.__readings = [], waiting = [], native = window.fetch.bind(window);
+  const mono = () => performance.timeOrigin + performance.now(), offset = () => Date.now() - mono();
+  window.fetch = async (url, options) => {
+    if (!String(url).includes("/api/snapshot")) return native(url, options);
+    const rec = {started: mono(), offset: offset(), status: null, error: null, read: null, applied: null, drawn: null, drawnOffset: null, taken: null, inputs: null};
+    log.push(rec);
+    let response;
+    try { response = await native(url, options); } catch (error) { rec.error = error.name; throw error; }
+    rec.status = response.status;
+    const json = response.json.bind(response);
+    response.json = async () => {
+      let body;
+      try { body = await json(); } catch (error) { rec.error = error.name; throw error; }
+      rec.read = mono();
+      rec.taken = body && Number.isFinite(body.taken_time) ? body.taken_time : null;
+      rec.inputs = body && body.channels ? Object.values(body.channels)
+        .filter(v => v && v.kind === "input" && v.observation_id && v.origin === "RECEIVED").map(v => [v.observation_id, v.time]) : [];
+      setTimeout(() => { rec.applied = mono(); waiting.push(rec); }, 0);  // after the page's own synchronous check and apply
+      return body;
+    };
+    return response;
   };
   const raf = window.requestAnimationFrame.bind(window);
   window.requestAnimationFrame = callback => raf(stamp => {
-    const started = performance.timeOrigin + performance.now();
+    const started = mono();
     callback(stamp);
-    const ended = performance.timeOrigin + performance.now();
-    while (waiting.length && waiting[0].arrived <= started) waiting.shift().drawn = ended;
+    const ended = mono();
+    while (waiting.length && waiting[0].applied <= started) { const rec = waiting.shift(); rec.drawn = ended; rec.drawnOffset = offset(); }
   });
 })();
 """
@@ -156,8 +171,7 @@ class Lab:
         self.disk_usage, self.external, self.databases = disk_usage, external, Databases(prefix)
         self.rows_written = 0
         self.samples = []
-        self.commit_wait, self.offered, self.sent = [], {}, {}
-        self.receipts = {}
+        self.commit_wait, self.offered = [], {}
 
     async def __aenter__(self):
         self.config = make_config(self.stats_interval, self.outage, self.quiet, self.external)
@@ -172,7 +186,7 @@ class Lab:
         self.runtime = Runtime(self.config, self.router, accounts)
         self.instrument()
         app = create_web_app(
-            config=self.config, accounts=accounts, publisher=self.runtime.publisher, archive_router=self.router,
+            config=self.config, accounts=accounts, owner=self.runtime.owner, archive_router=self.router,
             queue=self.runtime.queue, diagnostics=self.runtime.diagnostics, lifecycle=self.runtime,
         )  # fmt: skip
         self.port = free_port()
@@ -187,9 +201,9 @@ class Lab:
         return self
 
     def instrument(self):
-        """Timestamps taken from outside the product code: when a group was offered, sent and became durable."""
-        owner, queue, publisher = self.runtime.owner, self.runtime.queue, self.runtime.publisher
-        offer, committed, send, publish = owner.commit, queue.on_committed, publisher._send, publisher.offer
+        """Timestamps taken from outside the product code: when a group was offered and became durable."""
+        owner, queue = self.runtime.owner, self.runtime.queue
+        offer, committed = owner.commit, queue.on_committed
 
         def timed_offer(group):
             self.offered[group.group_id] = time.monotonic()
@@ -200,17 +214,7 @@ class Lab:
             self.rows_written += group.record_count()
             return committed(group, result)
 
-        def timed_publish(group):
-            stamps = [o.received_wall for o in group.observations if o.received_wall]
-            self.receipts[group.pub_seq] = (min(stamps) if stamps else None, group.wall, time.time())
-            return publish(group)
-
-        def timed_send(message):
-            if message["type"] == "groups":
-                self.sent[message["first"]] = time.time()
-            return send(message)
-
-        owner.commit, queue.on_committed, publisher.offer, publisher._send = timed_offer, timed_committed, timed_publish, timed_send
+        owner.commit, queue.on_committed = timed_offer, timed_committed
 
     async def sample(self):
         """Every 100 ms: queue depths and how late the event loop woke up; every second: memory."""
@@ -378,24 +382,63 @@ async def outage(lab: Lab, scenario: str, source: str, seconds: float) -> dict:
     }  # fmt: skip
 
 
-async def push_latency(lab: Lab) -> dict:
-    """From the backend's receipt of a group's input to the page having applied and drawn it, in parts."""
-    records = await lab.page.evaluate("window.__push")
-    parts = {"within_the_backend": [], "coalescing_wait": [], "send_to_drawn": [], "receipt_to_drawn": []}
-    for message in records:
-        sent = lab.sent.get(message["first"])
-        if sent is None or message["drawn"] is None:
+def in_ms(values) -> dict:
+    return {k: round(v * 1000, 1) for k, v in spread(values).items() if k != "count"} | {"samples": len(values)}
+
+
+async def display_latency(lab: Lab) -> dict:
+    """The three display measures (方案 D46④, 修复轮05), from what the page itself took.
+
+    - readings: asked for, answered whole, refused by status, given up at the limit, failed on the network; and the
+      time from asking to the answer read and checked.
+    - taken_to_drawn: from the backend taking a reading to the page having drawn it.
+    - receipt_to_drawn: from the backend receiving a NEW observation to the page first drawing a reading that holds
+      it.  New means received (a restatement is no sample) with an id no earlier drawn reading carried - a steady
+      Modbus value is a new observation every round, an OPC UA keep-alive is none.  The first drawn reading is only
+      the baseline; an observation no drawn reading held has no display delay and is not counted at all.
+    A reading during which the page's wall clock was stepped is left out of both delays and counted; a step on the
+    backend's side shows as the owner's `clock_jumps`."""
+    records = await lab.page.evaluate("window.__readings")
+    answered = [r for r in records if r["read"] is not None]
+    refused, gave_up, network, outstanding = {}, 0, 0, 0
+    for r in records:
+        if r["read"] is not None:
             continue
-        for seq in range(message["first"], message["last"] + 1):
-            receipt, built, offered = lab.receipts.get(seq, (None, None, None))
-            if receipt is None:
-                continue
-            drawn = message["drawn"] / 1000
-            parts["within_the_backend"].append(offered - receipt)  # the round's own wait and the assembly of its group
-            parts["coalescing_wait"].append(sent - offered)  # the up-to-100-ms packing, reported apart
-            parts["send_to_drawn"].append(drawn - sent)
-            parts["receipt_to_drawn"].append(drawn - receipt)
-    return {name: {k: round(v * 1000, 1) for k, v in spread(values).items() if k != "count"} | {"groups": len(values)} for name, values in parts.items()}
+        if r["status"] not in (None, 200):
+            refused[str(r["status"])] = refused.get(str(r["status"]), 0) + 1
+        elif r["error"] == "AbortError":
+            gave_up += 1
+        elif r["error"] is not None:
+            network += 1
+        else:
+            outstanding += 1
+    taken_to_drawn, receipt_to_drawn, stepped, seen, baseline = [], [], 0, set(), None
+    for r in sorted((r for r in answered if r["drawn"] is not None), key=lambda r: r["started"]):
+        ids = {obs for obs, _ in r["inputs"]}
+        if baseline is None:  # what the page found on arrival is no display delay of this run
+            baseline, seen = len(ids), set(ids)
+            continue
+        if abs(r["drawnOffset"] - r["offset"]) > 50:  # ms: the wall clock was stepped between asking and drawing
+            stepped += 1
+            seen |= ids
+            continue
+        drawn_wall = (r["drawn"] + r["drawnOffset"]) / 1000
+        if r["taken"] is not None:
+            taken_to_drawn.append(drawn_wall - r["taken"])
+        for obs, received in r["inputs"]:
+            if obs not in seen and received is not None:
+                receipt_to_drawn.append(drawn_wall - received)
+        seen |= ids
+    return {
+        "readings": {
+            "asked": len(records), "answered": len(answered), "refused_by_status": refused, "given_up_at_limit": gave_up,
+            "network_failed": network, "outstanding_at_end": outstanding,
+            "response_ms": in_ms([(r["applied"] - r["started"]) / 1000 for r in answered if r["applied"] is not None]),
+        },
+        "taken_to_drawn_ms": in_ms(taken_to_drawn),
+        "receipt_to_drawn_ms": in_ms(receipt_to_drawn) | {"baseline_observations": baseline or 0},
+        "excluded_wall_clock_steps": stepped,
+    }  # fmt: skip
 
 
 async def main(args):
@@ -410,7 +453,7 @@ async def main(args):
             report["outages"] = [await outage(lab, "disconnect_opcua", "ua_field", args.outage), await outage(lab, "disconnect_modbus", "mb_field", args.outage)]
             await steady(lab, 5)  # the system is running normally again before the end
         if args.browser:
-            report["push_latency_ms"] = await push_latency(lab)
+            report["display"] = await display_latency(lab)
         report["owner_health"] = dict(lab.runtime.owner.health)
         report["finished"] = time.strftime("%Y-%m-%d %H:%M:%S")
     report["stop"] = {
@@ -431,7 +474,7 @@ if __name__ == "__main__":
     parser.add_argument("--steady", type=float, default=60, help="seconds of steady full-scale input")
     parser.add_argument("--outage", type=float, default=0, help="seconds each protocol is cut off (0: skip)")
     parser.add_argument("--stats-interval", type=float, default=5, help="seconds between the heavy database statistics")
-    parser.add_argument("--browser", action="store_true", help="measure push-to-drawn latency in a real Chrome")
+    parser.add_argument("--browser", action="store_true", help="measure the display delays in a real Chrome")
     parser.add_argument("--quiet", action="store_true", help="hold every simulated input constant")
     parser.add_argument("--out", default="", help="folder for the JSON report")
     asyncio.run(main(parser.parse_args()))

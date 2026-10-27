@@ -63,10 +63,90 @@
         ]
       }
     },
+    "/api/snapshot": {
+      "get": {
+        "summary": "Snapshot",
+        "description": "What the live pages show (修复轮05): the owner's whole current state, read at once on the event loop - no\nawait between its parts, no database, no waiting for new data.  Never cached: every reading is a new one.",
+        "operationId": "snapshot_api_snapshot_get",
+        "responses": {
+          "200": {
+            "description": "The whole current state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "taken_time": {
+                      "type": "number",
+                      "description": "When this reading was taken from the owner (the live trend's time); not an observation time"
+                    },
+                    "run_id": {
+                      "type": "string"
+                    },
+                    "channels": {
+                      "additionalProperties": {
+                        "properties": {
+                          "kind": {
+                            "type": "string"
+                          },
+                          "value": {
+                            "type": [
+                              "number",
+                              "null"
+                            ]
+                          },
+                          "valid": {
+                            "type": "boolean"
+                          },
+                          "time": {
+                            "type": [
+                              "number",
+                              "null"
+                            ]
+                          },
+                          "observation_id": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "description": "Inputs only: the observation shown, so a new sample is told from one already shown"
+                          },
+                          "origin": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "description": "Inputs only: a receipt or a restatement of an earlier observation"
+                          }
+                        },
+                        "type": "object",
+                        "description": "One channel; an input also names its current observation."
+                      },
+                      "type": "object",
+                      "description": "Per channel id: value, quality, validity, observation time and fault state, as the page must show them."
+                    },
+                    "status": {
+                      "type": "object",
+                      "description": "The owner's source and fault state."
+                    }
+                  },
+                  "type": "object",
+                  "description": "The whole current state, taken in one synchronous read of the owner (终版 §13.3); memory only, never cached."
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/health": {
       "get": {
         "summary": "Health",
-        "description": "What the self-check and communication pages show besides the live stream: archive, writer queue, negotiated\nparameters, each source's resync and connect-failure counts, the run's communication log and the input table.",
+        "description": "What the self-check and communication pages show besides the live state: archive, writer queue, negotiated\nparameters, each source's resync and connect-failure counts, the run's communication log and the input table.",
         "operationId": "health_api_health_get",
         "responses": {
           "200": {

@@ -19,7 +19,6 @@ from htsg.archive_router import ArchiveRouter
 from htsg.auth import Accounts
 from htsg.history_api import build_history_router
 from htsg.owner import Owner
-from htsg.publisher import Publisher
 from htsg.web import create_web_app
 
 LIMITED = [x.id for x in [*FULL.points, *FULL.derived] if x.high is not None or x.low is not None]
@@ -65,7 +64,7 @@ def test_a_replay_of_more_than_twelve_channels_is_refused_and_twelve_are_answere
 def test_the_page_is_handed_the_cap_the_default_window_and_the_template_of_every_fault(tmp_path):
     accounts = Accounts(tmp_path / "accounts.json")
     viewer = accounts.create("viewer", "viewer")
-    app = create_web_app(config=FULL, accounts=accounts, publisher=Publisher(Owner(FULL, 1000.0, 100.0, run_id="t")))
+    app = create_web_app(config=FULL, accounts=accounts, owner=Owner(FULL, 1000.0, 100.0, run_id="t"))
     with TestClient(app) as client:
         replay = client.get("/api/ui-config", headers={"Authorization": "Bearer " + viewer}).json()["replay"]
     assert replay["max_channels"] == 12

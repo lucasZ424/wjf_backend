@@ -7,7 +7,6 @@ from owner_support import small_config
 from htsg.auth import Accounts
 from htsg.config import Settings
 from htsg.owner import Owner
-from htsg.publisher import Publisher
 from htsg.web import create_web_app
 
 
@@ -16,11 +15,11 @@ def app_for(tmp_path, **settings):
     accounts = Accounts(tmp_path / "accounts.json")
     original = accounts.create("admin", "admin")
     owner = Owner(config, 1000.0, 100.0, run_id="t")
-    return create_web_app(config=config, accounts=accounts, publisher=Publisher(owner)), accounts, original
+    return create_web_app(config=config, accounts=accounts, owner=owner), accounts, original
 
 
 @pytest.mark.parametrize("enabled", [False, True])
-def test_short_admin_credential_is_explicit_and_shared_by_http_and_websocket(tmp_path, enabled):
+def test_short_admin_credential_is_explicit_and_shared_by_every_request(tmp_path, enabled):
     app, accounts, original = app_for(tmp_path, dev_admin_login=enabled)
     headers = {"Authorization": "Bearer admin:admin"}
     with TestClient(app) as client:
@@ -30,9 +29,7 @@ def test_short_admin_credential_is_explicit_and_shared_by_http_and_websocket(tmp
         assert client.get("/api/me").status_code == 401
         if enabled:
             assert response.json() == {"username": "admin", "role": "admin"}
-            with client.websocket_connect("/api/stream") as ws:
-                ws.send_json({"credential": "admin:admin"})
-                assert ws.receive_json()["type"] == "snapshot"
+            assert client.get("/api/snapshot", headers=headers).status_code == 200  # the live reading too
             accounts.uncertain = True
             assert client.get("/api/me", headers=headers).status_code == 401
             accounts.uncertain = False

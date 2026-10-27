@@ -48,17 +48,19 @@ async def test_an_outage_of_either_protocol_is_noticed_and_the_source_comes_back
     assert reports[0]["resyncs"] >= 1, "an OPC UA session that is lost starts over from a new generation"
 
 
-async def test_the_push_latency_is_split_into_its_parts_and_the_packing_wait_is_reported_apart():
+async def test_the_display_delays_are_reported_in_three_parts_and_only_new_samples_count():
+    """修复轮05 (方案 D46④): what the page reads, measured from the page itself - the readings it asked for, a reading
+    taken to drawn, and a NEW observation received to drawn.  The first reading is only the baseline and an
+    observation no reading showed is not counted, so the delay is the system's, never the age of a steady value."""
     async with measure.Lab(stats_interval=2, browser=True) as lab:
         await measure.initial_burst(lab)
         await measure.steady(lab, 8)
-        parts = await measure.push_latency(lab)
-    assert set(parts) == {"within_the_backend", "coalescing_wait", "send_to_drawn", "receipt_to_drawn"}
-    assert all(p["groups"] >= 5 for p in parts.values()), parts
-    # the packing timer runs on the event loop, so 100 ms is what a group waits when the loop is free, not a bound: the
-    # report lists the outliers (330 ms in the long run); here the median wait is held to it and the worst to a sane limit (a short run has too few groups for a percentile)
-    assert parts["coalescing_wait"]["p50"] <= 100 + 40, "a group waits about the 100 ms packing time (plus scheduling)"
-    assert parts["coalescing_wait"]["max"] < 1000
-    assert parts["receipt_to_drawn"]["p50"] >= parts["send_to_drawn"]["p50"] > 0, "the whole path is longer than its last leg"
-    assert parts["receipt_to_drawn"]["max"] < 2000, parts["receipt_to_drawn"]
-    assert parts["within_the_backend"]["min"] >= -1, "a group is never offered before its input was received"
+        display = await measure.display_latency(lab)
+    readings, taken, new = display["readings"], display["taken_to_drawn_ms"], display["receipt_to_drawn_ms"]
+    assert 5 <= readings["answered"] <= readings["asked"], readings
+    assert readings["refused_by_status"] == {} and readings["network_failed"] == 0 and readings["given_up_at_limit"] == 0, readings
+    assert taken["samples"] >= 5 and taken["min"] >= -5, "drawn after it was taken, on one clock"
+    assert new["samples"] > 0 and new["baseline_observations"] > 0, new
+    assert new["p50"] >= taken["p50"], "an observation is received before the reading that shows it is taken"
+    assert new["max"] < 3000, "at most a reading interval and a request after its receipt, under full load"
+    assert display["excluded_wall_clock_steps"] == 0

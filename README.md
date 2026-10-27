@@ -13,13 +13,13 @@
 Windows 单机监测后端和科研前端（七页）。后端主动读取一路 Modbus TCP（8 路 Bridge）和一路 OPC UA 订阅（200 个监控项），在 417 个可查询量（208 路输入、209 路派生量）上运行；浏览器不产生业务数值。热应力是温差—应力的研究代理量，不是实测应力。
 
 ```
-Modbus 轮询 ─┐                                        ┌─ 实时发布（100 ms 合并、整组、版本快照、1 秒心跳）→ 浏览器（七页）
+Modbus 轮询 ─┐                                        ┌─ 当前状态 ← 浏览器每秒读取一次完整状态（七页）
              ├→ 有序入口 → 单一状态所有者 ──────────┤
 OPC UA 订阅 ─┘   (批次/代次/断连事件同序)  (有效性、批末派生、       └─ 有序提交队列 → 归档路由 → PostgreSQL（正常库／移动库／应急库）
                                             故障、段、水位)                          ↑ 历史查询按稳定 ID 合并三库
 ```
 
-- 所有者只处理完整批次，不读时钟、不做 I/O；输入、有效性和这一批算出的结果成组提交、成组发布，页面与数据库不会看到“新输入配旧结果”。
+- 所有者只处理完整批次，不读时钟、不做 I/O；输入、有效性和这一批算出的结果成组提交；页面读取的当前状态在两次批次处理之间整体截取，页面与数据库都不会看到“新输入配旧结果”。
 - 实时状态不等数据库：归档不可用时界面照常更新，缺口被记录、横幅提示，恢复后补发基线并换新有效段。
 - 历史只保存实收值与变化；静止值不按秒重复写入，查询窗口起点处仍有效的值以“保持值”标出并保留原观测时间。
 
@@ -59,11 +59,11 @@ py -3.13 -m venv .venv
 
 配置是严格校验的：旧机制的字段（`stale_after`、`aggregation`、`max_age`、`derivative`、`profiles`、捕获窗口类 `limits`、`sources[].timeout`、`simulator` 源）已删除且不再被接受。队列容量在 `limits.ingress`（入口）、`limits.commit_queue`（提交，默认 400 组）、`limits.ws_queue`（每客户端发送，默认 64）。时限与订阅参数在 `timing`，其含义与取值依据见终版设计第 11 节。极值与普通阈值见[默认极值阈值](dev-docs/默认极值阈值.md)、[默认越限阈值与回差](dev-docs/默认越限阈值与回差.md)，热应力模型见[热应力估算模型](dev-docs/热应力估算模型.md)。配置修改后重启生效，系统不提供在线改通道、阈值或配置的入口。
 
-开发简化登录：`dev_admin_login=true` 时可直接输入 `admin:admin`（HTTP 用 `Authorization: Bearer admin:admin`，WebSocket 用同一凭据），只对应现有且有效的 admin 账户；生产模式拒绝启用。
+开发简化登录：`dev_admin_login=true` 时可直接输入 `admin:admin`（HTTP 用 `Authorization: Bearer admin:admin`），只对应现有且有效的 admin 账户；生产模式拒绝启用。
 
 ## 接口
 
-HTTP 传 `Authorization: Bearer <username:token>`，WebSocket 连接后 5 秒内发送 `{"credential":"username:token"}`（凭据不放 URL）。离线接口定义见 [docs/openapi.json](docs/openapi.json)（`scripts/export_openapi.py` 生成）。
+HTTP 传 `Authorization: Bearer <username:token>`（凭据不放 URL），每个请求都鉴权。离线接口定义见 [docs/openapi.json](docs/openapi.json)（`scripts/export_openapi.py` 生成）。
 
 | 接口 | 用途 |
 | --- | --- |
@@ -76,7 +76,7 @@ HTTP 传 `Authorization: Bearer <username:token>`，WebSocket 连接后 5 秒内
 | `GET /api/replay/basis/{result_id}` | 一个结果的输入依据 |
 | `GET /api/faults` | 已归档的故障记录，按确认时间倒序分页 |
 | `GET/POST /api/admin/accounts`、`DELETE /api/admin/accounts/{username}`、`POST /api/admin/password`、`GET /api/admin/audit` | 账户、管理员自己的口令与管理操作记录（仅管理员；只能建只读账户；变更先写主库，结果未确认时返回 503） |
-| `WS /api/stream` | 先发带发布序号的完整快照，再按序发布整组；慢客户端立即断开，重连取新快照 |
+| `GET /api/snapshot` | 当前完整状态：在状态所有者处一次同步读取 417 个通道（值、质量、有效性、观测时间与观测 ID、故障）及数据源状态，不查库、不缓存；页面每秒读取一次，距最后一次成功满 3 秒即标明中断 |
 
 这是全部的写入口：只读账户的创建与停用，以及管理员改自己的口令。只读用户看不到管理页的数据，对 `/api/admin/*` 得 403。
 

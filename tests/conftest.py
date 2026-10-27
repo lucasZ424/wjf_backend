@@ -1,4 +1,8 @@
 import json
+import sys
+import time
+import warnings
+from contextlib import contextmanager
 from pathlib import Path
 from uuid import uuid4
 
@@ -47,11 +51,53 @@ def archive_db_factory():
 # Playwright's synchronous API keeps an event loop running in the test thread for as long as it is open, and no
 # async test can run meanwhile ("Runner.run() cannot be called from a running event loop").  The browser therefore
 # lives for ONE module: tests that need it sit in their own modules, and the async tests of the rest still run.
+@contextmanager
+def proactor_close_gives_up(seconds=15.0):
+    """修复轮05 (G2): on Windows, closing an event loop waits for every cancelled I/O operation to complete, and one on
+    the Playwright driver's pipe sometimes never does - twice the whole run hung in this fixture's teardown.  For the
+    test process only: wait at most `seconds`, then keep that proactor alive with whatever the OS may still write into
+    (freeing it is the crash the wait prevents) until the process ends, and say so.  No loop of the product is here."""
+    if sys.platform != "win32":
+        yield
+        return
+    from asyncio import windows_events
+
+    original = windows_events.IocpProactor.close
+
+    def close(self):
+        if self._iocp is None:
+            return
+        for fut, _ov, _obj, _callback in list(self._cache.values()):
+            if not fut.cancelled() and not isinstance(fut, windows_events._WaitCancelFuture):
+                try:
+                    fut.cancel()
+                except OSError:
+                    pass
+        deadline = time.monotonic() + seconds
+        while self._cache and time.monotonic() < deadline:
+            self._poll(1.0)
+        if self._cache:
+            self.close = lambda: None  # not even at garbage collection
+            KEPT.append(self)
+            warnings.warn(f"an event loop left {len(self._cache)} I/O operation(s) pending after {seconds:.0f} s; not waiting longer")
+            return
+        original(self)
+
+    windows_events.IocpProactor.close = close
+    try:
+        yield
+    finally:
+        windows_events.IocpProactor.close = original
+
+
+KEPT = []  # proactors given up on: alive until the process ends
+
+
 @pytest.fixture(scope="module")
 def browser():
     from playwright.sync_api import sync_playwright
 
-    with sync_playwright() as playwright:
+    with proactor_close_gives_up(), sync_playwright() as playwright:
         chrome = playwright.chromium.launch(channel="chrome", headless=True)
         yield chrome
         chrome.close()

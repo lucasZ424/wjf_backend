@@ -1,8 +1,8 @@
 """The web application of the batch-driven chain (方案模块 G).
 
-It only assembles parts that already exist: the pages, identity, the UI configuration, the realtime socket of
-`stream_api` and the history routes of `history_api`.  The caller builds the owner, publisher, archive and
-accounts and hands them in; nothing here reads a clock or touches a protocol.
+It only assembles parts that already exist: the pages, identity, the UI configuration, the owner's current state
+for the live pages and the history routes of `history_api`.  The caller builds the owner, archive and accounts and
+hands them in; nothing here touches a protocol.
 """
 
 from __future__ import annotations
@@ -22,7 +22,6 @@ from pydantic import BaseModel, ConfigDict
 
 from . import history
 from .history_api import build_history_router
-from .stream_api import build_stream_router
 
 STATIC = Path(__file__).with_name("static")
 
@@ -120,7 +119,28 @@ HEALTH_SCHEMA = _object(
 )
 
 
-def create_web_app(*, config, accounts, publisher, archive_router=None, queue=None, diagnostics=None, lifecycle=None) -> FastAPI:
+SNAPSHOT_SCHEMA = _object(
+    "The whole current state, taken in one synchronous read of the owner (终版 §13.3); memory only, never cached.",
+    {
+        "taken_time": {**_NUMBER, "description": "When this reading was taken from the owner (the live trend's time); not an observation time"},
+        "run_id": _TEXT,
+        "channels": _object(
+            "Per channel id: value, quality, validity, observation time and fault state, as the page must show them.",
+            additionalProperties=_object(
+                "One channel; an input also names its current observation.",
+                {
+                    "kind": _TEXT, "value": {**_NUMBER_N}, "valid": _FLAG, "time": {**_NUMBER_N},
+                    "observation_id": {**_TEXT_N, "description": "Inputs only: the observation shown, so a new sample is told from one already shown"},
+                    "origin": {**_TEXT_N, "description": "Inputs only: a receipt or a restatement of an earlier observation"},
+                },
+            ),
+        ),
+        "status": _object("The owner's source and fault state."),
+    },
+)
+
+
+def create_web_app(*, config, accounts, owner, archive_router=None, queue=None, diagnostics=None, lifecycle=None) -> FastAPI:
     """`queue` is the archive writer queue (for its counters); `diagnostics()` returns what only the acquisition
     side knows, e.g. the OPC UA parameters the server really granted (`ua.Negotiated.as_dict()` per source).
     `lifecycle` (the `Runtime`) is started before the application takes requests and stopped after it has stopped."""
@@ -128,12 +148,9 @@ def create_web_app(*, config, accounts, publisher, archive_router=None, queue=No
     async def lifespan(app):
         if lifecycle is not None:
             await lifecycle.start()
-        task = asyncio.create_task(publisher.run())  # the realtime packing and heartbeat clock
         try:
             yield
         finally:
-            task.cancel()
-            await asyncio.gather(task, return_exceptions=True)
             if lifecycle is not None:
                 await lifecycle.stop()
 
@@ -167,9 +184,6 @@ def create_web_app(*, config, accounts, publisher, archive_router=None, queue=No
         if identity["role"] != "admin":
             raise HTTPException(403, "Administrator required")
         return identity
-
-    def account_ok(identity):
-        return not accounts.uncertain and accounts.users.get(identity["username"], {}).get("active", False)
 
     limited = [x.id for x in [*config.points, *config.derived] if x.high is not None or x.low is not None]
     replay = {  # 修复轮03: what a fault brings to the history page, from the configuration as it was started
@@ -206,20 +220,29 @@ def create_web_app(*, config, accounts, publisher, archive_router=None, queue=No
             "timing": {
                 name: getattr(timing, name)
                 for name in (
-                    "push_heartbeat", "ui_stall_notice", "push_coalesce", "ua_data_validity", "ua_alarm_seconds",
+                    "ui_poll_interval", "ui_poll_timeout", "ui_stall_notice", "ua_data_validity", "ua_alarm_seconds",
                     "modbus_alarm_seconds", "fault_confirm_seconds", "fault_buffer_limit", "watermark_interval",
                 )
             },
         }
 
     @app.get(
+        "/api/snapshot", dependencies=[Depends(user)],
+        responses={200: {"description": "The whole current state", "content": {"application/json": {"schema": SNAPSHOT_SCHEMA}}}},
+    )  # fmt: skip
+    async def snapshot():
+        """What the live pages show (修复轮05): the owner's whole current state, read at once on the event loop - no
+        await between its parts, no database, no waiting for new data.  Never cached: every reading is a new one."""
+        body = {"taken_time": time.time(), **owner.snapshot()}
+        return JSONResponse(body, headers={"Cache-Control": "no-store"})  # serialized as it is, not walked field by field
+
+    @app.get(
         "/api/health", dependencies=[Depends(user)],
         responses={200: {"description": "Health and communication state", "content": {"application/json": {"schema": HEALTH_SCHEMA}}}},
     )  # fmt: skip
     async def health():
-        """What the self-check and communication pages show besides the live stream: archive, writer queue, negotiated
+        """What the self-check and communication pages show besides the live state: archive, writer queue, negotiated
         parameters, each source's resync and connect-failure counts, the run's communication log and the input table."""
-        owner = publisher.owner
         archive = {"sources": {sid: owner.history_status(sid) for sid in owner.sources}, "routing": None, "health": {}}
         if archive_router is not None:
             archive["routing"], archive["health"] = archive_router.mode, dict(archive_router.health)
@@ -270,7 +293,6 @@ def create_web_app(*, config, accounts, publisher, archive_router=None, queue=No
             raise HTTPException(503, "No archive: management records are not kept")
         return await asyncio.to_thread(archive_router.primary.audit_history)
 
-    app.include_router(build_stream_router(publisher, verify, account_ok, config))
     if archive_router is not None:
         app.include_router(build_history_router(archive_router, user, config))
     return app

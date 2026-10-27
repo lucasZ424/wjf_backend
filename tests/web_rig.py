@@ -1,7 +1,7 @@
 """A running web application for real-browser tests (方案模块 G).
 
-The owner, the publisher and the WebSocket live in a server thread exactly as they will in production; the test
-thread only drives them through `call` and looks at the page with a real browser.  Data is produced by the rig's
+The owner and the web application live in a server thread exactly as they will in production; the test thread
+only drives them through `call` and looks at the page with a real browser, which reads the owner's current state.  Data is produced by the rig's
 own feeder (a steady Modbus round and an OPC UA keep-alive every second), and everything else is injected by the
 test, so a browser test knows what the page must show.
 """
@@ -28,7 +28,6 @@ from htsg.archive_router import ArchiveRouter
 from htsg.auth import Accounts
 from htsg.commitq import CommitQueue
 from htsg.owner import Owner
-from htsg.publisher import Publisher
 from htsg.web import create_web_app
 
 UA, MB = "ua_field", "mb_field"
@@ -133,11 +132,7 @@ class WebRig:
                 )  # fmt: skip
                 commit = self.queue.offer
                 writer = asyncio.create_task(self.queue.run())
-            self.owner = Owner(
-                self.config, now, mono, commit=commit, publish=lambda group: self.publisher.offer(group),
-                run_id=self.run_id,
-            )  # fmt: skip
-            self.publisher = Publisher(self.owner)
+            self.owner = Owner(self.config, now, mono, commit=commit, run_id=self.run_id)
             if commit:
                 self.owner.start(now, mono)
             for source in (MB, UA):
@@ -145,7 +140,7 @@ class WebRig:
             self.ua(list(nominal().items()))
             self.round()
             app = create_web_app(
-                config=self.config, accounts=self.accounts, publisher=self.publisher,
+                config=self.config, accounts=self.accounts, owner=self.owner,
                 archive_router=self.router, queue=self.queue, diagnostics=lambda: self.diagnostics,
                 lifecycle=self.acquisition,
             )  # fmt: skip
@@ -209,18 +204,6 @@ class WebRig:
             return fn(*args, **kwargs)
 
         return asyncio.run_coroutine_threadsafe(run(), self.loop).result(10)
-
-    def drop_clients(self):
-        """Cut every connected client off the way an overflow does."""
-
-        def cut():
-            for deliver in list(self.publisher.subscribers):
-                client = getattr(deliver, "__self__", None)
-                if client is not None:
-                    client.lost = True
-                    client.ready.set()
-
-        self.call(cut)
 
     def seed_faults(self, faults):
         """Write fault records straight into the archive: (point, direction, confirmed_wall, value) tuples."""

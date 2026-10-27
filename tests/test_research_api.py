@@ -7,7 +7,6 @@ from htsg.archive_router import ArchiveRouter
 from htsg.auth import Accounts
 from htsg.config import Settings, load_settings
 from htsg.owner import Owner
-from htsg.publisher import Publisher
 from htsg.web import create_web_app
 
 
@@ -30,7 +29,7 @@ def test_real_account_changes_are_audited_and_viewer_cannot_control(archive_db_f
     viewer = {"Authorization": "Bearer " + accounts.create("viewer", "viewer")}
     accounts.persist = router.primary.sync_accounts  # what the runtime does at start
     accounts.reconcile(router.primary)
-    app = create_web_app(config=config, accounts=accounts, publisher=Publisher(Owner(config, 1000.0, 100.0, run_id="t")), archive_router=router)
+    app = create_web_app(config=config, accounts=accounts, owner=Owner(config, 1000.0, 100.0, run_id="t"), archive_router=router)
     with TestClient(app) as client:
         assert client.get("/").status_code == 200
         assert client.get("/static/app.js").status_code == 200

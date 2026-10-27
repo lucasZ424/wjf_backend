@@ -11,26 +11,21 @@ from test_archive_router import Disks
 from htsg.archive_router import ArchiveRouter
 from htsg.auth import Accounts
 from htsg.owner import Owner
-from htsg.publisher import Publisher
 from htsg.runtime import Runtime
 from htsg.web import create_web_app
 
 
-def test_waiting_websocket_does_not_deliver_data_after_account_state_becomes_uncertain(tmp_path):
-    from starlette.websockets import WebSocketDisconnect
-
+def test_no_reading_is_given_once_the_account_state_becomes_uncertain(tmp_path):
+    """The live pages authenticate every reading (修复轮05): once the account state is unsettled, the very next reading
+    is refused - there is no open channel left that would have to be cut off."""
     config = small_config()
     accounts = Accounts(tmp_path / "accounts.json")
-    credential = accounts.create("admin", "admin")
-    app = create_web_app(config=config, accounts=accounts, publisher=Publisher(Owner(config, 1000.0, 100.0, run_id="t")))
+    headers = {"Authorization": "Bearer " + accounts.create("admin", "admin")}
+    app = create_web_app(config=config, accounts=accounts, owner=Owner(config, 1000.0, 100.0, run_id="t"))
     with TestClient(app) as client:
-        with client.websocket_connect("/api/stream") as ws:
-            ws.send_json({"credential": credential})
-            assert ws.receive_json()["type"] == "snapshot"
-            accounts.uncertain = True
-            with pytest.raises(WebSocketDisconnect) as closed:
-                ws.receive_json()  # the heartbeat finds the account uncertain and nothing is sent
-            assert closed.value.code == 1008
+        assert client.get("/api/snapshot", headers=headers).status_code == 200
+        accounts.uncertain = True
+        assert client.get("/api/snapshot", headers=headers).status_code == 401
 
 
 class AccountStore:

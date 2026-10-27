@@ -1280,9 +1280,9 @@ class Owner:
     def channel_views(self) -> dict[str, dict]:
         """How every channel stands now, as a client must show it.
 
-        The snapshot and the per-group changes both come from this one definition, so a client that applies
-        groups on top of a snapshot cannot drift from the owner.  Validity is decided here, never guessed by
-        the client from lifecycle records.
+        What a page reads comes from this one definition, taken whole between two batches, so a page cannot show
+        a new input beside an old result.  Validity is decided here, never guessed by the page from lifecycle
+        records.
         """
         views = {}
         for pid, ps in self.points.items():
@@ -1294,6 +1294,7 @@ class Owner:
                 "quality": obs.quality if obs else None,
                 "status_code": obs.status_code if obs else None,
                 "time": obs.received_wall if obs else None,  # the observation time, also for a restatement
+                "observation_id": obs.id if obs else None,  # 修复轮05: tells a new sample from one already shown
                 "origin": obs.origin if obs else None,
                 "asserted_wall": obs.asserted_wall if obs else None,
                 "extreme": bool(obs and obs.extreme),
@@ -1378,10 +1379,10 @@ class Owner:
         }
 
     def snapshot(self) -> dict:
-        """The whole realtime state at the version `pub_seq`; groups with a higher number continue from it."""
+        """The whole current state as the live pages read it (终版 §13.3): one synchronous read, whole or nothing.  No
+        publish sequence: a page replaces what it shows, it continues nothing."""
         return {
             "run_id": self.run_id,
-            "pub_seq": self.pub_seq,
             "channels": self.channel_views(),
             "status": self.status(),
         }

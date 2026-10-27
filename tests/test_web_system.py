@@ -19,7 +19,6 @@ from web_rig import WebRig, nominal
 from htsg.auth import Accounts
 from htsg.config import Settings
 from htsg.owner import Owner
-from htsg.publisher import Publisher
 from htsg.web import create_web_app
 
 NAMES = ["系统总览", "水冷壁应变场", "热应力分析", "历史查询", "系统自检", "通信·日志", "系统管理·权限"]
@@ -46,8 +45,8 @@ def test_the_seven_pages_keep_receiving_groups_when_switched(page, archive_rig):
             page.get_by_role("button", name=name).click()
             assert page.locator(".page-heading h2").inner_text() == name, "a page is known by its title; no page number is shown"
             archive_rig.call(archive_rig.ua, [(point, 470.0 + index)])
-            seq = archive_rig.call(lambda: archive_rig.owner.pub_seq)
-            page.wait_for_function("seq => Number(document.querySelector('#stream-time').textContent.split('序号 ')[1]) >= seq", arg=seq)
+            changed = time.time()  # a reading taken after this holds the change
+            page.wait_for_function("t => Number(document.querySelector('#stream-time').dataset.taken) >= t", arg=changed)
             assert page.errors == [], f"a live update after switching to {name} must not touch removed DOM"
     finally:
         archive_rig.call(archive_rig.ua, [(point, nominal()[point])])
@@ -232,7 +231,7 @@ def test_a_database_failure_while_changing_an_account_is_reported_as_unconfirmed
     accounts = Accounts(tmp_path / "accounts.json")
     admin = accounts.create("admin", "admin")
     owner = Owner(small_config(), 1000.0, 100.0, run_id="t")
-    app = create_web_app(config=owner.config, accounts=accounts, publisher=Publisher(owner))
+    app = create_web_app(config=owner.config, accounts=accounts, owner=owner)
 
     def down(*args):
         raise psycopg.OperationalError("database down")

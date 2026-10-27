@@ -20,7 +20,6 @@ from htsg import records as r
 from htsg.auth import Accounts
 from htsg.config import load_settings
 from htsg.owner import Owner
-from htsg.publisher import Publisher
 from htsg.web import create_web_app
 
 WALL0, MONO0 = 1000.0, 100.0
@@ -42,7 +41,7 @@ class Rig:
         self.negotiated = negotiated if negotiated is not None else {"ua": {"publish_interval": 1.0, "keepalive_count": 2}}
         lifecycle = SimpleNamespace(health={"fatal": None}, connect_failures=lambda: dict(failures or {}))
         self.app = create_web_app(
-            config=self.owner.config, accounts=self.accounts, publisher=Publisher(self.owner),
+            config=self.owner.config, accounts=self.accounts, owner=self.owner,
             diagnostics=lambda: self.negotiated, lifecycle=lifecycle,
         )  # fmt: skip
 
@@ -222,7 +221,7 @@ def build_documented_app(tmp_path):
     config = load_settings(ROOT / "config" / "development.json")
     owner = Owner(config, 0.0, 0.0, run_id="openapi")
     return create_web_app(
-        config=config, accounts=Accounts(tmp_path / "accounts.json"), publisher=Publisher(owner),
+        config=config, accounts=Accounts(tmp_path / "accounts.json"), owner=owner,
         archive_router=SimpleNamespace(),
     )  # fmt: skip
 
@@ -232,7 +231,8 @@ def test_no_path_was_added_and_the_old_communications_interface_did_not_come_bac
     assert paths == {
         "/live", "/api/me", "/api/ui-config", "/api/health", "/api/admin/accounts", "/api/admin/accounts/{username}",
         "/api/admin/password", "/api/admin/audit", "/api/channels", "/api/faults", "/api/replay", "/api/replay/basis/{result_id}",
-    }  # fmt: skip  (/api/admin/password: the administrator's own password, 修复轮02)
+        "/api/snapshot",
+    }  # fmt: skip  (/api/admin/password: the administrator's own password, 修复轮02; /api/snapshot: the live reading, 修复轮05)
     assert not [p for p in paths if "communication" in p or "cursor" in p]
 
 

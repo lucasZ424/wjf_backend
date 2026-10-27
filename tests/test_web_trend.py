@@ -5,6 +5,7 @@ Real Chrome against the running application.  Why it matters: three curves on on
 normalising, mixing sources or joining across what is not known, and must say that it is an estimate.
 """
 
+import json
 import time
 
 import pytest
@@ -12,6 +13,7 @@ from browser_support import sign_in
 from web_rig import UA, nominal
 
 PAIR = 2  # the third pair of the configuration
+READING = "**/api/snapshot"
 
 
 @pytest.fixture
@@ -34,7 +36,7 @@ def plot(page):
     return page.evaluate("() => { const p = document.querySelector('#trend-canvas').plot; return p ? JSON.parse(JSON.stringify(p)) : null; }")
 
 
-def drive(rig, pair, inner, outer, pause=1.1):
+def drive(rig, pair, inner, outer, pause=2.1):  # longer than one reading interval: every value is read
     rig.call(rig.ua, [(pair["inner"], inner), (pair["outer"], outer)])
     time.sleep(pause)
 
@@ -120,19 +122,16 @@ def test_an_invalid_period_and_a_lost_connection_are_not_joined_by_a_line(page, 
         assert gap is not None and points[gap + 1]["valid"], f"panel {index} records the invalid period"
         inside = cyan_and_red(page, index, points[gap]["t"], points[gap + 1]["t"])
         assert inside["cyan"] == 0 and inside["red"] > 0, f"panel {index}: nothing drawn through it, a mark instead: {inside}"
-    # the connection itself: what happened while the page was cut off is unknown.  The server refuses new
-    # connections for a while so that the unknown stretch is wide enough to look at.
-    refuse = lambda: (_ for _ in ()).throw(RuntimeError("CLIENT_LIMIT"))  # noqa: E731
-    real = rig.publisher.connect
-    rig.call(setattr, rig.publisher, "connect", refuse)
+    # the readings themselves: what happened while the page could not read is unknown.  The readings fail for a
+    # while (修复轮05: in the browser, the backend is untouched) so that the unknown stretch is wide enough to look at.
+    page.route(READING, lambda route: route.abort())
     try:
-        rig.drop_clients()
-        page.wait_for_function("document.querySelector('#connection').textContent === '重连中'")
-        time.sleep(4.5)
+        page.wait_for_function("document.querySelector('#connection').textContent === '数据中断'", timeout=8000)
+        page.wait_for_timeout(1500)
     finally:
-        rig.call(setattr, rig.publisher, "connect", real)
+        page.unroute(READING)
     page.wait_for_function("document.querySelector('#connection').textContent === '实时连接'", timeout=10000)
-    time.sleep(1.2)
+    page.wait_for_timeout(1200)
     for index in range(3):
         points = plot(page)["panels"][index]["points"]
         cut = [i for i, p in enumerate(points) if not p["valid"]][-1]
@@ -140,7 +139,7 @@ def test_an_invalid_period_and_a_lost_connection_are_not_joined_by_a_line(page, 
         assert points[cut + 1]["valid"] and points[cut + 1]["t"] - points[cut]["t"] > 4, "the unknown stretch is real"
         inside = cyan_and_red(page, index, points[cut]["t"], points[cut + 1]["t"])
         assert inside["cyan"] == 0 and inside["red"] > 0, f"panel {index}: no line across the cut-off: {inside}"
-    assert page.errors == []
+    assert [e for e in page.errors if not e.startswith("Failed to load resource")] == [], "only the injected failures"
 
 
 def test_the_cursor_reads_the_value_in_effect_in_every_panel_at_one_instant(page, rig, pair):
@@ -161,6 +160,74 @@ def test_the_cursor_reads_the_value_in_effect_in_every_panel_at_one_instant(page
     assert "不代表同步采样" in text and "负荷" in text and "内外壁温差" in text and "热应力代理" in text
     page.mouse.move(box["x"] + 5, box["y"] + 5)  # outside the plot area: no cursor
     page.wait_for_function("!document.querySelector('#trend-readout').textContent.includes('游标')")
+
+
+def rewrite_readings(page, change):
+    """Every reading the page gets passes through `change(body)` first; the times the readings were taken are returned."""
+    taken = []
+
+    def through(route):
+        response = route.fetch()
+        body = response.json()
+        change(body)
+        taken.append(body["taken_time"])
+        route.fulfill(response=response, body=json.dumps(body))
+
+    page.route(READING, through)
+    return taken
+
+
+def delta_points(page):
+    return plot(page)["panels"][1]["points"]
+
+
+def test_each_reading_is_recorded_at_the_time_it_was_taken_not_at_the_observation_time(page, rig, pair):
+    """修复轮05 (终版 §13.3): the live trend is what the page saw and when; it does not rebuild when things happened."""
+    open_trend(page, rig)
+    taken = rewrite_readings(page, lambda body: None)
+    observed = time.time()
+    rig.call(rig.ua, [(pair["inner"], 491.0), (pair["outer"], 450.0)])  # +41
+    page.wait_for_function("document.querySelector('#trend-latest').textContent.includes('+41')")
+    point = next(p for p in delta_points(page) if p["valid"] and p["v"] == 41.0)
+    assert point["t"] in taken, "drawn at the time of the reading that showed it"
+    assert point["t"] > observed, "not drawn back to the observation"
+
+
+def test_a_value_that_stays_the_same_is_one_point_however_many_readings_show_it(page, rig, pair):
+    open_trend(page, rig)
+    taken = rewrite_readings(page, lambda body: None)
+    rig.call(rig.ua, [(pair["inner"], 493.0), (pair["outer"], 450.0)])  # +43
+    page.wait_for_function("document.querySelector('#trend-latest').textContent.includes('+43')")
+    count, seen = len(delta_points(page)), len(taken)
+    page.wait_for_timeout(3500)
+    assert len(taken) - seen >= 3, "several readings showed it"
+    assert len(delta_points(page)) == count, "... and it is still one point"
+
+
+def test_a_new_run_starts_a_new_stretch_even_with_the_same_value(page, rig, pair):
+    open_trend(page, rig)
+    rig.call(rig.ua, [(pair["inner"], 497.0), (pair["outer"], 450.0)])  # +47
+    page.wait_for_function("document.querySelector('#trend-latest').textContent.includes('+47')")
+    rewrite_readings(page, lambda body: body.update(run_id="another-run"))  # the backend restarted
+    page.wait_for_timeout(2500)
+    points = delta_points(page)
+    last = max(i for i, p in enumerate(points) if p["valid"] and p["v"] == 47.0)
+    assert last > 0 and not points[last - 1]["valid"], "a new run is not joined to the old one by a line"
+    assert any(p["valid"] and p["v"] == 47.0 for p in points[: last - 1]), "the same value before the restart"
+
+
+def test_a_reading_time_that_goes_back_starts_the_trend_over(page, rig, pair):
+    open_trend(page, rig)
+    rig.call(rig.ua, [(pair["inner"], 499.0), (pair["outer"], 450.0)])  # +49
+    page.wait_for_function("document.querySelector('#trend-latest').textContent.includes('+49')")
+    before = {p["t"] for p in delta_points(page)}
+    rewrite_readings(page, lambda body: body.update(taken_time=body["taken_time"] - 3600))  # the clock went back
+    page.wait_for_timeout(2200)
+    page.unroute(READING)  # ... and forward again
+    page.wait_for_timeout(2200)
+    after = [p["t"] for p in delta_points(page)]
+    assert not before & set(after), "nothing from before the clock went back is drawn again"
+    assert after == sorted(after), "the points stay in time order"
 
 
 def test_custom_history_is_only_on_page_five(page, rig):
