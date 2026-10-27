@@ -175,6 +175,16 @@ def test_five_consecutive_failures_flag_persistent_resync_but_recovery_keeps_goi
     assert b.settle(60.0) and not b.persistent
 
 
+def test_a_day_long_outage_keeps_retrying_every_30_s_even_with_a_configured_initial_interval():
+    """修复轮04 (审核第4条): a configured backoff_initial is a float, and 2**failures overflowed at the 1025th retry - about
+    8.5 h of outage at 30 s - which ended the acquisition task.  Recovery must go on at the cap for as long as it takes."""
+    b = Backoff(Timing(backoff_initial=1.0))
+    assert isinstance(b.timing.backoff_initial, float)
+    delays = [b.next_delay() for _ in range(3000)]  # 25 h at 30 s
+    assert delays[:6] == [1, 2, 4, 8, 16, 30] and set(delays[5:]) == {30}
+    assert b.failures == 3000 and b.persistent, "the count goes on, so persistent resync stays reported"
+
+
 # ---------------------------------------------------------------------------- D18
 
 

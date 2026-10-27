@@ -23,7 +23,7 @@ class Backoff:
     def next_delay(self) -> float:
         """A recovery cycle failed (or a healthy period ended): delay before the next attempt."""
         t = self.timing
-        delay = min(t.backoff_initial * 2**self.failures, t.backoff_max)
+        delay = min(t.backoff_initial * 2 ** min(self.failures, 30), t.backoff_max)  # 修复轮04: a long outage never overflows
         self.failures += 1
         self.healthy_since = None
         return delay
