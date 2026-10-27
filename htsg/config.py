@@ -325,13 +325,6 @@ class Settings(StrictModel):
                 raise ValueError("additive calculation requires consistent input units")
             units[derived.id] = derived.unit
             known.add(derived.id)
-        if self.mode == "development":
-            paths = [self.storage.primary_path, self.storage.emergency_path]
-            if self.storage.external_enabled:
-                paths.append(self.storage.external_path)
-            for path in paths:
-                if not path.replace("\\", "/").upper().startswith("D:/"):
-                    raise ValueError("development databases must be on D:")
         return validate_research(self)
 
     @property

@@ -62,8 +62,6 @@ def validate_external_binding(external: ArchiveStore, config: Settings, primary,
     volume = _volume(path)
     if volume != _volume(config.storage.external_path):
         raise ExternalBindingError("External database is not on its configured volume")
-    if config.mode == "development" and volume != "d:":
-        raise ExternalBindingError("Development external database must be on D:")
     for peer in (primary, emergency):
         peer_path, peer_name = database_identity(peer)
         if (path, name) == (peer_path, peer_name):

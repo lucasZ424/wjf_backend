@@ -1,4 +1,5 @@
 import json
+from contextlib import nullcontext
 from types import SimpleNamespace
 
 import pytest
@@ -27,11 +28,32 @@ def test_external_storage_needs_explicit_path_before_enabling():
         Storage(external_enabled=True)
 
 
-def test_development_external_database_stays_on_d():
-    with pytest.raises(ValidationError, match="must be on D"):
-        Settings(storage=Storage(external_enabled=True, external_path="C:/external"))
-    config = Settings(storage=Storage(external_enabled=True, external_path="D:/external"))
-    assert config.storage.external_enabled
+def test_a_development_removable_database_may_be_on_another_drive():
+    """修复轮06: the rehearsal's removable database is on E:; the configuration takes it in development too."""
+    config = Settings(storage=Storage(external_enabled=True, external_path="E:/external"))
+    assert config.storage.external_path == "E:/external"
+
+
+def test_the_removable_binding_check_still_wants_its_own_volume_but_no_longer_d(monkeypatch):
+    """修复轮06: lifting "only on D:" leaves the rest of the check: the data must really be on the configured volume
+    and must not be one of the other databases."""
+    from htsg import archive_router
+
+    class Store:
+        def __init__(self, role):
+            self.role, self._local = role, SimpleNamespace()
+
+        def session(self):
+            return nullcontext(self)
+
+    places = {"external": r"e:\htsg\external\pgdata", "primary": r"d:\htsg\primary\pgdata", "emergency": r"c:\htsg\emergency\pgdata"}
+    monkeypatch.setattr(archive_router, "database_identity", lambda store: (places[store.role], "htsg"))
+    storage = {"primary_path": "D:/HTSG/primary", "emergency_path": "C:/HTSG/emergency", "external_enabled": True}
+    config = Settings(storage=Storage(**storage, external_path="E:/HTSG/external"))
+    archive_router.validate_external_binding(Store("external"), config, Store("primary"), Store("emergency"))
+    elsewhere = Settings(storage=Storage(**storage, external_path="F:/HTSG/external"))
+    with pytest.raises(archive_router.ExternalBindingError, match="configured volume"):
+        archive_router.validate_external_binding(Store("external"), elsewhere, Store("primary"), Store("emergency"))
 
 
 def test_external_switch_precedes_or_coincides_with_emergency():

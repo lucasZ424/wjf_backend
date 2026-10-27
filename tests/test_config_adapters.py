@@ -25,11 +25,11 @@ def test_production_cannot_enable_development_login_and_the_simulator_kind_is_go
         Settings.model_validate(data)
 
 
-def test_development_database_on_c_is_rejected():
+def test_a_development_database_on_c_is_accepted():
+    """修复轮06: lifted - the rehearsal's emergency database is on C:."""
     data = small_config().model_dump()
-    data["storage"]["primary_path"] = "C:/bad"
-    with pytest.raises(ValidationError):
-        Settings.model_validate(data)
+    data["storage"]["primary_path"] = "C:/HTSG/primary"
+    assert Settings.model_validate(data).storage.primary_path == "C:/HTSG/primary"
 
 
 def test_modbus_decode_handles_explicit_word_order_and_conversion():
