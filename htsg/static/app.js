@@ -276,7 +276,7 @@ function plotTrend(canvas, panels, now) {
 
 // The replay settings.  A locked fault only fills the centre time and the default channel; every field stays
 // editable, and a query never needs a fault.
-const replay = {fault: null, center: null, seconds: 300, points: [], chart: null};
+const replay = {fault: null, center: null, seconds: null, points: [], chart: null};  // the default window comes with ui-config
 const faults = {items: [], cursor: null, more: false, loading: false, epoch: 0, partial: false, error: "", query: ""};
 
 const stamp = seconds => Number.isFinite(seconds) ? new Date(seconds * 1000).toLocaleString("zh-CN", {hour12: false}) : "—";
@@ -310,8 +310,9 @@ function historyHtml() {
         </div>
         <div class="controls"><label>查看通道<input id="replay-filter" placeholder="检索名称或编号" autocomplete="off"></label></div>
         <select id="replay-points" multiple size="7" aria-label="查看通道"></select>
+        <p id="replay-limit" class="muted"></p>
         <div class="controls"><button id="replay-run" class="primary">查询</button><button id="replay-clear">清空设置</button></div>
-        <p class="chart-caption">窗口取中心时间前后各半个窗口；可同时查看同一窗口内其他已保存通道。选择故障只填入时间点和默认通道，也可全部手动填写。</p>
+        <p class="chart-caption">窗口取中心时间前后各半个窗口。选择故障会填入时间点、默认窗口长度，以及该故障的计算链和工况量；也可全部手动填写。</p>
       </div>
       <div class="card" id="replay-board"><h3>回溯结果</h3><div id="replay-result"></div></div>
     </section>
@@ -340,11 +341,23 @@ function mountHistory() {
     replay.seconds = Number(event.target.value);
     saveReplay();
   };
-  $("replay-points").onchange = event => { replay.points = [...event.target.selectedOptions].map(o => o.value); saveReplay(); };
+  $("replay-points").onchange = event => {
+    const chosen = [...event.target.selectedOptions].map(o => o.value), most = state.config.replay.max_channels;
+    if (chosen.length > most) {  // the backend refuses more (修复轮03): the choice stays as it was
+      for (const o of event.target.options) o.selected = replay.points.includes(o.value);
+      drawLimit(`一次最多查看 ${most} 个通道：这次选了 ${chosen.length} 个，未采用。`);
+      return;
+    }
+    replay.points = chosen;
+    saveReplay();
+    drawLimit();
+  };
   $("replay-run").onclick = runReplay;
   $("replay-clear").onclick = () => { clearReplay(); syncSettings(); drawFaults(); drawReplay(); };
   $("replay-lock").onclick = event => { if (event.target.id === "unlock") { replay.fault = null; saveReplay(); drawLock(); drawFaults(); } };
+  if (!replay.seconds) replay.seconds = state.config.replay.default_seconds;
   syncSettings();
+  drawLimit();
   loadFaults(true);
   drawReplay();
   if (replayReady()) runReplay();  // entering the page asks the database again with the kept settings
@@ -354,6 +367,10 @@ function syncSettings() {
   $("replay-seconds").value = replay.seconds;
   for (const o of $("replay-points").options) o.selected = replay.points.includes(o.value);
   drawLock();
+}
+function drawLimit(warning = "") {
+  $("replay-limit").textContent = warning || `一次最多查看 ${state.config.replay.max_channels} 个通道。`;
+  $("replay-limit").className = warning ? "log-error" : "muted";
 }
 function drawLock() {
   const f = replay.fault;
@@ -366,7 +383,9 @@ function selectFault(id) {
   if (!f) return;
   replay.fault = f;
   replay.center = f.confirmed_wall;
-  replay.points = [f.point_id];
+  replay.seconds = state.config.replay.default_seconds;  // 修复轮03: a fault brings the default window and its fixed template
+  replay.points = [...(state.config.replay.templates[f.point_id] || [f.point_id])];
+  replay.chart = f.point_id;
   syncSettings();
   drawFaults();
   runReplay();
@@ -411,7 +430,7 @@ function loadReplay() {
   try {
     const saved = JSON.parse(sessionStorage.getItem(REPLAY_KEY));
     if (saved && Array.isArray(saved.points) && (saved.center === null || Number.isFinite(saved.center))) {
-      Object.assign(replay, {fault: saved.fault ?? null, center: saved.center, seconds: Number(saved.seconds) || 300, points: saved.points.filter(x => typeof x === "string"), chart: saved.chart ?? null});
+      Object.assign(replay, {fault: saved.fault ?? null, center: saved.center, seconds: Number(saved.seconds) || null, points: saved.points.filter(x => typeof x === "string"), chart: saved.chart ?? null});
     }
   } catch { /* unreadable settings are simply not used */ }
 }
@@ -420,7 +439,7 @@ function saveReplay() {
 }
 function clearReplay() {
   sessionStorage.removeItem(REPLAY_KEY);
-  Object.assign(replay, {fault: null, center: null, seconds: 300, points: [], chart: null});
+  Object.assign(replay, {fault: null, center: null, seconds: state.config?.replay.default_seconds ?? null, points: [], chart: null});
   view.controller?.abort();
   Object.assign(view, {epoch: view.epoch + 1, loading: false, result: null, request: null, error: ""});
 }

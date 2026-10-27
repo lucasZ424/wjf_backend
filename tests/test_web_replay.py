@@ -203,9 +203,32 @@ def test_switching_the_chart_channel_asks_the_database_again_and_the_newest_wind
 
 
 def test_choosing_a_fault_runs_the_replay_around_it(page, replay_rig):
+    """修复轮03 (user rulings 2026-10-26/27): a fault brings its fixed template - the fault, its computation chain and the
+    operating quantities - and the default window, whatever the window was before, in ONE query.  It used to bring the
+    fault's channel alone and keep the last window."""
+    seen = []
+    page.on("request", lambda r: seen.append(r.url) if "/api/replay?" in r.url else None)
     open_history(page, replay_rig)
+    replay = page.request.get(replay_rig.url + "/api/ui-config", headers={"Authorization": "Bearer " + replay_rig.credentials["viewer"]}).json()["replay"]
+    template = replay["templates"]["temp_inner_06"]
+    page.locator("#replay-seconds").fill("100")
+    page.locator("#replay-seconds").dispatch_event("change")
     page.locator("#fault-list .fault-row").first.click()
     page.locator("#replay-meta").wait_for()
     assert "中心 1970/1/1 08:17:00" in page.locator("#replay-meta").inner_text()
-    assert page.locator("#replay-summary tbody tr").count() == 1
+    assert page.locator("#replay-summary tbody tr").count() == len(template) == 12
+    assert page.locator("#replay-seconds").input_value() == str(replay["default_seconds"]), "the window is reset to the default"
+    assert page.locator("#replay-focus").input_value() == "temp_inner_06", "the chart shows the fault"
+    assert len(seen) == 1 and seen[0].count("%2C") == len(template) - 1 and f"seconds={replay['default_seconds']}" in seen[0]
     assert json.loads(stored(page))["fault"]["id"].startswith("seed/fault/")
+
+
+def test_at_most_twelve_channels_can_be_chosen_by_hand(page, replay_rig):
+    """修复轮03: a thirteenth channel is not taken - the choice stays as it was and the page says why."""
+    open_history(page, replay_rig)
+    ids = page.locator("#replay-points option").evaluate_all("options => options.map(o => o.value)")
+    page.locator("#replay-points").select_option(ids[:13])
+    assert page.locator("#replay-points option:checked").count() == 0
+    assert "最多" in page.locator("#replay-limit").inner_text() and "12" in page.locator("#replay-limit").inner_text()
+    page.locator("#replay-points").select_option(ids[:12])
+    assert page.locator("#replay-points option:checked").count() == 12

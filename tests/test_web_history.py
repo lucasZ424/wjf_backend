@@ -10,6 +10,8 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from browser_support import sign_in
 
+from htsg import history
+
 BASE = 1_700_000_000  # 2023-11-14 22:13:20 UTC
 LOCAL = timezone(timedelta(hours=8))  # the browser context runs in Asia/Shanghai
 TOTAL = 45
@@ -109,7 +111,8 @@ def test_choosing_a_fault_fills_the_time_and_channel_and_a_manual_entry_needs_no
     n = TOTAL - 4
     assert page.locator("#replay-center").input_value() == local_text(BASE + 60 * n)
     selected = page.locator("#replay-points").evaluate("s => [...s.selectedOptions].map(o => o.value)")
-    assert selected == [channels[n % 3]], "the fault's own channel is the default"
+    # 修复轮03: the fault brings its fixed template (the fault first), no longer its own channel alone
+    assert sorted(selected) == sorted(history.replay_template(archive_rig.config, channels[n % 3]))
     assert "参考故障" in page.locator("#replay-lock").inner_text()
     assert rows(page).nth(3).get_attribute("class").count("selected") == 1
     # everything stays editable while the fault is locked

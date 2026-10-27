@@ -90,6 +90,8 @@ def build_history_router(router, user_dep, config, *, concurrency: int = 2) -> A
         unknown = [x for x in chosen if x not in sources]
         if not chosen or unknown:
             raise HTTPException(422, f"unknown channels: {unknown[:5]}" if unknown else "no channels given")
+        if len(chosen) > history.CHANNEL_LIMIT:  # 修复轮03: a replay is bounded by construction, whatever is sent
+            raise HTTPException(422, f"at most {history.CHANNEL_LIMIT} channels per replay")
         middle = parse_instant(center)
         start, end = middle - seconds / 2, middle + seconds / 2  # half a window either side of the centre
         result = await blocking(

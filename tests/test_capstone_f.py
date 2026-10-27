@@ -5,6 +5,8 @@ switch to a second database are fed through the owner into real PostgreSQL; all 
 through the HTTP API and checked against an oracle built from the script itself.
 """
 
+import json
+
 import pytest
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -119,19 +121,40 @@ def world(archive_db_factory, scenario):
 
     app = FastAPI()
     app.include_router(build_history_router(router, user, cfg))
-    client = TestClient(app)
-    client.router_ = router
-    return client
+    # one event loop for the whole test: the replay asks in groups (修复轮03), and a client without it starts a loop, a
+    # worker thread and that thread's own database connections for every request, which the development instance runs out of
+    with TestClient(app) as client:
+        client.router_ = router
+        yield client
 
 
 ALL = ",".join(__import__("htsg.history", fromlist=["x"]).channel_sources(FULL))
 
 
-def replay(client, **kw):
-    params = {"center": 1030.0, "seconds": 100, "points": ALL, **kw}
+def replay_once(client, **kw):
+    params = {"center": 1030.0, "seconds": 100, **kw}
     response = client.get("/api/replay", params=params, headers=HEADERS)
     assert response.status_code == 200, response.text[:300]
     return response.json()
+
+
+def replay(client, **kw):
+    """All 417 channels.  One replay takes at most CHANNEL_LIMIT of them (修复轮03), so they are asked in groups and the
+    answers joined: every channel must still be answered, and a flag raised by any group stands for the whole."""
+    names = ALL.split(",")
+    step = __import__("htsg.history", fromlist=["x"]).CHANNEL_LIMIT
+    parts = [replay_once(client, points=",".join(names[i : i + step]), **kw) for i in range(0, len(names), step)]
+    ends = [p["coverage_complete_until"] for p in parts]
+    return parts[0] | {
+        "channels": {k: v for p in parts for k, v in p["channels"].items()},
+        "gaps": list({json.dumps(g, sort_keys=True): g for p in parts for g in p["gaps"]}.values()),
+        "partial": any(p["partial"] for p in parts),
+        "unavailable": sorted({u for p in parts for u in p["unavailable"]}),
+        "truncated": any(p["truncated"] for p in parts),
+        "sources": sorted({s for p in parts for s in p["sources"]}),
+        "coverage_end": {s: v for p in parts for s, v in p["coverage_end"].items()},
+        "coverage_complete_until": None if None in ends else min(ends),
+    }
 
 
 def rows(body, pid, kind="raw", origin=None):

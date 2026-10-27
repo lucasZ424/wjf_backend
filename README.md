@@ -72,7 +72,7 @@ HTTP 传 `Authorization: Bearer <username:token>`，WebSocket 连接后 5 秒内
 | `GET /api/me`、`/api/ui-config` | 当前身份；点表、派生量、模型、界面与时限配置 |
 | `GET /api/health` | 数据源与通信、每源重新同步次数与连续建连失败次数、归档路由与队列计数、实际协商的订阅参数、运行时状态；另含本次运行的通信日志与通信输入读数整表（通信·日志页使用，只读内存，不查数据库、不向设备发请求） |
 | `GET /api/channels` | 可查询的 417 个量 |
-| `GET /api/replay` | 窗口内的全部实收与变化记录（含批次号、批内序号、来源、缺口、窗口起点保持值），跨库合并，单库不可读则标注部分可用 |
+| `GET /api/replay` | 窗口内的全部实收与变化记录（含批次号、批内序号、来源、缺口、窗口起点保持值），跨库合并，单库不可读则标注部分可用；单次最多12个通道，超出返回 422（点故障时带出的固定模板见 `/api/ui-config` 的 `replay`） |
 | `GET /api/replay/basis/{result_id}` | 一个结果的输入依据 |
 | `GET /api/faults` | 已归档的故障记录，按确认时间倒序分页 |
 | `GET/POST /api/admin/accounts`、`DELETE /api/admin/accounts/{username}`、`POST /api/admin/password`、`GET /api/admin/audit` | 账户、管理员自己的口令与管理操作记录（仅管理员；只能建只读账户；变更先写主库，结果未确认时返回 503） |

@@ -20,6 +20,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict
 
+from . import history
 from .history_api import build_history_router
 from .stream_api import build_stream_router
 
@@ -170,6 +171,13 @@ def create_web_app(*, config, accounts, publisher, archive_router=None, queue=No
     def account_ok(identity):
         return not accounts.uncertain and accounts.users.get(identity["username"], {}).get("active", False)
 
+    limited = [x.id for x in [*config.points, *config.derived] if x.high is not None or x.low is not None]
+    replay = {  # 修复轮03: what a fault brings to the history page, from the configuration as it was started
+        "max_channels": history.CHANNEL_LIMIT,
+        "default_seconds": history.DEFAULT_WINDOW_SECONDS,
+        "templates": {channel: history.replay_template(config, channel) for channel in limited},
+    }
+
     @app.get("/live")
     async def live():
         return {"alive": True}
@@ -194,6 +202,7 @@ def create_web_app(*, config, accounts, publisher, archive_router=None, queue=No
             "derived": [d.model_dump() for d in config.derived],
             "config_id": config.config_id,
             "mode": config.mode,
+            "replay": replay,
             "timing": {
                 name: getattr(timing, name)
                 for name in (
