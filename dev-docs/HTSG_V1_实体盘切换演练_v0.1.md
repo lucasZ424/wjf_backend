@@ -1,6 +1,6 @@
 # HTSG V1 实体盘切换演练
 
-版本：v0.1｜日期：2026-10-28｜代码：`4b9f006`（修复轮06 候选）｜脚本：`scripts/rehearse_storage.py`（未提交）
+版本：v0.1｜日期：2026-10-28｜代码：`4b9f006`（修复轮06 候选）｜脚本：`scripts/rehearse_storage.py`
 
 | 项 | 内容 |
 | --- | --- |
@@ -57,4 +57,4 @@
   - 旧 E 盘上的实例 `E:\HTSG-rehearsal\external` 先停（`pg_ctl ... stop`）；新盘上没有它，`.local\rehearsal\deploy.json` 照旧写 `"external": "E:"`（盘符不变时）即可，再执行 `deploy_databases.py install --input .local\rehearsal\deploy.json` 只会新建缺的那个实例（已有的跳过，不删任何东西）；装完要手动启动三个实例（`register` 未做）。
   - 先重跑一次 `rehearse_storage.py plain`：这次应走到“移动库写到 95% 转应急库”，再按第3节做拔盘测试。
 - **待用户定：** 第4节的来回切换（失败后是否先在应急库停留一段时间）、拔盘恰在提交途中时归档停在那一组。
-- **演练环境：** 三个实例运行到关机为止；三次运行建的库都留着（D 盘约 950 MB），没有删除。`scripts/rehearse_storage.py` 与本记录未提交。
+- **演练环境：** 三个实例运行到关机为止；三次运行建的库都留着（D 盘约 950 MB），没有删除。
