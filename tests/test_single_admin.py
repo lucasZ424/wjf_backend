@@ -78,11 +78,14 @@ def test_init_accounts_writes_the_only_administrator_into_the_database_and_the_f
     path = tmp_path / "accounts.json"
     saved = cli.init_accounts(path, store.dsn)
     assert saved == tmp_path / "initial-credentials.json"
-    credential = json.loads(saved.read_text(encoding="utf-8"))["admin"]
+    handed = json.loads(saved.read_text(encoding="utf-8"))
+    credential = f"{handed['username']}:{handed['password']}"
     assert set(store.read_accounts()) == {"admin"} and Accounts(path).users == store.read_accounts(), "the same one in both"
     assert Accounts(path).verify(credential)["role"] == "admin", "the credential handed over works"
     assert [entry["action"] for entry in store.audit_history()["items"]] == ["CREATE_ACCOUNT"], "and is on record"
+    handed_over = {p: p.read_bytes() for p in (saved, tmp_path / "admin-fallback.json")}
     assert cli.init_accounts(path, store.dsn) is None, "a second run makes no second administrator"
     path.unlink()
     assert cli.init_accounts(path, store.dsn) is None, "the database holds the administrator: still none made"
-    assert Accounts(path).verify(credential), "the file is the database copy again"
+    assert Accounts(path).users == store.read_accounts(), "the file is the database copy again"
+    assert {p: p.read_bytes() for p in handed_over} == handed_over, "the initial password and its fallback stay as handed over"

@@ -812,7 +812,8 @@ function drawPeople() {
   }
   const rows = (people.list || []).map(a => [esc(a.username), esc(ROLES[a.role] || a.role), a.active ? "有效" : "已停用",
     !a.active ? "—" : people.confirming === a.username ? `<button data-revoke="${esc(a.username)}" class="primary">确认停用 ${esc(a.username)}</button>` : `<button data-revoke="${esc(a.username)}">停用</button>`]);
-  $("account-area").innerHTML = `${people.created ? `<div class="credential-result" id="new-credential">仅此一次显示，请保存新凭据：${esc(people.created)}</div>` : ""}${people.error ? `<p class="log-error">${esc(people.error)}</p>` : ""}${people.note ? `<p class="muted">${esc(people.note)}</p>` : ""}
+  const cut = people.created.indexOf(":");  // shown apart, as the login page asks for them (修复轮07)
+  $("account-area").innerHTML = `${people.created ? `<div class="credential-result" id="new-credential">仅此一次显示，请保存：用户名 <code id="new-user">${esc(people.created.slice(0, cut))}</code>，口令 <code id="new-secret">${esc(people.created.slice(cut + 1))}</code></div>` : ""}${people.error ? `<p class="log-error">${esc(people.error)}</p>` : ""}${people.note ? `<p class="muted">${esc(people.note)}</p>` : ""}
     <form id="account-form" class="controls"><input name="username" aria-label="新用户名" placeholder="新用户名" required maxlength="64" pattern="[A-Za-z0-9_\\-]+"><input type="hidden" name="role" value="viewer"><button type="submit">创建只读账户</button></form>${table(["账户", "角色", "状态", "操作"], rows)}
     <form id="password-form" class="controls"><input name="secret" type="password" aria-label="我的新口令" placeholder="我的新口令（至少 8 位）" required minlength="8" autocomplete="new-password"><input name="confirm" type="password" aria-label="再输一次新口令" placeholder="再输一次" required autocomplete="new-password"><button type="submit">修改我的口令</button></form>`;
   $("account-form").onsubmit = async event => {
@@ -832,7 +833,7 @@ function drawPeople() {
       await api("/api/admin/password", {method: "POST", body: JSON.stringify({secret})});
       state.credential = `${state.me.username}:${secret}`;  // the credential in use stopped working: the page goes on with the new one
       sessionStorage.setItem("htsg.credential", state.credential);
-      people.note = `口令已修改：本页已改用新口令；下次登录输入 ${state.me.username}:新口令。`;
+      people.note = "口令已修改：本页已改用新口令，下次登录用新口令；部署时的初始口令仍可作兜底。";
     } catch (error) { people.error = error.message; }
     loadPeople();
   };
@@ -948,7 +949,7 @@ async function login() {
     $("login").hidden = true;
     $("workspace").hidden = false;
     $("logout").hidden = false;
-    $("credential").value = "";
+    $("login-secret").value = "";
     notice("");
     renderPage();
     startReading();
@@ -981,7 +982,7 @@ function logout(message = "") {
 }
 $("login-form").onsubmit = async event => {
   event.preventDefault();
-  state.credential = $("credential").value.trim();
+  state.credential = `${$("login-user").value.trim()}:${$("login-secret").value.trim()}`;  // asked apart, sent as before (修复轮07)
   await login();
 };
 $("logout").onclick = () => logout();

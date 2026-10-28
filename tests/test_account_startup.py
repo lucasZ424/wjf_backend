@@ -190,6 +190,26 @@ async def test_a_damaged_or_missing_account_file_does_not_keep_the_backend_from_
         backend.ensure_gone()
 
 
+async def test_an_unreadable_fallback_file_does_not_keep_the_backend_from_starting(archive_db_factory, tmp_path):
+    """修复轮07 (终版 §2.3): the file beside the account file that keeps the administrator's initial password is read at
+    the start; one that cannot be read takes only the fallback away, and the log says so."""
+    config = measure.make_config()
+    primary, emergency = archive_db_factory("primary"), archive_db_factory("emergency")
+    accounts = Accounts(tmp_path / "accounts.json")
+    viewer = accounts.create("viewer", "viewer")
+    accounts.create("admin", "admin")
+    primary.initialize(config)
+    primary.sync_accounts(accounts.users)
+    (tmp_path / "admin-fallback.json").write_bytes(ZEROED)
+    backend = launch(tmp_path, config, primary, emergency)
+    try:
+        assert (await answer(backend, "/api/me", viewer))["role"] == "viewer", "the accounts sign in as before"
+        assert "fallback credential unreadable" in (tmp_path / ".local/backend.log").read_text(encoding="utf-8"), "and the log says so"
+        assert isinstance(await backend.stop(), int), "it stops the normal way"
+    finally:
+        backend.ensure_gone()
+
+
 async def test_with_no_account_anywhere_the_backend_still_acquires_and_archives_and_says_what_to_do(archive_db_factory, tmp_path):
     """User ruling 2026-10-26: no account in the database nor in the file is no reason to stop acquiring.  Nobody can sign
     in, and the log says to run init-accounts.  Before, the start ended at once with "Run init-accounts first"."""

@@ -26,7 +26,9 @@ NAMES = ["系统总览", "水冷壁应变场", "热应力分析", "历史查询"
 
 def sign_in_with(page, rig, credential):
     page.goto(rig.url)
-    page.locator("#credential").fill(credential)
+    user, secret = credential.split(":", 1)
+    page.locator("#login-user").fill(user)
+    page.locator("#login-secret").fill(secret)
     page.locator("#login-form button").click()
     page.locator("#workspace").wait_for(state="visible")
 
@@ -140,6 +142,22 @@ def test_roles_are_enforced_and_the_development_login_still_works(page, archive_
     assert page.errors == []
 
 
+def test_the_login_page_asks_for_the_user_name_and_the_password_apart(page, rig):
+    """修复轮07 (user ruling 2026-10-28): one field for "user:token" meant copying one long string out of a one-line JSON
+    file; the page asks for the two apart and joins them itself."""
+    user, secret = rig.credentials["viewer"].split(":", 1)
+    page.goto(rig.url)
+    form = page.locator("#login-form")
+    assert form.locator("input").count() == 2 and form.locator("#login-secret").get_attribute("type") == "password"
+    form.locator("#login-user").fill(user)
+    form.locator("#login-secret").fill(secret)
+    form.locator("button").click()
+    page.locator("#workspace").wait_for(state="visible")
+    assert "只读用户" in page.locator("#identity").inner_text()
+    assert page.locator("#login-secret").input_value() == "", "the password does not stay in the form"
+    assert page.errors == []
+
+
 def test_an_administrator_creates_and_stops_accounts_and_every_step_is_on_record(page, archive_rig):
     sign_in_with(page, archive_rig, "admin:admin")
     page.get_by_role("button", name="系统管理·权限").click()
@@ -150,8 +168,9 @@ def test_an_administrator_creates_and_stops_accounts_and_every_step_is_on_record
         page.locator("#new-credential").wait_for(timeout=8000)
     except Exception as error:  # say what the page and the server looked like, not just that time ran out
         raise AssertionError(f"no credential shown; page: {page.locator('#account-area').inner_text()!r}; accounts uncertain: {archive_rig.accounts.uncertain}; users: {sorted(archive_rig.accounts.users)}") from error
-    credential = page.locator("#new-credential").inner_text().split("：", 1)[1].strip()
-    assert credential.startswith("operator1:")
+    user, secret = page.locator("#new-user").inner_text(), page.locator("#new-secret").inner_text()
+    assert user == "operator1", "the user name and the password are shown apart, as the login page asks for them"
+    credential = f"{user}:{secret}"
     assert api(page, archive_rig, "GET", "/api/me", credential).json() == {"username": "operator1", "role": "viewer"}
     row = page.locator("#account-area tbody tr", has_text="operator1")
     assert "有效" in row.inner_text()

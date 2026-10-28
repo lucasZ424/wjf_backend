@@ -2,11 +2,12 @@ import argparse
 import asyncio
 import json
 import logging
+import secrets
 from contextlib import contextmanager, nullcontext
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from .auth import Accounts
+from .auth import Accounts, write_fallback
 from .config import load_settings
 
 
@@ -35,7 +36,9 @@ def deployment_lock(path=Path(".local/backend.lock")):
 def init_accounts(accounts: Path, primary_dsn: str, timing=None) -> Path | None:
     """The deployment's only administrator, written into the primary database and the account file together, so that a
     deployment never reaches its first start without an account (修复轮02).  Returns where its credential was saved, or None
-    when the database or the file holds the administrator already.  Read-only users are added on the page."""
+    when the database or the file holds the administrator already.  Read-only users are added on the page.  The initial
+    password is the fallback for good (修复轮07): its hash beside the account file, the password for the owner with the user
+    name and the password each on a line."""
     from .archive import ArchiveStore
     from .web import audit_entry
 
@@ -45,11 +48,13 @@ def init_accounts(accounts: Path, primary_dsn: str, timing=None) -> Path | None:
         local.reconcile(store)  # the database copy first: it may hold the administrator already
         if any(user["role"] == "admin" for user in local.users.values()):
             return None
-        credential = local.create("admin", "admin", audit_entry({"username": "init-accounts"}, "CREATE_ACCOUNT", "admin"))
+        password, destination = secrets.token_urlsafe(32), accounts.with_name("initial-credentials.json")
+        # on the disk before the account is: a run cut short in between makes no administrator, and is run again
+        write_fallback(accounts, password)
+        destination.write_text(json.dumps({"username": "admin", "password": password}, indent=2) + "\n", encoding="utf-8")
+        local.create("admin", "admin", audit_entry({"username": "init-accounts"}, "CREATE_ACCOUNT", "admin"), token=password)
     finally:
         store.close()
-    destination = accounts.with_name("initial-credentials.json")
-    destination.write_text(json.dumps({"admin": credential}), encoding="utf-8")
     return destination
 
 
@@ -88,7 +93,8 @@ def main(*, deployment_locked=False):
                 f"The primary database cannot be used ({type(error).__name__}): the administrator goes into it and the account file together"
             ) from None
         if saved:
-            print(f"Administrator created; its credential is in {saved}: hand it to the owner, never commit this file.")
+            print(f"Administrator created; its credential is in {saved}: hand it to the owner, who keeps it off this computer - "
+                  "the initial password stays the fallback for good; never commit this file.")
         else:
             print("The administrator already exists; no changes.")
     else:

@@ -82,6 +82,10 @@ class Runtime:
         self.accounts.persist = self.router.primary.sync_accounts  # account changes and their audit go to the archive
         if self.accounts.unreadable:
             log.warning("account file unreadable (%s): it is rewritten from the database copy", self.accounts.unreadable)
+        if self.accounts.fallback_unreadable:  # 修复轮07: only the fallback is lost; nothing else waits for it
+            log.warning("fallback credential unreadable (%s): the initial password does not sign in", self.accounts.fallback_unreadable)
+        elif self.accounts.fallback is None:
+            log.warning("no fallback credential beside the account file: only the accounts sign in")
         self._settle_accounts()
 
     def _settle_accounts(self):

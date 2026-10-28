@@ -77,7 +77,6 @@ class UI(ResearchModel):
     point_labels: dict[str, str] = Field(default_factory=dict)
     stations: tuple[Station, ...] = ()
     process_points: tuple[str, ...] = ()
-    history_windows: tuple[int, ...] = (60, 300, 900)
     precision: int = Field(2, ge=0, le=6)
 
 
@@ -113,8 +112,8 @@ def validate_research(config):
             refs = (*refs, station.strain_change)
         if not set(refs) <= known:
             raise ValueError("UI station references unknown points")
-    if not set(config.ui.process_points) <= known or any(x <= 0 for x in config.ui.history_windows):
-        raise ValueError("invalid UI process points/history windows")
+    if not set(config.ui.process_points) <= known:
+        raise ValueError("invalid UI process points")
     if len({s.id for s in config.ui.stations}) != len(config.ui.stations):
         raise ValueError("duplicate UI station identifiers")
     sim = config.simulation

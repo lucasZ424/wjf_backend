@@ -7074,11 +7074,6 @@
       "working_fluid_temperature",
       "furnace_pressure"
     ],
-    "history_windows": [
-      60,
-      300,
-      900
-    ],
     "precision": 2,
     "point_labels": {
       "temp_inner_01": "H1 温度组01 内壁温度",

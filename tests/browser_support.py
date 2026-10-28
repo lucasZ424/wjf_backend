@@ -11,7 +11,9 @@ EVIDENCE = os.environ.get("HTSG_EVIDENCE_DIR")
 
 def sign_in(page, rig, who="viewer"):
     page.goto(rig.url)
-    page.locator("#credential").fill(rig.credentials[who])
+    user, secret = rig.credentials[who].split(":", 1)  # the page asks for the two apart (修复轮07)
+    page.locator("#login-user").fill(user)
+    page.locator("#login-secret").fill(secret)
     page.locator("#login-form button").click()
     page.locator("#workspace").wait_for(state="visible")
 

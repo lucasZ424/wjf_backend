@@ -7,6 +7,6 @@
 <div id="notice" role="status" hidden></div>
 <div id="archive-banner" role="status" hidden></div>
 <main id="workspace" hidden></main>
-<section id="login" class="login card"><span class="eyebrow">HTSG / RESEARCH WORKSPACE</span><h2>连接科研监测平台</h2><p>输入管理员提供的账户凭据。数据由后端从模拟现场主动读取。</p><form id="login-form"><label>账户凭据（用户名:令牌）<input id="credential" type="password" autocomplete="off" placeholder="用户名:令牌" required maxlength="256"></label><button class="primary" type="submit">连接平台</button></form><p class="muted">凭据仅保存在当前标签页会话中，不写入网址。</p><div id="login-error" role="alert"></div></section>
+<section id="login" class="login card"><span class="eyebrow">HTSG / RESEARCH WORKSPACE</span><h2>连接科研监测平台</h2><p>输入管理员提供的用户名和口令。数据由后端从模拟现场主动读取。</p><form id="login-form"><label>用户名<input id="login-user" autocomplete="off" required maxlength="64"></label><label>口令<input id="login-secret" type="password" autocomplete="off" required maxlength="255"></label><button class="primary" type="submit">连接平台</button></form><p class="muted">凭据仅保存在当前标签页会话中，不写入网址。</p><div id="login-error" role="alert"></div></section>
 <footer><span>科研估算 · 示意坐标不代表真实拓扑 · 不用于保护控制</span><span id="stream-time">等待后端数据</span></footer>
 </body></html>

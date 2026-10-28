@@ -9,6 +9,8 @@ import secrets
 import threading
 from pathlib import Path
 
+FALLBACK = "admin-fallback.json"  # beside the account file: the hash of the administrator's initial password (修复轮07)
+
 
 def _write_through(path: Path, text: str):
     """On the disk before the caller goes on: after a power loss no name points at contents that never got there."""
@@ -16,6 +18,17 @@ def _write_through(path: Path, text: str):
         file.write(text)
         file.flush()
         os.fsync(file.fileno())
+
+
+def write_fallback(path: Path, secret: str):
+    """The administrator's initial password as the fallback, beside the account file `path` (修复轮07, 终版 §2.3): written
+    by the deployment that makes the administrator, never by a run, which only reads it."""
+    salt = secrets.token_bytes(16)
+    target = path.with_name(FALLBACK)
+    target.parent.mkdir(exist_ok=True, parents=True)
+    temp = target.with_suffix(".tmp")
+    _write_through(temp, json.dumps({"salt": salt.hex(), "digest": hashlib.scrypt(secret.encode(), salt=salt, n=2**14, r=8, p=1).hex()}))
+    temp.replace(target)
 
 
 class Accounts:
@@ -30,22 +43,33 @@ class Accounts:
         self.pending_path = path.with_suffix(".pending")
         self.uncertain = self.pending_path.exists()
         self.persist = None
+        self.fallback = self.fallback_unreadable = None  # 修复轮07: none to be had takes only the fallback away
+        try:
+            if path.with_name(FALLBACK).exists():
+                found = json.loads(path.with_name(FALLBACK).read_text(encoding="utf-8"))
+                salt, digest = bytes.fromhex(found["salt"]), found["digest"]
+                if not isinstance(digest, str):
+                    raise ValueError("digest")
+                self.fallback = {"salt": salt, "digest": digest}
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            self.fallback_unreadable = type(error).__name__
 
     def verify(self, credential):
-        if self.uncertain or not credential or ":" not in credential:
+        if not credential or ":" not in credential:
             return None
         username, token = credential.split(":", 1)
-        user = self.users.get(username)
-        if not user or not user["active"]:
-            return None
-        digest = hashlib.scrypt(token.encode(), salt=bytes.fromhex(user["salt"]), n=2**14, r=8, p=1).hex()
-        return (
-            {"username": username, "role": user["role"]}
-            if not self.uncertain and hmac.compare_digest(digest, user["digest"])
-            else None
-        )
+        user = None if self.uncertain else self.users.get(username)
+        if user and user["active"]:
+            digest = hashlib.scrypt(token.encode(), salt=bytes.fromhex(user["salt"]), n=2**14, r=8, p=1).hex()
+            if not self.uncertain and hmac.compare_digest(digest, user["digest"]):
+                return {"username": username, "role": user["role"]}
+        if username == "admin" and self.fallback:  # 修复轮07: the initial password signs the administrator in, whatever the accounts
+            digest = hashlib.scrypt(token.encode(), salt=self.fallback["salt"], n=2**14, r=8, p=1).hex()
+            if hmac.compare_digest(digest, self.fallback["digest"]):
+                return {"username": "admin", "role": "admin"}
+        return None
 
-    def create(self, username, role, audit=None):
+    def create(self, username, role, audit=None, token=None):
         if not username or len(username) > 64 or not all(c.isalnum() or c in "-_" for c in username):
             raise ValueError("invalid username")
         if role not in ("admin", "viewer"):
@@ -57,7 +81,7 @@ class Accounts:
                 raise ValueError("account already exists")
             if role == "admin" and any(user["role"] == "admin" for user in self.users.values()):
                 raise ValueError("there is already an administrator: only read-only users are added")
-            token, salt = secrets.token_urlsafe(32), secrets.token_bytes(16)
+            token, salt = token or secrets.token_urlsafe(32), secrets.token_bytes(16)  # the deployment brings its own (修复轮07)
             candidate = copy.deepcopy(self.users)
             candidate[username] = {
                 "role": role,

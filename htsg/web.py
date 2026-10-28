@@ -264,6 +264,8 @@ def create_web_app(*, config, accounts, owner, archive_router=None, queue=None, 
 
     @app.post("/api/admin/accounts", status_code=201)
     async def add_account(body: NewAccount, identity=Depends(admin)):
+        if body.role != "viewer":  # 修复轮07: the deployment has its one administrator, whatever the account table holds
+            raise HTTPException(409, "only read-only users are added: the deployment has its one administrator")
         try:
             token = await asyncio.to_thread(accounts.create, body.username, body.role, audit_entry(identity, "CREATE_ACCOUNT", body.username))
         except ValueError as error:

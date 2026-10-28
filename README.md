@@ -59,7 +59,7 @@ py -3.13 -m venv .venv
 
 配置是严格校验的：旧机制的字段（`stale_after`、`aggregation`、`max_age`、`derivative`、`profiles`、捕获窗口类 `limits`、`sources[].timeout`、`simulator` 源）已删除且不再被接受。队列容量在 `limits.ingress`（入口）、`limits.commit_queue`（提交，默认 400 组）、`limits.ws_queue`（每客户端发送，默认 64）。时限与订阅参数在 `timing`，其含义与取值依据见终版设计第 11 节。极值与普通阈值见[默认极值阈值](dev-docs/默认极值阈值.md)、[默认越限阈值与回差](dev-docs/默认越限阈值与回差.md)，热应力模型见[热应力估算模型](dev-docs/热应力估算模型.md)。配置修改后重启生效，系统不提供在线改通道、阈值或配置的入口。
 
-开发简化登录：`dev_admin_login=true` 时可直接输入 `admin:admin`（HTTP 用 `Authorization: Bearer admin:admin`），只对应现有且有效的 admin 账户；生产模式拒绝启用。
+开发简化登录：`dev_admin_login=true` 时登录页用户名、口令都填 `admin`（HTTP 用 `Authorization: Bearer admin:admin`），只对应现有且有效的 admin 账户；生产模式拒绝启用。
 
 ## 接口
 
@@ -92,7 +92,7 @@ HTTP 传 `Authorization: Bearer <username:token>`（凭据不放 URL），每个
 
 **停止与崩溃：** Ctrl+C／Ctrl+Break 是正常停止，进程先停采集、处理完已收批次、登记运行结束并写完提交队列（结束原因 `NORMAL`）。任务计划的“结束任务”或强行终止是硬杀，没有这一步：下次启动时，未结束的运行按各段已持久化的水位收尾（`ABNORMAL_EXIT`；没有水位的段取段起点），不猜测崩溃时刻；收尾只读小表，耗时不随崩溃运行的大小增长。
 
-**账户：** 每套部署只有一个管理员，由部署（`deploy_databases.py install` 或 `init-accounts`）写进主库和账户文件，初始凭据在 `.local/initial-credentials.json`，交给业主；管理员在“系统管理·权限”页添加、停用只读用户，并可随时修改自己的口令。`.local/accounts.json` 只是主库账户表的本机副本，读不了或丢了都不阻止启动和采集，启动后按主库副本重写。没和主库核对上（主库读不了，或改账户的结果未确认）时谁也登录不了，维护周期每 `stats_interval`（默认60秒）重试，核对上即恢复，不用重启。主库和文件都没有账户时照常采集，日志提示运行 `init-accounts` 后重启。
+**账户：** 每套部署只有一个管理员，由部署（`deploy_databases.py install` 或 `init-accounts`）写进主库和账户文件，初始凭据在 `.local/initial-credentials.json`（用户名、口令各占一行），交给业主离线保管，不留在现场电脑上；登录页分用户名、口令两栏。初始口令是永久有效的兜底凭据：它的哈希在账户文件旁的 `admin-fallback.json`，只由部署写；账户没核对上、改过或忘了口令时都可用它以管理员登录，文件读不了时只是没有兜底，日志提示。管理员在“系统管理·权限”页添加、停用只读用户，并可随时修改自己的口令。`.local/accounts.json` 只是主库账户表的本机副本，读不了或丢了都不阻止启动和采集，启动后按主库副本重写。没和主库核对上（主库读不了，或改账户的结果未确认）时除兜底凭据外谁也登录不了，维护周期每 `stats_interval`（默认60秒）重试，核对上即恢复，不用重启。主库和文件都没有账户时照常采集，日志提示运行 `init-accounts` 后重启。
 
 ## 验证
 

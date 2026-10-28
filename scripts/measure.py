@@ -242,7 +242,9 @@ class Lab:
         self.page = await self.chrome.new_page(viewport={"width": 1440, "height": 1000})
         await self.page.add_init_script(PAGE_PROBE)
         await self.page.goto(f"http://127.0.0.1:{self.port}/")
-        await self.page.locator("#credential").fill(self.viewer)
+        user, secret = self.viewer.split(":", 1)  # the login page asks for the two apart (修复轮07)
+        await self.page.locator("#login-user").fill(user)
+        await self.page.locator("#login-secret").fill(secret)
         await self.page.locator("#login-form button").click()
         await self.page.get_by_role("button", name="热应力分析").click()
 
