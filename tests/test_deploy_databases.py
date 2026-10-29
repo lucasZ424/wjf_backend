@@ -1,6 +1,6 @@
 """Field deployment of the archive databases from volume names (scripts/deploy_databases.py).
 
-Why it matters: on site only the disks are known - "the primary is D:, the removable disk F:, the emergency C:".  The script must turn
+Why it matters: on site only the disks are known - "the primary is D:, the emergency C:".  The script must turn
 that into one cluster per role ON that disk and write the same folder into the configuration, so the disk the backend measures is
 the disk the data is on.  It must refuse what would defeat the purpose (two roles on one disk, a missing disk) or destroy something
 (a folder that holds other data, a connection file that names other databases), and a second run must change nothing.
@@ -14,6 +14,7 @@ from pathlib import Path
 import psycopg
 import pytest
 
+from htsg.archive import SCHEMA_GENERATION
 from htsg.auth import Accounts
 from scripts import deploy_databases as deploy
 
@@ -94,11 +95,10 @@ def test_two_roles_on_one_disk_are_refused_because_the_emergency_database_would_
 
 
 def test_a_disk_that_is_not_there_a_folder_with_other_data_and_a_foreign_connection_file_are_refused(tmp_path):
-    (tmp_path / "a").mkdir()
     (tmp_path / "b" / "HTSG" / "emergency" / "pgdata").mkdir(parents=True)
     (tmp_path / "b" / "HTSG" / "emergency" / "pgdata" / "someone-elses.txt").write_text("keep me")
     (tmp_path / "database.json").write_text(json.dumps({"primary": "postgresql://other@127.0.0.1:5432/x"}))
-    volumes = {"primary": str(tmp_path / "a"), "emergency": str(tmp_path / "b"), "external": "Q:"}
+    volumes = {"primary": "Q:", "emergency": str(tmp_path / "b")}
     _, _, problems, _ = deploy.plan(site(tmp_path, volumes), distinct_volumes)
     text = "\n".join(problems)
     assert "Q:\\ does not exist" in text, text
@@ -132,7 +132,6 @@ def test_install_builds_one_cluster_per_disk_writes_the_same_folders_into_the_co
         for role, folder in folders.items():
             assert storage[f"{role}_path"] == str(folder).replace("\\", "/"), "the config names the folder the cluster is in"
             assert (folder / "pgdata" / "PG_VERSION").exists()
-        assert storage["external_enabled"] is False, "no removable disk was named: it stays disabled"
         assert len(list(tmp_path.glob("production.json.bak-*"))) == 1, "the previous configuration is kept"
         connections = json.loads((tmp_path / "database.json").read_text(encoding="utf-8"))
         assert set(connections) == {"primary", "emergency", "password"}
@@ -148,7 +147,7 @@ def test_install_builds_one_cluster_per_disk_writes_the_same_folders_into_the_co
                 generation = conn.execute("SELECT value FROM htsg_meta WHERE key='schema_generation'").fetchone()[0]
                 data_dir = conn.execute("SHOW data_directory").fetchone()[0]
                 accounts = conn.execute("SELECT username, role FROM account").fetchall()
-            assert generation == "5" and Path(data_dir) == folder / "pgdata"
+            assert generation == str(SCHEMA_GENERATION) and Path(data_dir) == folder / "pgdata"
             assert accounts == ([("admin", "admin")] if role == "primary" else []), "the administrator is in the primary database too"
         before = {p: p.read_bytes() for p in (tmp_path / "database.json", tmp_path / "production.json", tmp_path / "accounts.json", tmp_path / "initial-credentials.json", tmp_path / "admin-fallback.json")}
         deploy.install(inp, distinct_volumes)  # clusters running, files in place: nothing to do

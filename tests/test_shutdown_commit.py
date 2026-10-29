@@ -5,7 +5,7 @@ import threading
 import time
 
 import pytest
-from owner_support import small_config
+from owner_support import FixedBucket, small_config
 from test_archive_router import Disks
 from test_capstone_d import run_worker
 from test_commit_queue import ScriptedRouter
@@ -26,7 +26,7 @@ async def until(condition, why, timeout=3.0):
 
 def chain(capacity=10):
     router = ScriptedRouter()
-    owner = Owner(small_config(), 1000.0, 100.0, run_id="run")
+    owner = Owner(small_config(), 1000.0, 100.0, run_id="run", buckets=FixedBucket())
     queue = CommitQueue(
         router,
         capacity,
@@ -107,7 +107,7 @@ async def test_real_database_run_end_is_committed_after_recovery_pending_data_an
     real.initialize("run")
     real.bind_run("run", config.config_id, WALL0)
     held = HoldRecovery(real)
-    owner = Owner(config, WALL0, MONO0, run_id="run")
+    owner = Owner(config, WALL0, MONO0, run_id="run", buckets=FixedBucket())
     queue = CommitQueue(
         held,
         20,
@@ -163,7 +163,7 @@ async def test_unknown_run_end_never_marks_the_real_database_normal(archive_db_f
     real = ArchiveRouter(config, primary, emergency, disk_usage=Disks())
     real.initialize("run")
     real.bind_run("run", config.config_id, 1000.0)
-    owner = Owner(config, 1000.0, 100.0, run_id="run")
+    owner = Owner(config, 1000.0, 100.0, run_id="run", buckets=FixedBucket())
     scripted = RunEndOutcome(real, "UNKNOWN")
     queue = CommitQueue(
         scripted,
@@ -219,7 +219,7 @@ async def test_a_unit_turned_away_after_the_stop_began_is_followed_by_the_final_
     real.initialize("run")
     real.bind_run("run", config.config_id, WALL0)
     held = TurnAwayUnit(real, final_verdict)
-    owner = Owner(config, WALL0, MONO0, run_id="run")
+    owner = Owner(config, WALL0, MONO0, run_id="run", buckets=FixedBucket())
     queue = CommitQueue(
         held,
         20,

@@ -12,7 +12,7 @@ again while it stays so.  Every scenario is checked on the owner's output held i
 from dataclasses import asdict
 
 import pytest
-from owner_support import Recorder, make_owner, notify, poll
+from owner_support import FixedBucket, Recorder, make_owner, notify, poll
 from protocol_support import FieldModbusDevices, bridge_points, device_points
 from test_partial_requests import Live, until
 from test_source_validity import WALL0
@@ -187,7 +187,7 @@ def two_devices():
         }
     )
     recorder = Recorder()
-    owner = Owner(config, 1000.0, 100.0, commit=recorder.commit, run_id="run")
+    owner = Owner(config, 1000.0, 100.0, commit=recorder.commit, buckets=FixedBucket(), run_id="run")
     owner.begin_generation("mb", 1, 1000.0, 100.0)
     return config, owner, recorder
 
@@ -339,7 +339,7 @@ def test_at_full_scale_one_failure_adds_at_most_eight_records_and_a_failure_that
         }
     )
     recorder = Recorder()
-    owner = Owner(config, 1000.0, 100.0, commit=recorder.commit, run_id="run")
+    owner = Owner(config, 1000.0, 100.0, commit=recorder.commit, buckets=FixedBucket(), run_id="run")
     owner.begin_generation("mb", 1, 1000.0, 100.0)
     ids = [p.id for p in points]
     for tick, (values, outcome) in enumerate([({i: 0.5 for i in ids}, "OK"), ({}, "TIMEOUT"), ({}, "TIMEOUT")], start=1):

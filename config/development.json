@@ -10,5 +10,5 @@
   "derived": [
     {"id": "thermal_stress", "inputs": [], "operation": "unconfigured", "unit": "MPa"}
   ],
-  "storage": {"development_budget_bytes": 10737418240, "cleanup_enabled": false, "external_enabled": false, "external_path": "", "external_start": 0.95}
+  "storage": {"development_budget_bytes": 10737418240, "cleanup_enabled": false}
 }

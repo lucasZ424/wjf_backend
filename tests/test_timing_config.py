@@ -101,14 +101,9 @@ def test_production_refuses_the_simplified_login():
 
 @pytest.mark.parametrize("field", ["primary_path", "emergency_path"])
 def test_development_databases_may_be_on_any_local_drive(field):
-    """修复轮06 (user 2026-10-27): the rehearsal on the real disks puts the emergency database on C: and the removable
-    one on E:, in development too - "development databases only on D:" is lifted."""
+    """修复轮06 (user 2026-10-27): the rehearsal on the real disks puts the emergency database on C:, in development too -
+    "development databases only on D:" is lifted."""
     assert getattr(Settings.model_validate({**BASE, "storage": {field: "C:/HTSG/x"}}).storage, field) == "C:/HTSG/x"
-
-
-def test_an_enabled_removable_database_may_be_on_its_own_drive_in_development():
-    enabled = {"external_enabled": True, "external_path": "E:/archive"}
-    assert Settings.model_validate({**BASE, "storage": enabled}).storage.external_path == "E:/archive"
 
 
 def test_production_is_not_forced_onto_d_drive():

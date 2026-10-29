@@ -244,20 +244,20 @@ async def test_an_error_that_only_looks_like_a_cancel_does_not_end_the_acquirer(
 # --------------------------------------------------------------------------------------- the runtime
 
 
-def idle_runtime(monkeypatch):
+def idle_runtime(monkeypatch, tmp_path):
     """A runtime over archives that cannot be reached: its tasks run, nothing is written."""
     monkeypatch.setattr(runtime_module, "STOP_WRITE_WAIT", 0.5)
     config = small_config(
         sources=[{"id": "mb", "kind": "modbus", "enabled": True, "host": "127.0.0.1", "port": 1}, {"id": "ua", "kind": "opcua"}]
     )  # fmt: skip
     dead = "host=127.0.0.1 port=1 dbname=htsg user=nobody connect_timeout=1"
-    return Runtime(config, ArchiveRouter(config, ArchiveStore(dead), ArchiveStore(dead), disk_usage=Disks()))
+    return Runtime(config, ArchiveRouter(config, ArchiveStore(dead), ArchiveStore(dead), disk_usage=Disks()), number_file=tmp_path / "bucket_number.json")
 
 
-async def test_a_core_task_that_ends_cancelled_while_the_runtime_runs_is_a_failure(monkeypatch):
+async def test_a_core_task_that_ends_cancelled_while_the_runtime_runs_is_a_failure(monkeypatch, tmp_path):
     """Q01 / 整改方案 R01: a task cancelled from outside, with nobody having asked the runtime to stop, is lost input;
     the supervisor must see it as the failure it is instead of the process going on without that source."""
-    runtime = idle_runtime(monkeypatch)
+    runtime = idle_runtime(monkeypatch, tmp_path)
     await runtime.start()
     try:
         next(task for task in runtime.tasks if task.get_name() == "acquire mb").cancel()
@@ -267,9 +267,9 @@ async def test_a_core_task_that_ends_cancelled_while_the_runtime_runs_is_a_failu
         await runtime.stop()
 
 
-async def test_the_cancels_of_a_normal_stop_are_no_failure(monkeypatch):
+async def test_the_cancels_of_a_normal_stop_are_no_failure(monkeypatch, tmp_path):
     """Q01 control: stopping cancels every task on purpose; none of it is reported as fatal."""
-    runtime = idle_runtime(monkeypatch)
+    runtime = idle_runtime(monkeypatch, tmp_path)
     await runtime.start()
     await runtime.stop()
     assert runtime.health["fatal"] is None and not runtime.failed.is_set()

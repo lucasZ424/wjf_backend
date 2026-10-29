@@ -1,5 +1,5 @@
 """Field deployment of the archive databases: one PostgreSQL cluster per storage role, on the volume the site names for it
-(终版 §13.5: the normal, the removable and the emergency database; the removable one on a volume of its own).
+(终版 §13.5: the normal and the emergency database, each on a volume of its own).
 
     python scripts/deploy_databases.py plan      what would be done, and what stands in the way; changes nothing (the default)
     python scripts/deploy_databases.py install   folders, clusters, databases with their schema, then the connection file, the
@@ -14,11 +14,11 @@
 
 All four read .local/deploy.json (or --input FILE), which names volumes, not folders - a drive letter is enough:
 
-    {"volumes": {"primary": "D:", "emergency": "C:", "external": "F:"},
+    {"volumes": {"primary": "D:", "emergency": "C:"},
      "pg_bin": "C:/Program Files/PostgreSQL/18/bin",
      "config": "config/production.json"}
 
-Optional: leave "external" out when there is no removable disk; "folder" (default "HTSG"), "ports" (default 55440-55442),
+Optional: "folder" (default "HTSG"), "ports" (default 55440-55441),
 "database_file" (default .local/database.json, where the backend reads its connections).  A volume may also be given as an
 absolute local folder ("E:/Data").  On each volume the role lives in <volume>\\<folder>\\<role>: that folder is the storage path
 written into the configuration and its `pgdata` holds the cluster, so the disk the backend measures and the disk the data is on are
@@ -49,8 +49,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-ROLES = ("primary", "emergency", "external")
-PORTS = {"primary": 55440, "emergency": 55441, "external": 55442}
+ROLES = ("primary", "emergency")
+PORTS = {"primary": 55440, "emergency": 55441}
 PG_MAJOR = 18  # the PostgreSQL the archive was developed and tested with
 MIN_FREE = 20 * 1024**3
 SERVICE_ACCOUNT = r"NT AUTHORITY\NetworkService"
@@ -157,8 +157,8 @@ def read_input(path: Path) -> dict:
     if not isinstance(raw, dict) or set(raw) - {"volumes", "pg_bin", "config", "database_file", "folder", "ports"}:
         raise SystemExit(f"{path}: unknown keys; allowed are volumes, pg_bin, config, database_file, folder, ports")
     volumes = raw.get("volumes")
-    if not isinstance(volumes, dict) or not {"primary", "emergency"} <= set(volumes) or set(volumes) - set(ROLES):
-        raise SystemExit(f'{path}: "volumes" needs "primary" and "emergency", and may have "external"')
+    if not isinstance(volumes, dict) or set(volumes) != set(ROLES):
+        raise SystemExit(f'{path}: "volumes" takes exactly "primary" and "emergency" (a removable "external" disk is no longer supported)')
     for key in ("pg_bin", "config"):
         if not isinstance(raw.get(key), str) or not raw[key].strip():
             raise SystemExit(f'{path}: "{key}" is required')
@@ -259,8 +259,6 @@ def with_storage(config: dict, roles: list[Role]) -> dict:
     storage = dict(config.get("storage", {}))
     for role in roles:
         storage[f"{role.name}_path"] = role.folder.replace("\\", "/")
-    if any(role.name == "external" for role in roles):
-        storage["external_enabled"] = True
     return {**config, "storage": storage}
 
 
@@ -426,7 +424,7 @@ def register(inp: dict):
                 print(f"{role.name}: service {role.service} is running and accepts connections")
                 break
             except psycopg.Error:
-                if time.monotonic() > deadline:  # e.g. the removable disk is not plugged in: the supervisor keeps trying
+                if time.monotonic() > deadline:  # e.g. its disk is not ready yet: the supervisor keeps trying
                     print(f"WARNING {role.name}: service {role.service} did not accept connections within 60 s")
                     break
                 time.sleep(1)

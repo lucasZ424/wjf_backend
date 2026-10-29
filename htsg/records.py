@@ -14,6 +14,7 @@ GOOD, BAD, UNCERTAIN = "GOOD", "BAD", "UNCERTAIN"
 MISSING = "MISSING_"  # quality prefix of a failure record: an input a failed Modbus round took away (no value, §5, §14)
 ORIGIN_RECEIVED = "RECEIVED"
 ORIGIN_ASSERTION = "STATE_ASSERTION"
+ORIGIN_BASELINE = "RETENTION_BASELINE"  # the retention-boundary baseline of a bucket (§5, §13.6): not a sample either
 KIND_MODBUS_POLL = "MODBUS_POLL"
 KIND_UA_NOTIFY = "UA_NOTIFY"
 RESULT_OK, RESULT_NA = "OK", "NOT_AVAILABLE"
@@ -24,6 +25,7 @@ GROUP_STATE = "STATE"  # validity / segment / poll bookkeeping without new input
 GROUP_FAULT = "FAULT"  # timer-confirmed faults
 GROUP_RECOVERY = "RECOVERY"  # gap + new segment + baseline + first watermark
 GROUP_WATERMARK = "WATERMARK"
+GROUP_BASELINE = "BASELINE"  # the retention-boundary baseline of all sources, one group (§13.6)
 
 
 def observation_id(run_id: str, source_id: str, batch_seq: int, item_seq: int) -> str:
@@ -40,6 +42,11 @@ def result_id(run_id: str, source_id: str, batch_seq: int, point_id: str) -> str
 
 def result_assertion_id(run_id: str, source_id: str, seg: int, point_id: str) -> str:
     return f"{run_id}/{source_id}/a{seg}/r/{point_id}"
+
+
+def baseline_id(run_id: str, set_no: int, kind: str, point_id: str) -> str:
+    """A record of retention baseline `set_no`: its own id - the record it restates is referenced, never reused."""
+    return f"{run_id}/rb{set_no}/{kind}/{point_id}"
 
 
 def state_id(run_id: str, source_id: str, event_no: int) -> str:
@@ -205,6 +212,7 @@ class CommitGroup:
     results: tuple[Result, ...] = ()
     states: tuple[StateRecord, ...] = ()
     faults: tuple[FaultRecord, ...] = ()
+    bucket: int | None = None  # set by the state owner at the batch boundary (§13.6); None is never written
 
     def record_count(self) -> int:
         return len(self.observations) + len(self.results) + len(self.states) + len(self.faults)

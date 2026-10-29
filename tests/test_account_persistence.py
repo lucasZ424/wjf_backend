@@ -162,7 +162,7 @@ async def test_offline_cache_allowed_only_without_unresolved_change(archive_db_f
         raise psycopg.OperationalError("database read unavailable")
 
     monkeypatch.setattr(router.primary, "read_accounts", unavailable)
-    runtime = Runtime(config, router, accounts)
+    runtime = Runtime(config, router, accounts, number_file=tmp_path / "bucket_number.json")
     await runtime.start()
     try:
         assert runtime.running

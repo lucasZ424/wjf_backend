@@ -5,7 +5,7 @@ certify a stale cache, rewrite a sample, or pile up memory without limit.
 """
 
 import pytest
-from owner_support import Recorder, poll, small_config
+from owner_support import FixedBucket, Recorder, poll, small_config
 from test_source_validity import MONO0, WALL0, at, data, keepalive, ua_only
 
 from htsg import records as r
@@ -38,7 +38,7 @@ class Sink:
 
 def build(config=None):
     sink, rec = Sink(), Recorder()
-    owner = Owner(config or ua_only(), WALL0, MONO0, commit=sink, publish=rec.publish, run_id="run")
+    owner = Owner(config or ua_only(), WALL0, MONO0, commit=sink, publish=rec.publish, buckets=FixedBucket(), run_id="run")
     sink.owner = owner
     owner.begin_generation("ua", 1, WALL0, MONO0)
     return owner, sink, rec
@@ -158,7 +158,7 @@ def test_an_out_of_sync_intake_is_fixed_by_a_rebuild_first_and_the_stale_cache_i
 
 def test_the_restatement_computes_nothing_and_cuts_the_change_chain():
     sink, rec = Sink(), Recorder()
-    owner = Owner(small_config(), WALL0, MONO0, commit=sink, publish=rec.publish, run_id="run")
+    owner = Owner(small_config(), WALL0, MONO0, commit=sink, publish=rec.publish, buckets=FixedBucket(), run_id="run")
     sink.owner = owner
     for source in ("mb", "ua"):
         owner.begin_generation(source, 1, WALL0, MONO0)

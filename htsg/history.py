@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import math
 import time
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field
 
 import psycopg
@@ -41,6 +42,45 @@ class StoreRead:
     watermarks: list = field(default_factory=list)
     rows: list = field(default_factory=list)  # raw observations and derived results, marked by kind
     truncated: set = field(default_factory=set)
+    retention: dict = field(default_factory=lambda: dict(NOTHING_DELETED))  # what the rolling deletion took (§13.6)
+
+
+RETIRED = ("DELETING", "DELETED")
+NOTHING_DELETED = {"retired": [], "possibly_incomplete": [], "deleted_before": None}
+
+
+def _retention(conn, buckets: list, start: float, end: float, hidden: list) -> dict:
+    """What this database says about the rolling deletion for [start, end] (§13.6 保留边界与查询).  Two statements, never
+    merged: the time a bucket taken away covered is `retired` (DELETING: no longer queryable; DELETED: deleted), and inside
+    what is kept only the oldest bucket, from its first group to its baseline, is `possibly_incomplete` - as is kept data a
+    clock set back put inside a retired range.  `deleted_before`: the boundary, when the window starts before it."""
+    retired = [b for b in buckets if b["state"] in RETIRED]
+    if not retired:
+        return dict(NOTHING_DELETED)
+    out = {"retired": [], "possibly_incomplete": [], "deleted_before": None}
+    for b in retired:
+        if b["first_wall"] is not None and b["last_wall"] >= start and b["first_wall"] <= end:
+            out["retired"].append({"bucket": b["no"], "state": b["state"], "from": b["first_wall"], "to": b["last_wall"]})
+            overlap = conn.execute(
+                "SELECT min(built_wall) AS lo,max(built_wall) AS hi FROM commit_group "
+                "WHERE built_wall>=%s AND built_wall<=%s AND bucket<>ALL(%s)",
+                (b["first_wall"], b["last_wall"], hidden),
+            ).fetchone()
+            if overlap["lo"] is not None:
+                out["possibly_incomplete"].append({"from": overlap["lo"], "to": overlap["hi"], "reason": "CLOCK_OVERLAP"})
+    kept = [b for b in buckets if b["state"] not in RETIRED and b["used"]]
+    if kept:
+        oldest = kept[0]
+        span = conn.execute(
+            "SELECT min(built_wall) AS lo,max(built_wall) AS hi FROM commit_group WHERE bucket=%s", (oldest["no"],)
+        ).fetchone()
+        lo, hi = span["lo"], oldest["baseline_wall"] if oldest["baseline_wall"] is not None else span["hi"]
+        if lo is not None and hi is not None and hi >= start and lo <= end:
+            out["possibly_incomplete"].append({"from": lo, "to": hi, "reason": "BEFORE_BASELINE"})
+        boundary = oldest["baseline_wall"] if oldest["baseline_wall"] is not None else lo
+        if boundary is not None and start < boundary:
+            out["deleted_before"] = boundary
+    return out
 
 
 def _rows(conn, sql, params):
@@ -54,6 +94,11 @@ def read_store(store, name, channels: dict[str, str], start: float, end: float, 
     points = list(channels)
     sources = sorted(set(channels.values()))
     with store.session() as conn:
+        # one snapshot of the bucket list, the records and their states: a deletion going on cannot hand over half a bucket
+        conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+        buckets = _rows(conn, "SELECT no,state,used,baseline_wall,first_wall,last_wall FROM bucket ORDER BY no", ())
+        hidden = [b["no"] for b in buckets if b["state"] in RETIRED]  # a range being deleted is not shown as data
+        out.retention = _retention(conn, buckets, start, end, hidden)
         out.segments = _rows(
             conn,
             "SELECT run_id,source_id,seg,conn_gen,start_wall,start_reason,end_wall,end_reason FROM segment "
@@ -78,8 +123,9 @@ def read_store(store, name, channels: dict[str, str], start: float, end: float, 
                 conn,
                 f"SELECT * FROM (SELECT {columns},row_number() OVER (PARTITION BY point_id "
                 f"ORDER BY {time_col},run_id,seg,batch_seq,{'item_seq' if kind == 'raw' else 'id'}) AS rn "
-                f"FROM {table} WHERE point_id=ANY(%s) AND {time_col}>=%s AND {time_col}<=%s) t WHERE rn<=%s",
-                (points, start, end, limit + 1),
+                f"FROM {table} WHERE point_id=ANY(%s) AND {time_col}>=%s AND {time_col}<=%s AND bucket<>ALL(%s)) t "
+                f"WHERE rn<=%s",
+                (points, start, end, hidden, limit + 1),
             )
             for row in window:
                 if row.pop("rn") > limit:
@@ -93,7 +139,7 @@ def read_store(store, name, channels: dict[str, str], start: float, end: float, 
                     f"AS k(run_id,source_id,seg,start_wall) CROSS JOIN unnest(%s::text[]) AS p(point_id) "
                     f"CROSS JOIN LATERAL (SELECT {columns} FROM {table} o WHERE o.point_id=p.point_id "
                     f"AND o.run_id=k.run_id AND o.source_id=k.source_id AND o.seg=k.seg "
-                    f"AND o.{time_col}<%s AND o.{time_col}>=coalesce(k.start_wall,'-infinity'::float8) "
+                    f"AND o.{time_col}<%s AND o.{time_col}>=coalesce(k.start_wall,'-infinity'::float8) AND o.bucket<>ALL(%s) "
                     f"ORDER BY o.{time_col} DESC,o.batch_seq DESC"
                     f"{',o.item_seq DESC' if kind == 'raw' else ''} LIMIT 1) b",
                     (
@@ -103,6 +149,7 @@ def read_store(store, name, channels: dict[str, str], start: float, end: float, 
                         [k[3] for k in keys],
                         points,
                         start,
+                        hidden,
                     ),
                 )
                 out.rows.extend({**row, "kind": kind} for row in basis)
@@ -290,6 +337,7 @@ def assemble(
         "truncated": bool(truncated),
         "sources": sorted(set(channels.values())),
     }
+    result["retention"] = {read.name: read.retention for read in reads}  # per database, never merged (§13.6)
     result["coverage"] = "PARTIAL" if unavailable else "UP_TO_COVERAGE_END"
     result["coverage_end"] = coverage_end(result)
     return result
@@ -325,31 +373,63 @@ BASIS_FIELDS = (
 )
 
 
-def _first(stores, sql, params):
-    """First row any available store has, and the names of stores that could not be read."""
-    down = []
-    for name, store in stores:
+HIDDEN = object()  # in the parameters of a statement: the buckets this database hides (being deleted, deleted)
+
+
+@contextmanager
+def _snapshots(stores):
+    """Every database read for one lookup in ONE repeatable-read, read-only transaction, with the buckets it hides - the
+    same isolation as the history page (§13.5): a deletion going on cannot hand the basis half a bucket, and what the page
+    no longer shows is not given here either.  Yields the open reads and the names of databases that could not be read."""
+    reads, down, stack = [], [], ExitStack()
+    try:
+        for name, store in stores:
+            try:
+                conn = stack.enter_context(store.session())
+                conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+                hidden = [r["no"] for r in conn.execute("SELECT no FROM bucket WHERE state=ANY(%s)", (list(RETIRED),))]
+            except psycopg.Error:
+                down.append(name)
+                continue
+            reads.append((name, conn, hidden))
+        yield reads, down
+    finally:
         try:
-            with store.session() as conn:
-                row = conn.execute(sql, params).fetchone()
+            stack.close()
+        except psycopg.Error:  # read only: what was read stands; the session has closed the connection that broke
+            pass
+
+
+def _bind(params, hidden):
+    return tuple(hidden if p is HIDDEN else p for p in params)
+
+
+def _first(reads, down, sql, params):
+    """First row any database still readable has, and its name; a database that fails is added to `down`."""
+    for name, conn, hidden in reads:
+        if name in down:
+            continue
+        try:
+            row = conn.execute(sql, _bind(params, hidden)).fetchone()
         except psycopg.Error:
             down.append(name)
             continue
         if row is not None:
-            return name, row, down
-    return None, None, down
+            return name, row
+    return None, None
 
 
-def _all(stores, sql, params):
-    seen, down = {}, []
-    for name, store in stores:
+def _all(reads, down, sql, params):
+    seen = {}
+    for name, conn, hidden in reads:
+        if name in down:
+            continue
         try:
-            with store.session() as conn:
-                for row in conn.execute(sql, params).fetchall():
-                    seen.setdefault(row["id"], row)
+            for row in conn.execute(sql, _bind(params, hidden)).fetchall():
+                seen.setdefault(row["id"], row)
         except psycopg.Error:
             down.append(name)
-    return list(seen.values()), down
+    return list(seen.values())
 
 
 def _source_inputs(derived: dict, name: str, points: dict) -> list[str]:
@@ -369,10 +449,15 @@ def input_basis(stores, result_id: str) -> dict:
     that batch in batch order.  Modbus: only that round's responses (strain_change: also the previous
     planned round).  Nothing is borrowed from other rounds or segments; what cannot be found is reported.
     """
-    name, result, down = _first(stores, "SELECT * FROM result WHERE id=%s", (result_id,))
+    with _snapshots(stores) as (reads, down):
+        return _input_basis(reads, down, result_id)
+
+
+def _input_basis(reads, down, result_id: str) -> dict:
+    name, result = _first(reads, down, "SELECT * FROM result WHERE id=%s AND bucket<>ALL(%s)", (result_id, HIDDEN))
     if result is None:
         return {"found": False, "unavailable": down}
-    _, config, _ = _first(stores, "SELECT payload FROM config_version WHERE id=%s", (result["config_id"],))
+    _, config = _first(reads, down, "SELECT payload FROM config_version WHERE id=%s", (result["config_id"],))
     payload = config["payload"] if config else None
     out = {
         "found": True,
@@ -398,39 +483,43 @@ def input_basis(stores, result_id: str) -> dict:
         entry = {"source_id": source, "mode": None, "rows": [], "batch_end": None}
         if source != result["source_id"]:
             entry["mode"] = "CROSS_SOURCE_LATEST"  # no cross-source guarantee; shown for orientation only
-            rows, _ = _all(
-                stores,
+            rows = _all(
+                reads,
+                down,
                 f"SELECT {BASIS_FIELDS} FROM observation WHERE point_id=%s AND run_id=%s AND effective_wall<=%s "
-                "ORDER BY effective_wall DESC,batch_seq DESC,item_seq DESC LIMIT 1",
-                (pid, result["run_id"], result["at_wall"]),
+                "AND bucket<>ALL(%s) ORDER BY effective_wall DESC,batch_seq DESC,item_seq DESC LIMIT 1",
+                (pid, result["run_id"], result["at_wall"], HIDDEN),
             )
         elif kinds[source] == "modbus":
             entry["mode"] = "THIS_ROUND"
             wanted = [result["batch_seq"]] + ([previous_batch] if previous_batch else [])
-            rows, _ = _all(
-                stores,
+            rows = _all(
+                reads,
+                down,
                 f"SELECT {BASIS_FIELDS} FROM observation WHERE point_id=%s AND run_id=%s AND source_id=%s "
-                "AND batch_seq=ANY(%s) ORDER BY batch_seq,item_seq",
-                (pid, result["run_id"], source, wanted),
+                "AND batch_seq=ANY(%s) AND bucket<>ALL(%s) ORDER BY batch_seq,item_seq",
+                (pid, result["run_id"], source, wanted, HIDDEN),
             )
             if previous_batch:
                 out["previous_round"] = {"batch_seq": previous_batch, "tick": (result["basis"] or {}).get("previous_tick")}
         else:
             entry["mode"] = "BATCH_END_STATE"
-            in_batch, _ = _all(
-                stores,
+            in_batch = _all(
+                reads,
+                down,
                 f"SELECT {BASIS_FIELDS} FROM observation WHERE point_id=%s AND run_id=%s AND source_id=%s "
-                "AND seg=%s AND batch_seq=%s ORDER BY item_seq",
-                (pid, result["run_id"], source, result["seg"], result["batch_seq"]),
+                "AND seg=%s AND batch_seq=%s AND bucket<>ALL(%s) ORDER BY item_seq",
+                (pid, result["run_id"], source, result["seg"], result["batch_seq"], HIDDEN),
             )
             if in_batch:
                 rows = sorted(in_batch, key=lambda r: r["item_seq"])
             else:
-                rows, _ = _all(
-                    stores,
+                rows = _all(
+                    reads,
+                    down,
                     f"SELECT {BASIS_FIELDS} FROM observation WHERE point_id=%s AND run_id=%s AND source_id=%s "
-                    "AND seg=%s AND batch_seq<%s ORDER BY batch_seq DESC,item_seq DESC LIMIT 1",
-                    (pid, result["run_id"], source, result["seg"], result["batch_seq"]),
+                    "AND seg=%s AND batch_seq<%s AND bucket<>ALL(%s) ORDER BY batch_seq DESC,item_seq DESC LIMIT 1",
+                    (pid, result["run_id"], source, result["seg"], result["batch_seq"], HIDDEN),
                 )
         entry["rows"] = [dict(r) for r in rows]
         current = [r for r in entry["rows"] if r["batch_seq"] == result["batch_seq"] or entry["mode"] != "THIS_ROUND"]
@@ -439,15 +528,25 @@ def input_basis(stores, result_id: str) -> dict:
         if not entry["rows"] or (this_round and all((r["quality"] or "").startswith(MISSING) for r in this_round)):
             out["missing"].append(pid)  # nothing was found - or this round gave the input only a failure record
         for r in entry["rows"]:
-            if r["origin"] == "STATE_ASSERTION":
-                original, _, _ = _first(stores, "SELECT 1 AS found FROM observation WHERE id=%s", (r["orig_id"],))
+            if r["origin"] in ("STATE_ASSERTION", "RETENTION_BASELINE"):
+                _, original = _first(
+                    reads, down, "SELECT 1 AS found FROM observation WHERE id=%s AND bucket<>ALL(%s)", (r["orig_id"], HIDDEN)
+                )
                 if original is None:
                     out["notes"].append(f"ORIGINAL_OBSERVATION_LOST:{r['orig_id']}")
         out["inputs"][pid] = entry
+    if out["missing"]:  # 依据已裁剪 (§10.1): a deleted range that began by then may have held what is missing
+        _, pruned = _first(
+            reads, down, "SELECT 1 AS found FROM bucket WHERE state=ANY(%s) AND first_wall<=%s LIMIT 1", (list(RETIRED), result["at_wall"])
+        )
+        if pruned is not None:
+            out["notes"].append("BASIS_PRUNED")
     if result["basis_incomplete"]:
         out["notes"].append("INPUTS_LOST_IN_ARCHIVE_GAP")
     if result["origin"] == "STATE_ASSERTION":
         out["notes"].append("RESTATED_RESULT")
+    if result["origin"] == "RETENTION_BASELINE":
+        out["notes"].append("RETENTION_BASELINE_RESULT")
     out["complete"] = not out["missing"] and not result["basis_incomplete"] and not any(
         n.startswith("ORIGINAL_OBSERVATION_LOST") for n in out["notes"]
     )

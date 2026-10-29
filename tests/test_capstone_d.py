@@ -1,6 +1,6 @@
 """Capstone D: persistence and recovery closed loop (方案第 6 节).
 
-Real PostgreSQL, three throw-away databases, injected disk readings, and real child processes killed
+Real PostgreSQL, throw-away databases, injected disk readings, and real child processes killed
 at the three dangerous moments.  Reads here are direct SQL: the query layer arrives in module F.
 """
 
@@ -12,18 +12,18 @@ from pathlib import Path
 
 import pytest
 from test_archive_write import make_group
-from test_storage_routing import Rig3
+from test_history_merge import Rig
 
 ROOT = Path(__file__).resolve().parents[1]
 TABLES = ("observation", "result", "state_event", "fault_record")
 
 
 def all_stores(rig):
-    return {"primary": rig.primary, "emergency": rig.emergency, "external": rig.external}
+    return {"primary": rig.primary, "emergency": rig.emergency}
 
 
 def history_union(rig, point="ti"):
-    """Direct SQL over all three databases, the way the later query layer will."""
+    """Direct SQL over both databases, the way the later query layer will."""
     seen = []
     for name, store in all_stores(rig).items():
         with store.session() as conn:
@@ -32,25 +32,36 @@ def history_union(rig, point="ti"):
     return seen
 
 
-def test_three_databases_keep_whole_groups_and_two_histories_stay_visible_across_the_switch(archive_db_factory):
-    rig = Rig3(archive_db_factory)
-    plan = [(0.40, 0.20), (0.96, 0.20), (0.96, 0.96), (0.96, 0.60), (0.30, 0.60)]
-    for primary, external in plan:
-        assert rig.write(primary=primary, external=external).durable
-    where = rig.where()
-    assert where == {
-        "run1/g1": ["primary"], "run1/g2": ["external"], "run1/g3": ["emergency"],
-        "run1/g4": ["external"], "run1/g5": ["external"],
+def where(rig):
+    found = {}
+    for name, store in all_stores(rig).items():
+        with store.session() as conn:
+            for row in conn.execute("SELECT group_id FROM commit_group").fetchall():
+                found.setdefault(row["group_id"], []).append(name)
+    return found
+
+
+def rows(store):
+    with store.session() as conn:
+        return conn.execute("SELECT count(*) AS n FROM observation").fetchone()["n"]
+
+
+def test_two_databases_keep_whole_groups_and_both_histories_stay_visible_across_the_switches(archive_db_factory):
+    rig = Rig(archive_db_factory)
+    for primary in (0.40, 0.96, 0.96, 0.60, 0.30):  # to emergency at 95 %, back below 90 % after a successful probe
+        assert rig.write(primary=primary).durable
+    assert where(rig) == {
+        "run1/g1": ["primary"], "run1/g2": ["emergency"], "run1/g3": ["emergency"],
+        "run1/g4": ["primary"], "run1/g5": ["primary"],
     }  # fmt: skip
-    # a group of 300 records and one the budget refuses
-    big = make_group(order=6, n_obs=300, config_id=rig.cfg.config_id)
+    big = make_group(order=6, n_obs=300, config_id=rig.cfg.config_id)  # a group of 300 records
     assert rig.router.write_group(big).durable
-    assert rig.rows("external") == 3 + 3 + 3 + 300 and rig.rows("emergency") == 3 and rig.rows("primary") == 3
+    assert rows(rig.primary) == 3 + 3 + 3 + 300 and rows(rig.emergency) == 3 + 3
     merged = history_union(rig)
     ids = [i for _, i, _ in merged]
     assert len(ids) == len(set(ids)), "no observation exists twice, before or after the switch"
     assert {n for n, i, g in merged if g == "run1/g1"} == {"primary"}, "pre-switch data was neither moved nor copied"
-    assert {n for n, i, g in merged if g == "run1/g2"} == {"external"}
+    assert {n for n, i, g in merged if g == "run1/g2"} == {"emergency"}
     for name, store in all_stores(rig).items():  # every stored group is complete in its own database
         with store.session() as conn:
             for g in conn.execute("SELECT group_id,records FROM commit_group").fetchall():

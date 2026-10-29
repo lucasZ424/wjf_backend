@@ -16,7 +16,7 @@ is dropped without a word; the others are confirmed, refused, or held at the hea
 import random
 
 import pytest
-from owner_support import Recorder
+from owner_support import FixedBucket, Recorder
 from test_source_validity import MONO0, WALL0, at, data, keepalive, tick, ua_only
 
 from htsg import history as h
@@ -73,7 +73,7 @@ def only(kind):
 
 def world():
     writer, rec = Writer(), Recorder()
-    owner = Owner(CONFIG, WALL0, MONO0, commit=writer, publish=rec.publish, run_id="run")
+    owner = Owner(CONFIG, WALL0, MONO0, commit=writer, publish=rec.publish, run_id="run", buckets=FixedBucket())
     writer.owner = owner
     owner.begin_generation("ua", 1, WALL0, MONO0)
     data(owner, 101.0)
@@ -383,7 +383,7 @@ def test_segment_fragments_spread_over_three_databases_read_as_the_same_history_
     for group in groups:
         assert whole.write_group(group).durable
     channels, start, end = {"ti": "ua"}, WALL0, WALL0 + 60.0
-    three = h.query([("primary", stores[0]), ("emergency", stores[1]), ("external", stores[2])], channels, start, end)
+    three = h.query([("primary", stores[0]), ("emergency", stores[1]), ("third", stores[2])], channels, start, end)
     one = h.query([("primary", whole)], channels, start, end)
     assert three["partial"] is False and spans_of(three) == spans_of(one)
     assert all(s[1] is not None and (s[2] is None or s[2] >= s[1]) for s in spans_of(three)), "no phantom, no end before a start"

@@ -9,8 +9,6 @@ after the real path has been read - so a disk that is pulled out is gone here ex
 this is in the product: the router has always taken its disk readings from outside.
 
     python scripts/rehearse_storage.py plain    normal to 95 % -> removable; removable to 95 % -> emergency
-    python scripts/rehearse_storage.py unplug   normal to 95 % -> removable, then writes on and reports every switch
-                                                while a person pulls E: out and puts it back (Ctrl+C ends it)
 """
 
 from __future__ import annotations
@@ -120,7 +118,7 @@ def main(args):
     router.bind_run(run, config.config_id, time.time())
     point = next(p.id for p in config.points if p.source == "ua_field")
     log, order, mode, landed, sizes = [], 0, None, {role: 0 for role in ROLES}, {}
-    started = last_status = time.monotonic()
+    started = time.monotonic()
 
     def say(text):
         line = f"{time.strftime('%H:%M:%S')} {text}"
@@ -140,8 +138,7 @@ def main(args):
     try:
         while order < 6000:  # a cap, whatever happens
             order += 1
-            slow = args.what == "unplug" and router.mode not in ("UNKNOWN", "PRIMARY")
-            g = group(run, order, point, 200 if slow else 2000)  # off the normal disk: small groups, a person has time
+            g = group(run, order, point)
             sizes[g.group_id] = len(g.observations)
             while True:  # one group until it is durable: same ids, as the writer queue does
                 result = router.write_group(g)
@@ -155,11 +152,6 @@ def main(args):
                 mode = router.mode
             if args.what == "plain" and router.mode == "EMERGENCY" and landed.get("emergency", 0) >= 5:
                 break
-            if slow:
-                time.sleep(1.0)
-                if time.monotonic() - last_status > 30:
-                    say(f"group {order}: still writing to {router.mode}; disks {reading()}")
-                    last_status = time.monotonic()
     except KeyboardInterrupt:
         say("stopped by the operator")
     placed = where_groups_are(stores)
@@ -181,7 +173,7 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("what", choices=("plain", "unplug"))
+    parser.add_argument("what", choices=("plain",))
     main(parser.parse_args())
     sys.stdout.flush()
     os._exit(0)

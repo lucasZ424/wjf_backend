@@ -1,5 +1,6 @@
 import json
 import sys
+import threading
 import time
 import warnings
 from contextlib import contextmanager
@@ -16,14 +17,16 @@ from psycopg.conninfo import make_conninfo
 def archive_db_factory():
     """Throw-away databases on the development clusters; every one is dropped at teardown.
 
-    Never touches the existing development or research databases.
+    Never touches the existing development or research databases.  By default a database is laid down at the current
+    generation for the test configuration with bucket 1 prepared (修复轮09): a test of what is written does not wait for the
+    maintenance thread.  `prepare=False` gives the bare, empty database - for legacy databases and for the first start.
     """
     from htsg.archive import ArchiveStore
 
     credentials = json.loads(Path(".local/database.json").read_text())
     created, stores = [], []
 
-    def make(instance="primary", name=None):
+    def make(instance="primary", name=None, prepare=True):
         name = name or "htsg_test_" + uuid4().hex
         admin = make_conninfo(credentials[instance], dbname="postgres")
         with psycopg.connect(admin, autocommit=True) as conn:
@@ -31,17 +34,26 @@ def archive_db_factory():
         created.append((admin, name))
         store = ArchiveStore(make_conninfo(credentials[instance], dbname=name))
         stores.append(store)
+        if prepare:
+            from owner_support import small_config
+
+            store.initialize(small_config())
+            store.prepare_bucket(1)
         return store
 
     try:
         yield make
     finally:
+        # a maintenance thread still running here outlived the stop of its runtime (修复轮09 审核第1条): it would go on using
+        # - and connecting to again - the databases dropped below.  Looked at before the drop, reported after it.
+        left = [t.name for t in threading.enumerate() if t.name == "bucket maintenance" and t.is_alive()]
         for store in stores:
             store.close()
         for admin, name in created:
             assert name.startswith("htsg_test_") and len(name) == 42
             with psycopg.connect(admin, autocommit=True) as conn:
                 conn.execute(sql.SQL("DROP DATABASE {} WITH (FORCE)").format(sql.Identifier(name)))
+        assert not left, f"{len(left)} maintenance thread(s) still running when the test's databases were dropped"
 
 
 # ---- real-browser fixtures (Chrome through Playwright, a running web application); imports stay lazy so the

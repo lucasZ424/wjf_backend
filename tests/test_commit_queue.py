@@ -145,7 +145,7 @@ async def test_against_real_postgres_groups_become_durable_in_offer_order(archiv
     seen = []
 
     def confirm(group, result):
-        seen.append((group.group_id, primary.group_committed(group.group_id)))  # durable at announcement time
+        seen.append((group.group_id, primary.group_committed(group.group_id, group.bucket)))  # durable at announcement time
 
     queue = CommitQueue(router, 50, on_committed=confirm)
     for n in range(1, 8):

@@ -15,7 +15,7 @@ from pydantic import ValidationError
 from test_archive_router import Disks, config
 from test_archive_write import make_group
 
-from htsg.archive import ArchiveStore, WriteOutcome
+from htsg.archive import WriteOutcome
 from htsg.archive_router import ArchiveRouter
 from htsg.commitq import CommitQueue
 from htsg.config import Settings
@@ -23,86 +23,7 @@ from htsg.config import Settings
 GIB = 1024**3
 
 
-class Rig3:
-    """Normal, emergency and removable databases, all throw-away."""
-
-    def __init__(self, factory, **storage):
-        self.disks = Disks()
-        self.cfg = config(external_enabled=True, **storage)
-        self.primary, self.emergency = factory("primary"), factory("emergency")
-        self.external = factory("primary")  # another database, so it is distinct from the normal one
-        self.router = self.new_router()
-        self.router.initialize()
-        self.router.bind_run("run1", self.cfg.config_id, 999.0)
-        self.n = 0
-
-    def new_router(self):
-        return ArchiveRouter(self.cfg, self.primary, self.emergency, self.external, disk_usage=self.disks)
-
-    def write(self, primary=None, external=None):
-        if primary is not None:
-            self.disks.used["D:/a"] = primary
-        if external is not None:
-            self.disks.used["D:/c"] = external
-        self.n += 1
-        return self.router.write_group(make_group(order=self.n, config_id=self.cfg.config_id))
-
-    def where(self):
-        found = {}
-        for name, store in (("primary", self.primary), ("emergency", self.emergency), ("external", self.external)):
-            with store.session() as conn:
-                for row in conn.execute("SELECT group_id FROM commit_group").fetchall():
-                    found.setdefault(row["group_id"], []).append(name)
-        return found
-
-    def rows(self, name):
-        with getattr(self, name).session() as conn:
-            return conn.execute("SELECT count(*) AS n FROM observation").fetchone()["n"]
-
-
-@pytest.fixture
-def rig(archive_db_factory):
-    return Rig3(archive_db_factory)
-
-
-def test_at_95_percent_new_groups_go_to_the_removable_database_old_data_stays_where_it_is(rig):
-    assert rig.write(primary=0.50).target == "primary"
-    assert rig.write(primary=0.96, external=0.20).target == "external"
-    assert rig.write(primary=0.30).target == "external", "once selected, space freeing up does not switch back"
-    assert rig.router.mode == "EXTERNAL" and rig.router.external_selected
-    assert rig.where() == {"run1/g1": ["primary"], "run1/g2": ["external"], "run1/g3": ["external"]}
-    assert rig.rows("primary") == 3 and rig.rows("external") == 6, "nothing was copied or removed on the switch"
-    assert rig.emergency.routing_mode() == "EXTERNAL" and rig.emergency.external_selected()
-
-
-def test_the_selection_survives_a_restart_and_a_recovered_primary(rig):
-    rig.write(primary=0.96, external=0.20)
-    restarted = rig.new_router()
-    restarted.initialize()
-    restarted.bind_run("run1", rig.cfg.config_id, 999.0)
-    rig.router = restarted
-    assert rig.write(primary=0.10).target == "external"
-
-
-def test_when_the_removable_database_fails_the_emergency_route_takes_over_and_recovery_returns_only_to_it(rig):
-    rig.write(primary=0.96, external=0.20)
-    real = rig.disks.__call__
-
-    def external_unreadable(path):
-        if path == "D:/c":
-            raise OSError("unplugged")
-        return real(path)
-
-    rig.router.disk_usage = external_unreadable
-    assert rig.write(primary=0.10).target == "emergency", "removable volume unreadable -> emergency"
-    rig.router.disk_usage = real
-    assert rig.write(primary=0.10, external=0.80).target == "emergency", "80 % is still above the 70 % line"
-    assert rig.write(primary=0.10, external=0.60).target == "external", "back to the removable one, never primary"
-    where = rig.where()
-    assert where["run1/g1"] == ["external"] and all("primary" not in v for v in where.values())
-
-
-def test_without_a_removable_database_emergency_ends_only_at_70_percent_and_with_a_successful_probe(archive_db_factory):
+def test_emergency_ends_only_below_the_90_percent_deletion_start_and_with_a_successful_probe(archive_db_factory):
     disks = Disks()
     cfg = config()
     primary, emergency = archive_db_factory("primary"), archive_db_factory("emergency")
@@ -116,52 +37,34 @@ def test_without_a_removable_database_emergency_ends_only_at_70_percent_and_with
         return router.write_group(make_group(order=next(order), config_id=cfg.config_id)).target
 
     assert write(0.96) == "emergency"
-    assert write(0.80) == "emergency", "hysteresis: recovery needs 70 %, not merely less than 95 %"
+    assert write(0.92) == "emergency", "hysteresis: recovery needs less than 90 %, not merely less than 95 %"
+    assert write(0.90) == "emergency", "below the line, not on it"
     real_probe = primary.probe_write
 
     def probe_fails():
         raise psycopg.OperationalError("read-only")
 
     primary.probe_write = probe_fails
-    assert write(0.60) == "emergency" and router.health["switchback"] == "OperationalError"
+    assert write(0.89) == "emergency" and router.health["switchback"] == "OperationalError"
     primary.probe_write = real_probe
-    assert write(0.60) == "primary" and router.health["switchback"] == "OK"
+    assert write(0.89) == "primary" and router.health["switchback"] == "OK"
 
 
-def test_a_removable_database_that_fails_the_binding_check_is_never_written_or_probed(archive_db_factory):
-    disks = Disks()
-    cfg = config(external_enabled=True)
-    primary, emergency = archive_db_factory("primary"), archive_db_factory("emergency")
-    same_as_primary = ArchiveStore(primary.dsn)  # NOT a distinct database: the binding must be refused
-    probes = []
-    same_as_primary.probe_write = lambda: probes.append(1)
-    router = ArchiveRouter(cfg, primary, emergency, same_as_primary, disk_usage=disks)
-    router.initialize()
-    router.bind_run("run1", cfg.config_id, 999.0)
-    disks.used["D:/a"] = 0.96
-    result = router.write_group(make_group(config_id=cfg.config_id))
-    assert result.target == "emergency" and probes == [] and router.health["external"] == "ExternalBindingError"
-
-
-def test_production_validates_the_volume_and_still_keeps_reserve_batch_budget_and_gap(archive_db_factory):
+def test_production_lifts_the_quota_and_still_keeps_reserve_batch_budget_and_gap(archive_db_factory):
     payload = small_config().model_dump(mode="json")
     payload.update(mode="production", dev_admin_login=False)
-    payload["storage"] = {
-        "primary_path": "E:/a", "emergency_path": "E:/b", "external_enabled": True, "external_path": "E:/c",
-    }  # fmt: skip
+    payload["storage"] = {"primary_path": "E:/a", "emergency_path": "E:/b"}
     cfg = Settings.model_validate(payload)
     with pytest.raises(ValidationError, match="dev_admin_login"):
         Settings.model_validate({**payload, "dev_admin_login": True})
     disks = Disks()
-    primary, emergency, external = (archive_db_factory(i) for i in ("primary", "emergency", "primary"))
-    router = ArchiveRouter(cfg, primary, emergency, external, disk_usage=disks)
+    router = ArchiveRouter(cfg, archive_db_factory("primary"), archive_db_factory("emergency"), disk_usage=disks)
     router.initialize()
     router.bind_run("run1", cfg.config_id, 999.0)
     router.bytes_written = 50 * GIB  # far beyond the 10 GiB development quota
     assert router.write_group(make_group(config_id=cfg.config_id)).target == "primary", "quota is lifted"
-    disks.used["E:/a"] = 0.96  # volume of the real removable database is not E: -> binding refused
-    result = router.write_group(make_group(order=2, config_id=cfg.config_id))
-    assert result.target == "emergency" and router.health["external"] == "ExternalBindingError"
+    disks.used["E:/a"] = 0.96
+    assert router.write_group(make_group(order=2, config_id=cfg.config_id)).target == "emergency"
     disks.used["E:/b"] = 0.95  # emergency volume: 50 GiB of 1000 free < the 100 GiB reserve
     refused = router.write_group(make_group(order=3, config_id=cfg.config_id))
     assert (refused.status, refused.reason) == ("REFUSED", "EMERGENCY_RESERVE")
@@ -317,36 +220,43 @@ def test_an_unreadable_emergency_volume_matters_only_when_the_emergency_route_is
     assert committed(router.emergency) == [waiting.group_id]
 
 
-def test_a_failed_removable_write_does_not_fall_back_blind_when_the_emergency_volume_cannot_be_read(rig):
-    assert rig.write(primary=0.96, external=0.20).target == "external"
+def test_a_failed_write_after_the_switch_back_does_not_fall_back_blind_when_the_emergency_volume_cannot_be_read(archive_db_factory):
     disks = Unreadable()
-    disks.used = rig.disks.used
-    rig.router.disk_usage = disks
+    router, cfg = two_databases(archive_db_factory, disks)
+    disks.used["D:/a"] = 0.96
+    assert router.write_group(make_group(order=1, config_id=cfg.config_id)).target == "emergency"
+    disks.used["D:/a"] = 0.60
     disks.missing.add("D:/b")
-    rig.external.write_group = lambda group: WriteOutcome("FAILED", "OperationalError")
-    result = rig.write()
+    router.primary.write_group = lambda group: WriteOutcome("FAILED", "OperationalError")
+    result = router.write_group(make_group(order=2, config_id=cfg.config_id))
     assert (result.status, result.reason) == ("FAILED", "EMERGENCY_DISK_UNAVAILABLE")
 
 
-def test_a_failed_removable_write_with_an_unreachable_emergency_database_keeps_the_group_and_the_writer(rig):
-    """In the removable-disk mode a failed write falls back to the emergency database.  When that database could not be reached
-    either, recording the switch raised out of the writer and ended the process (review 2026-10-26, no. 2).  Now the group waits
-    and the switch is made only once it is recorded; the same group goes to the emergency database when it answers."""
-    assert rig.write(primary=0.96, external=0.20).target == "external"
-    rig.external.write_group = lambda group: WriteOutcome("FAILED", "OperationalError")
-    recorded = rig.emergency.routing_mode
+def test_a_failed_write_after_the_switch_back_with_an_unreachable_emergency_database_keeps_the_group_and_the_writer(archive_db_factory):
+    """Right after the switch back a failed primary write falls back to the emergency database.  When that database could not
+    be reached either, recording the switch raised out of the writer and ended the process (review 2026-10-26, no. 2).  Now the
+    group waits, the switch is made only once it is recorded, and the same group is written once, where it is finally taken."""
+    disks = Disks()
+    router, cfg = two_databases(archive_db_factory, disks)
+    disks.used["D:/a"] = 0.96
+    assert router.write_group(make_group(order=1, config_id=cfg.config_id)).target == "emergency"
+    disks.used["D:/a"] = 0.60
+    real_write, recorded = router.primary.write_group, router.emergency.routing_mode
+    router.primary.write_group = lambda group: WriteOutcome("FAILED", "OperationalError")
 
-    def unreachable(value=None):
-        raise psycopg.OperationalError("connection refused")
+    def emergency_unreachable(value=None):
+        if value == "EMERGENCY":
+            raise psycopg.OperationalError("connection refused")
+        return recorded(value)
 
-    rig.emergency.routing_mode = unreachable
-    group = make_group(order=99, config_id=rig.cfg.config_id)
-    result = rig.router.write_group(group)
+    router.emergency.routing_mode = emergency_unreachable
+    group = make_group(order=99, config_id=cfg.config_id)
+    result = router.write_group(group)
     assert (result.status, result.reason) == ("FAILED", "OperationalError")
-    assert rig.router.mode == "EXTERNAL", "the switch is not made while it cannot be recorded"
-    rig.emergency.routing_mode = recorded
-    assert rig.router.write_group(group).target == "emergency", "the same group, once the emergency database answers"
-    assert rig.where()[group.group_id] == ["emergency"]
+    assert router.mode == "PRIMARY", "the switch to emergency is not made while it cannot be recorded"
+    router.emergency.routing_mode, router.primary.write_group = recorded, real_write
+    assert router.write_group(group).target == "primary", "the same group, once a database takes it"
+    assert committed(router.primary).count(group.group_id) == 1 and group.group_id not in committed(router.emergency)
 
 
 async def test_the_writer_keeps_running_when_a_configured_storage_path_does_not_exist(archive_db_factory):

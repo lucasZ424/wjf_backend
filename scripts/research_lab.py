@@ -43,7 +43,7 @@ def prepare(config_path, *, new_lab=False):
     config = load_settings(config_path)
     if not config.simulation.enabled or config.mode != "development":
         raise SystemExit("This launcher requires a development simulation configuration")
-    roles = ("primary", "emergency", "external") if config.storage.external_enabled else ("primary", "emergency")
+    roles = ("primary", "emergency")
     LOCAL.mkdir(parents=True, exist_ok=True)
     destination = LOCAL / "database.json"
     if new_lab and (LOCAL / "accounts.pending").exists():
@@ -77,8 +77,6 @@ def prepare(config_path, *, new_lab=False):
     databases = json.loads(destination.read_text())
     if any(not databases.get(role) for role in roles):
         raise SystemExit("Existing lab lacks an enabled storage binding; configure it before starting")
-    if databases.get("external") and "external" not in roles:
-        roles = (*roles, "external")  # Retained archives still count toward the development cap.
     used_bytes = 0
     for role in roles:
         with psycopg.connect(databases[role], connect_timeout=3) as conn:

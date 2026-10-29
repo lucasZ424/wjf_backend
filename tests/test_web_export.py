@@ -42,7 +42,7 @@ def test_the_csv_survives_commas_quotes_line_breaks_and_formula_looking_text(tmp
     payload = {
         "result": {
             "query_time": 2000.0, "center": 1000.0, "start": 990.0, "end": 1010.0, "seconds": 20, "limit": 10000,
-            "coverage_complete_until": None, "unavailable": ["external"], "gaps": [],
+            "coverage_complete_until": None, "unavailable": ["emergency"], "gaps": [],
             "channels": {"x": {
                 "source_id": "s", "truncated": False,
                 "segments": [{"run_id": "run, \"1\"", "seg": 1, "rows": [
@@ -64,7 +64,7 @@ def test_the_csv_survives_commas_quotes_line_breaks_and_formula_looking_text(tmp
     assert facts["通道名称"] == nasty, "comma, quote and line break come back exactly"
     assert facts["单位"] == "'=1+1", "text that a spreadsheet would evaluate is made inert"
     assert facts["时区"] == "Asia/Shanghai (UTC+08:00)" and facts["中心时间"] == "1970-01-01T08:16:40.000+08:00"
-    assert facts["不可读的数据库"] == "external" and facts["覆盖终点"] == "未知"
+    assert facts["不可读的数据库"] == "emergency" and facts["覆盖终点"] == "未知"
     assert len(rows) == 3 and all(len(r) == len(header) for r in rows)
     col = {name: header.index(name) for name in header}
     assert rows[0][col["值"]] == "-0.5", "a negative number is a number, not text to be neutralised"

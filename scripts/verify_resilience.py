@@ -5,7 +5,7 @@
 crash     the backend runs as its own process on throw-away databases and is killed hard - during start-up, then at
           random moments under full load - and restarted; after every kill no commit group is half written, and
           after the restart every earlier run has been closed from what is persisted.
-storage   the 95 % / 70 % thresholds are driven with INJECTED free-space readings through the live runtime (a real
+storage   the 95 % / 90 % thresholds are driven with INJECTED free-space readings through the live runtime (a real
           disk is never filled): which database each group lands in, hysteresis, no archive loss, history merged.
 capacity  the measured growth of the full-scale input (all 208 inputs changing every second, and nothing changing)
           times 365, with the write-ahead log peak and the disk margin; not enough room means no one-year pass.
@@ -200,44 +200,40 @@ def group_counts(lab) -> dict:
 
 
 async def storage(seconds: float) -> dict:
-    report = {"with_removable_disk": [], "without": []}
+    report = {}
     drive = Path(measure.load_settings(measure.ROOT / "config/research-sim.json").storage.primary_path).drive + "/"
     free_before = shutil.disk_usage(drive).free
-    for external, steps in (
-        (True, [("primary 40 %", {}, "PRIMARY"), ("primary 96 %", {"primary": 0.96}, "EXTERNAL"), ("primary back to 40 %: no way back", {"primary": 0.40}, "EXTERNAL"),
-                ("removable disk 96 %", {"external": 0.96}, "EMERGENCY"), ("removable disk 80 %: still emergency", {"external": 0.80}, "EMERGENCY"), ("removable disk 69 %", {"external": 0.69}, "EXTERNAL")]),
-        (False, [("primary 40 %", {}, "PRIMARY"), ("primary 96 %", {"primary": 0.96}, "EMERGENCY"), ("primary 80 %: hysteresis holds", {"primary": 0.80}, "EMERGENCY"), ("primary 69 %", {"primary": 0.69}, "PRIMARY")]),
-    ):
-        disks = InjectedDisks()
-        async with measure.Lab(stats_interval=60, disk_usage=disks, external=external, prefix="htsg_switch_") as lab:
-            storage_paths = {"primary": lab.config.storage.primary_path, "external": lab.config.storage.external_path}
-            await measure.initial_burst(lab)
-            seen, rows = group_counts(lab), []
-            for label, used, expected in steps:
-                for kind, fraction in used.items():
-                    disks.used[storage_paths[kind]] = fraction
-                await asyncio.sleep(seconds)
-                now = group_counts(lab)
-                landed = {name: now[name] - seen[name] for name in now}
-                seen = now
-                archive = {s: lab.runtime.owner.history_status(s)["archive"] for s in lab.runtime.owner.sources}
-                rows.append({"step": label, "route": lab.router.mode, "expected": expected, "groups_landed": landed, "archive": archive})
-            await measure.steady(lab, 1)  # settle: everything offered is durable
-            whole = {}
-            for name, store in lab.router.stores:
-                check = database_check(store)
-                whole[name] = {k: check[k] for k in ("half_written_groups", "orphan_rows")}
-            ids = []
-            for _, store in lab.router.stores:
-                with psycopg.connect(store.dsn) as conn:
-                    ids += [r[0] for r in conn.execute("SELECT group_id FROM commit_group").fetchall()]
-            history = await asyncio.to_thread(fetch, f"http://127.0.0.1:{lab.port}/api/replay?center={time.time() - 10}&seconds=600&points=bridge_mvv_01", lab.viewer, 30)  # off the loop: the web application is served by it
-            raw = [x for s in history["channels"]["bridge_mvv_01"]["segments"] for x in s["rows"] if x["origin"] == "RECEIVED"]
-            report["with_removable_disk" if external else "without"] = {
-                "steps": rows, "whole_groups": whole, "group_ids": len(ids), "group_ids_unique": len(set(ids)) == len(ids),
-                "history": {"partial": history["partial"], "raw_rows": len(raw), "duplicates": len(raw) - len({x["id"] for x in raw}), "in_order": [x["time"] for x in raw] == sorted(x["time"] for x in raw)},
-                "owner_archive_lost_groups": lab.runtime.owner.health["archive_lost_groups"],
-            }
+    steps = [("primary 40 %", {}, "PRIMARY"), ("primary 96 %", {"primary": 0.96}, "EMERGENCY"), ("primary 92 %: hysteresis holds", {"primary": 0.92}, "EMERGENCY"), ("primary 89 %", {"primary": 0.89}, "PRIMARY")]
+    disks = InjectedDisks()
+    async with measure.Lab(stats_interval=60, disk_usage=disks, prefix="htsg_switch_") as lab:
+        storage_paths = {"primary": lab.config.storage.primary_path}
+        await measure.initial_burst(lab)
+        seen, rows = group_counts(lab), []
+        for label, used, expected in steps:
+            for kind, fraction in used.items():
+                disks.used[storage_paths[kind]] = fraction
+            await asyncio.sleep(seconds)
+            now = group_counts(lab)
+            landed = {name: now[name] - seen[name] for name in now}
+            seen = now
+            archive = {s: lab.runtime.owner.history_status(s)["archive"] for s in lab.runtime.owner.sources}
+            rows.append({"step": label, "route": lab.router.mode, "expected": expected, "groups_landed": landed, "archive": archive})
+        await measure.steady(lab, 1)  # settle: everything offered is durable
+        whole = {}
+        for name, store in lab.router.stores:
+            check = database_check(store)
+            whole[name] = {k: check[k] for k in ("half_written_groups", "orphan_rows")}
+        ids = []
+        for _, store in lab.router.stores:
+            with psycopg.connect(store.dsn) as conn:
+                ids += [r[0] for r in conn.execute("SELECT group_id FROM commit_group").fetchall()]
+        history = await asyncio.to_thread(fetch, f"http://127.0.0.1:{lab.port}/api/replay?center={time.time() - 10}&seconds=600&points=bridge_mvv_01", lab.viewer, 30)  # off the loop: the web application is served by it
+        raw = [x for s in history["channels"]["bridge_mvv_01"]["segments"] for x in s["rows"] if x["origin"] == "RECEIVED"]
+        report["switching"] = {
+            "steps": rows, "whole_groups": whole, "group_ids": len(ids), "group_ids_unique": len(set(ids)) == len(ids),
+            "history": {"partial": history["partial"], "raw_rows": len(raw), "duplicates": len(raw) - len({x["id"] for x in raw}), "in_order": [x["time"] for x in raw] == sorted(x["time"] for x in raw)},
+            "owner_archive_lost_groups": lab.runtime.owner.health["archive_lost_groups"],
+        }
     report["real_disk_growth_bytes"] = free_before - shutil.disk_usage(drive).free
     return report
 

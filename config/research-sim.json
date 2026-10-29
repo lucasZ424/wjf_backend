@@ -5020,10 +5020,7 @@
     "primary_path": "D:/HTSG-dev/primary",
     "emergency_path": "D:/HTSG-dev/emergency",
     "development_budget_bytes": 10737418240,
-    "cleanup_enabled": false,
-    "external_enabled": false,
-    "external_path": "",
-    "external_start": 0.95
+    "cleanup_enabled": false
   },
   "simulation": {
     "enabled": true,

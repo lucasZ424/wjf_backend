@@ -186,7 +186,7 @@ class Observation:
         accounts = Accounts(Path(self.work.name) / "accounts.json")
         self.viewer = accounts.create("viewer", "viewer")
         accounts.create("admin", "admin")  # the development login (admin:admin) needs an active admin account
-        self.runtime = Runtime(self.config, self.router, accounts)
+        self.runtime = Runtime(self.config, self.router, accounts, number_file=Path(self.work.name) / "bucket_number.json")
         self.rounds = []  # (seconds on the timeline, planned tick number) of every Modbus round the owner committed
         offer = self.runtime.owner.commit
 

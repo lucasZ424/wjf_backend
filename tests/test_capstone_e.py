@@ -10,6 +10,7 @@ import threading
 import time
 
 from live_support import BRIDGES, FULL, PROCESS, UA_NAMES
+from owner_support import FixedBucket
 from test_archive_router import Disks
 
 from htsg import records as r
@@ -48,7 +49,7 @@ class Scenario:
             is_void=lambda g: self.owner.is_void(g),
             retry_delay=(0.01, 0.05),
         )  # fmt: skip
-        self.owner = Owner(self.cfg, WALL0, MONO0, commit=self.queue.offer, publish=lambda p: None, run_id="e")
+        self.owner = Owner(self.cfg, WALL0, MONO0, commit=self.queue.offer, publish=lambda p: None, buckets=FixedBucket(), run_id="e")
         self.owner.start(WALL0, MONO0)
         for source in ("mb_field", "ua_field"):
             self.owner.begin_generation(source, 1, WALL0, MONO0)
@@ -204,7 +205,7 @@ async def test_constant_outage_multiversion_two_sided_and_archive_stop_end_in_a_
 def test_a_recovery_unit_with_1000_faults_and_the_full_baseline_stays_inside_the_group_budget():
     cfg = make_config()
     sink = []
-    owner = Owner(cfg, WALL0, MONO0, commit=lambda g: sink.append(g), run_id="big")
+    owner = Owner(cfg, WALL0, MONO0, commit=lambda g: sink.append(g), buckets=FixedBucket(), run_id="big")
     for source in ("mb_field", "ua_field"):
         owner.begin_generation(source, 1, WALL0, MONO0)
     items = tuple(r.Item(n, 440.0 if n.startswith("temp_outer") else 480.0 if n.startswith("temp_inner") else PROCESS[n]) for n in UA_NAMES)

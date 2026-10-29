@@ -2,8 +2,8 @@
 
 Why it matters: after a power cut or a crash the system must come back by itself (项目硬规则).  The supervisor must start the backend
 again whenever it ends - with growing pauses while it keeps ending, so a backend that cannot start does not spin - never start a second
-backend next to one that already owns the deployment, start the database services that are not running (a removable disk plugged in
-late), and stop everything the normal way and start nothing while the maintenance file STOP is there.
+backend next to one that already owns the deployment, start the database services that are not running (a disk that was not ready at
+boot), and stop everything the normal way and start nothing while the maintenance file STOP is there.
 """
 
 import logging
@@ -84,24 +84,24 @@ def test_the_backend_starts_without_the_database_once_the_wait_is_over(fast, mon
 
 
 def test_stopped_database_services_are_started_every_round_and_a_change_is_logged_once(monkeypatch, caplog):
-    states = {"HTSG-PostgreSQL-primary": "RUNNING", "HTSG-PostgreSQL-external": "STOPPED"}
+    states = {"HTSG-PostgreSQL-primary": "RUNNING", "HTSG-PostgreSQL-emergency": "STOPPED"}
     started = []
-    plugged_in = {"now": False}
+    ready = {"now": False}
     monkeypatch.setattr(sup, "service_state", lambda name: states[name])
 
     def start(name):
         started.append(name)
-        if plugged_in["now"]:
+        if ready["now"]:
             states[name] = "RUNNING"
 
     monkeypatch.setattr(sup, "start_service", start)
     seen = {}
     with caplog.at_level(logging.INFO, logger="htsg.supervisor"):
-        sup.ensure_services(list(states), seen)  # the removable disk is not there: its database cannot start
+        sup.ensure_services(list(states), seen)  # its disk is not ready yet: the database cannot start
         sup.ensure_services(list(states), seen)
-        plugged_in["now"] = True
+        ready["now"] = True
         sup.ensure_services(list(states), seen)
-    assert started == ["HTSG-PostgreSQL-external"] * 3, "tried every round, the running one is left alone"
-    assert seen == {"HTSG-PostgreSQL-primary": "RUNNING", "HTSG-PostgreSQL-external": "RUNNING"}
-    external = [r.getMessage() for r in caplog.records if "external" in r.getMessage()]
-    assert external == ["service HTSG-PostgreSQL-external: STOPPED", "service HTSG-PostgreSQL-external: RUNNING"]
+    assert started == ["HTSG-PostgreSQL-emergency"] * 3, "tried every round, the running one is left alone"
+    assert seen == {"HTSG-PostgreSQL-primary": "RUNNING", "HTSG-PostgreSQL-emergency": "RUNNING"}
+    emergency = [r.getMessage() for r in caplog.records if "emergency" in r.getMessage()]
+    assert emergency == ["service HTSG-PostgreSQL-emergency: STOPPED", "service HTSG-PostgreSQL-emergency: RUNNING"]

@@ -4,5 +4,5 @@
   "sources": [{"id": "adc", "kind": "modbus", "enabled": false, "interval": 1}, {"id": "dcs", "kind": "opcua", "enabled": false, "interval": 1}],
   "points": [],
   "derived": [{"id": "thermal_stress", "inputs": [], "operation": "unconfigured", "unit": "MPa"}],
-  "storage": {"primary_path": "D:/HTSG/primary", "emergency_path": "C:/HTSG/emergency", "cleanup_enabled": false, "external_enabled": false, "external_path": "E:/HTSG/external", "external_start": 0.95}
+  "storage": {"primary_path": "D:/HTSG/primary", "emergency_path": "C:/HTSG/emergency", "cleanup_enabled": true, "cleanup_stop": 0.8}
 }

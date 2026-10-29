@@ -246,6 +246,11 @@ def create_web_app(*, config, accounts, owner, archive_router=None, queue=None, 
         archive = {"sources": {sid: owner.history_status(sid) for sid in owner.sources}, "routing": None, "health": {}}
         if archive_router is not None:
             archive["routing"], archive["health"] = archive_router.mode, dict(archive_router.health)
+        maintenance = getattr(lifecycle, "maintenance", None)
+        if maintenance is not None:  # the bucket thread's last snapshot: memory only, nothing here asks the database
+            buckets = dict(maintenance.snapshot.health)
+            archive["retention"] = buckets.pop("retention", None)
+            archive["buckets"] = buckets
         if queue is not None:
             archive["queue"] = {"depth": queue.depth, "capacity": queue.capacity, **queue.stats}
         runtime = dict(lifecycle.health) if lifecycle is not None else {}

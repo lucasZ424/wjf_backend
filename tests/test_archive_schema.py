@@ -16,14 +16,15 @@ CONFIG = Settings.model_validate({"sources": [{"id": "s", "kind": "modbus"}]})
 
 @pytest.fixture
 def store(archive_db_factory):
-    store = archive_db_factory()
+    store = archive_db_factory(prepare=False)
     store.initialize(CONFIG)
+    store.prepare_bucket(1)
     return store
 
 
 def observation_row(**changes):
     row = dict(
-        id="run1/ua/b1/i0", group_id="run1/g1", run_id="run1", source_id="ua", conn_gen=1, seg=1,
+        bucket=1, id="run1/ua/b1/i0", group_id="run1/g1", run_id="run1", source_id="ua", conn_gen=1, seg=1,
         batch_seq=1, item_seq=0, point_id="p", value=1.0, quality="GOOD", status_code=0,
         received_wall=1000.0, received_mono=5.0, origin=r.ORIGIN_RECEIVED,
     )  # fmt: skip
@@ -58,9 +59,9 @@ def test_stable_id_is_unique_so_a_retried_group_cannot_duplicate_history(store):
     with store.session() as conn:
         insert_observation(conn)
         conn.execute(
-            "INSERT INTO observation(id,group_id,run_id,source_id,conn_gen,seg,batch_seq,item_seq,point_id,"
+            "INSERT INTO observation(bucket,id,group_id,run_id,source_id,conn_gen,seg,batch_seq,item_seq,point_id,"
             "quality,received_wall,received_mono,origin) "
-            "VALUES('run1/ua/b1/i0','g','r','s',1,1,1,0,'p','GOOD',1,1,'RECEIVED') ON CONFLICT(id) DO NOTHING"
+            "VALUES(1,'run1/ua/b1/i0','g','r','s',1,1,1,0,'p','GOOD',1,1,'RECEIVED') ON CONFLICT(id,bucket) DO NOTHING"
         )
         assert conn.execute("SELECT count(*) AS n FROM observation").fetchone()["n"] == 1
     with pytest.raises(psycopg.errors.UniqueViolation), store.session() as conn:
@@ -100,8 +101,8 @@ def test_full_configuration_snapshot_is_queryable_by_config_id(store):
 def test_a_result_must_reference_a_stored_configuration(store):
     with pytest.raises(psycopg.errors.ForeignKeyViolation), store.session() as conn:
         conn.execute(
-            "INSERT INTO result(id,group_id,run_id,source_id,conn_gen,seg,batch_seq,point_id,status,config_id,"
-            "at_wall,origin) VALUES('x','g','r','s',1,1,1,'p','OK','no-such-config',1,'RECEIVED')"
+            "INSERT INTO result(bucket,id,group_id,run_id,source_id,conn_gen,seg,batch_seq,point_id,status,config_id,"
+            "at_wall,origin) VALUES(1,'x','g','r','s',1,1,1,'p','OK','no-such-config',1,'RECEIVED')"
         )
 
 
@@ -140,7 +141,7 @@ def test_initialisation_is_idempotent(store):
 
 
 def test_a_legacy_frame_database_is_recognised_and_left_untouched(archive_db_factory):
-    legacy = archive_db_factory()
+    legacy = archive_db_factory(prepare=False)
     make_legacy(legacy, CONFIG)  # the frame-based generation
     before = snapshot(legacy)
     with pytest.raises(LegacyDatabaseError):
@@ -158,9 +159,9 @@ def test_a_foreign_schema_generation_is_refused(store):
 
 
 def test_new_database_gets_accounts_through_the_normal_flow_not_by_migration(archive_db_factory):
-    legacy = archive_db_factory()
+    legacy = archive_db_factory(prepare=False)
     make_legacy(legacy, CONFIG, {"olduser": {"role": "admin", "salt": "s", "digest": "d", "active": True}})
-    fresh = archive_db_factory()
+    fresh = archive_db_factory(prepare=False)
     fresh.initialize(CONFIG)
     assert fresh.read_accounts() == {}, "legacy accounts are not copied into a new database"
     fresh.sync_accounts({"admin": {"role": "admin", "salt": "s", "digest": "d", "active": True}})

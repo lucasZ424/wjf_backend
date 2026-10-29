@@ -108,13 +108,22 @@ def _sink_none(_):
 
 
 RUN_SOURCE = "_run"  # carrier "source" of run-level groups (start / end)
+BASELINE_SOURCE = "_baseline"  # carrier "source" of retention-boundary baselines (§13.6): all sources in one group
+BASELINE_RETRY = 60.0  # seconds between two tries for a database whose bucket still lacks its baseline (fixed pace)
+BASELINE_ITEM = 2**31 - 1  # a baseline record comes after every record of the batch it follows, in history order
 PENDING_LIMIT = 256  # groups held per source while a recovery group is not yet confirmed
 OWED_JUMPS_LIMIT = 16  # clock-jump markers kept per source while its archive is lost: the newest ones (the rest are counted)
 
 
 class Owner:
-    def __init__(self, config: Settings, wall: float, mono: float, *, commit=None, publish=None, run_id=None):
+    def __init__(self, config: Settings, wall: float, mono: float, *, commit=None, publish=None, run_id=None, buckets=None):
         self.config = config
+        self.buckets = buckets  # which bucket each group is put in (§13.6); without one a group has none and is a gap
+        # retention baselines (§13.6 补基线): (database, bucket) still lacking one -> monotonic time of the next try; bounded,
+        # as only the current bucket is kept, one entry per database
+        self.baseline_due: dict[tuple, float] = {}
+        self.baseline_inflight: int | None = None  # the order of the baseline group on its way
+        self.baseline_sets = 0
         self.config_id = config.config_id  # a hash of the whole configuration: taken once, not once per result
         self.run_id = run_id or uuid4().hex
         self.commit, self.publish = commit or _sink_none, publish or _sink_none
@@ -215,6 +224,7 @@ class Owner:
             tuple(results),
             tuple(states),
             tuple(faults),
+            None if self.buckets is None else self.buckets.label(),
         )
 
     def _publish(self, group: rec.CommitGroup):
@@ -304,6 +314,11 @@ class Owner:
 
     def committed(self, group: rec.CommitGroup, result=None):
         """The writer confirmed `group` durable.  Only now may history be called recovered."""
+        if result is not None and getattr(result, "lacks_baseline", False):
+            self._baseline_wanted(result.target, group.bucket)
+        if group.kind == rec.GROUP_BASELINE:
+            self._baseline_settled(group, getattr(result, "target", None))
+            return
         s = self.sources.get(group.source_id)
         for fault in group.faults:  # removed only now: durable
             self.fault_buffer.pop(fault.id, None)
@@ -366,7 +381,11 @@ class Owner:
         }
 
     def refused(self, group: rec.CommitGroup, reason: str):
-        """A policy refused the whole group (budget, reserve, capacity): it becomes, or extends, a gap."""
+        """A policy refused the whole group (budget, reserve, capacity): it becomes, or extends, a gap.  A retention baseline
+        is the exception: losing one costs its bucket only the deletion eligibility, it is tried again (§13.6 补基线)."""
+        if group.kind == rec.GROUP_BASELINE:
+            self._baseline_settled(group, None)
+            return
         s = self.sources.get(group.source_id)
         if s is None:
             if self.run_end_group is not None and group.group_id == self.run_end_group.group_id:
@@ -386,6 +405,71 @@ class Owner:
             s.pending.clear()
         else:
             self._archive_lost(s, group, "REFUSED:" + reason)
+
+    # ------------------------------------------------------- retention baselines (§5, §13.6)
+
+    def unsettled_buckets(self) -> set:
+        """Buckets of groups this owner holds back for a recovery: they are still on their way (§13.6 可删范围)."""
+        return {g.bucket for s in self.sources.values() for g in s.pending}
+
+    def _baseline_wanted(self, target, bucket):
+        """The route said `target` has no baseline of `bucket`: marked only, taken at the next batch boundary.  A notice for a
+        bucket that is no longer the current one is dropped - a sealed bucket gets no new baseline."""
+        if self.buckets is not None and bucket is not None and bucket == self.buckets.label():
+            self.baseline_due.setdefault((target, bucket), 0.0)
+
+    def _baseline_settled(self, group: rec.CommitGroup, target):
+        if self.baseline_inflight == group.order:
+            self.baseline_inflight = None
+        if target is not None:
+            self.baseline_due.pop((target, group.bucket), None)
+
+    def _retention_tick(self, wall: float, mono: float):
+        current = None if self.buckets is None else self.buckets.label()
+        self.baseline_due = {key: when for key, when in self.baseline_due.items() if key[1] == current}
+        if self.baseline_inflight is not None or not self.baseline_due or min(self.baseline_due.values()) > mono:
+            return
+        group = self.retention_baseline(wall, mono)
+        for key in self.baseline_due:  # until it is confirmed where it is wanted, the next try is a fixed pace away
+            self.baseline_due[key] = mono + BASELINE_RETRY
+        if self.commit(group) is not False:
+            self.baseline_inflight = group.order
+
+    def retention_baseline(self, wall: float, mono: float) -> rec.CommitGroup:
+        """Every source's values in force and the derived results computed from them, restated at this batch boundary as ONE
+        group (§5 保留边界基线): new ids, the restated record referenced, counted from `wall` only.  A source without a valid
+        segment is only marked.  Nothing in the owner changes: no change, no fault timer, nothing shown live."""
+        self.baseline_sets += 1
+        n, observations, results, sources = self.baseline_sets, [], [], {}
+        for s in self.sources.values():
+            if not (s.enabled and s.state == VALID and s.open_segment and s.archive == "OK"):
+                sources[s.id] = "NO_VALID_SEGMENT"
+                continue
+            sources[s.id] = "SEGMENT"
+            for pid in s.point_ids:
+                obs = self.points[pid].obs
+                if obs is not None:
+                    observations.append(
+                        replace(
+                            obs, id=rec.baseline_id(self.run_id, n, "o", pid), seg=s.seg, batch_seq=s.batch_seq,
+                            item_seq=BASELINE_ITEM, origin=rec.ORIGIN_BASELINE, orig_id=obs.id, asserted_wall=wall,
+                            asserted_mono=mono,
+                        )  # fmt: skip
+                    )
+            for rule in self.topology.rules:
+                last = self.results[rule.id].emitted
+                if self.result_source[rule.id] == s.id and last is not None:
+                    results.append(
+                        replace(
+                            last, id=rec.baseline_id(self.run_id, n, "r", rule.id), seg=s.seg, batch_seq=s.batch_seq,
+                            origin=rec.ORIGIN_BASELINE, orig_id=last.id, asserted_wall=wall,
+                        )  # fmt: skip
+                    )
+        state = rec.StateRecord(
+            rec.state_id(self.run_id, BASELINE_SOURCE, n), self.run_id, BASELINE_SOURCE, 0, "RETENTION_BASELINE", wall, mono,
+            {"set": n, "sources": sources},
+        )  # fmt: skip
+        return self._build(rec.GROUP_BASELINE, BASELINE_SOURCE, wall, observations, results, [state])
 
     def _try_archive_recovery(self, s: SourceState, wall: float, mono: float):
         """At a batch boundary: gap + new segment + retained baseline + first watermark as ONE unit (§5)."""
@@ -579,7 +663,11 @@ class Owner:
         return t.modbus_alarm_seconds if s.kind == "modbus" else t.ua_alarm_seconds
 
     def tick(self, wall: float, mono: float):
-        """Once per second from the monotonic schedule.  Communication is judged before anything else."""
+        """Once per second from the monotonic schedule.  Communication is judged before anything else; the bucket is changed
+        here, at a batch boundary, before any group of this tick is built."""
+        if self.buckets is not None:
+            self.buckets.tick(wall, mono)
+        self._retention_tick(wall, mono)
         delta = (wall - self.last_tick_wall) - (mono - self.last_tick_mono)
         if abs(delta) > self.config.timing.clock_jump:  # exactly 2 s does not open a segment
             self._clock_jump(wall, mono, delta)

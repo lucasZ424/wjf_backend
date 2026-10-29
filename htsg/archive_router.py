@@ -1,4 +1,4 @@
-"""Routing of whole commit groups to the normal / removable / emergency databases (终版 §5 C3, §13.5).
+"""Routing of whole commit groups to the normal / emergency databases (终版 §5 C3, §13.5).
 
 A group goes to exactly one database.  There is no splitting, no dropping of derived results in the
 emergency route, and no cross-database rewrite of a group whose commit outcome is unknown: that one
@@ -8,11 +8,10 @@ is verified by its stable id or retried against the same target.
 from __future__ import annotations
 
 import json
-import ntpath
 import shutil
 import time
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 
 import psycopg
 
@@ -28,47 +27,9 @@ class PolicyRefusal(RuntimeError):
     """A bounded-storage policy refuses the whole group; it is a gap, not a bug."""
 
 
-class ExternalBindingError(ValueError):
-    pass
-
-
 def group_bytes(group: rec.CommitGroup) -> int:
     """Conservative size of a group on disk: serialised payload times a measured row+index factor."""
     return int(len(json.dumps(asdict(group), separators=(",", ":"), default=str)) * 2.5)
-
-
-def _volume(path: str) -> str:
-    drive, tail = ntpath.splitdrive(path)
-    if not drive or not tail.startswith(("/", "\\")):
-        raise ExternalBindingError("External storage requires an absolute Windows volume path")
-    return drive.casefold()
-
-
-def database_identity(store: ArchiveStore) -> tuple[str, str]:
-    with store.session() as conn:
-        row = conn.execute(
-            "SELECT current_setting('data_directory') AS path,current_database() AS name"
-        ).fetchone()
-    return ntpath.normcase(ntpath.normpath(row["path"])), row["name"]
-
-
-def validate_external_binding(external: ArchiveStore, config: Settings, primary, emergency):
-    """Recheck on every (re)connection; a failed check never authorises a write."""
-    with external.session() as conn:
-        if getattr(external._local, "binding_verified_connection", None) is conn:
-            return
-        path, name = database_identity(external)
-        verified = conn
-    volume = _volume(path)
-    if volume != _volume(config.storage.external_path):
-        raise ExternalBindingError("External database is not on its configured volume")
-    for peer in (primary, emergency):
-        peer_path, peer_name = database_identity(peer)
-        if (path, name) == (peer_path, peer_name):
-            raise ExternalBindingError("External database must be distinct from the existing databases")
-        if config.mode == "production" and volume == _volume(peer_path):
-            raise ExternalBindingError("Production external database needs a separate volume")
-    external._local.binding_verified_connection = verified
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,6 +37,7 @@ class RouteResult:
     status: str  # COMMITTED | ALREADY | FAILED | UNKNOWN | REFUSED
     target: str | None = None
     reason: str | None = None
+    lacks_baseline: bool = field(default=False, compare=False)  # the target has no retention baseline of its bucket yet
 
     @property
     def durable(self) -> bool:
@@ -88,16 +50,12 @@ class ArchiveRouter:
         config: Settings,
         primary: ArchiveStore,
         emergency: ArchiveStore,
-        external: ArchiveStore | None = None,
         *,
         disk_usage: Callable = shutil.disk_usage,
         clock: Callable[[], float] = time.monotonic,
     ):
-        self.config, self.primary, self.emergency, self.external = config, primary, emergency, external
-        if config.storage.external_enabled and external is None:
-            raise ValueError("External storage is enabled but no database was configured")
+        self.config, self.primary, self.emergency = config, primary, emergency
         self.disk_usage, self.clock = disk_usage, clock
-        self.external_selected = False
         self.mode = "UNKNOWN"
         self.health: dict = {}
         self.ready: set[str] = set()
@@ -105,24 +63,20 @@ class ArchiveRouter:
         self.development_growth = 0
         self.budget_sizes: dict[str, int] = {}
         self.last_budget_check = -1e9
-        self.pinned: dict[str, str] = {}  # group id -> the database its UNKNOWN commit was sent to
+        self.pinned: dict[str, str] = {}  # group id -> the database its first write went to, until the group is settled
+        self.buckets: Callable | None = None  # the maintenance thread's last snapshot, set by the runtime (§13.5)
         self.last_light = self.last_heavy = -1e9
 
     @property
     def stores(self):
-        return [("primary", self.primary), ("emergency", self.emergency)] + (
-            [("external", self.external)] if self.external is not None else []
-        )
+        return [("primary", self.primary), ("emergency", self.emergency)]
 
     def bind_run(self, run_id, config_id, started_wall):
         for _, store in self.stores:
             store.bind_run(run_id, config_id, started_wall)
 
     def initialize(self, current_run_id: str | None = None):
-        self.health.update(
-            cleanup_enabled=self.config.storage.cleanup_enabled,
-            external_enabled=self.config.storage.external_enabled,
-        )
+        self.health.update(cleanup_enabled=self.config.storage.cleanup_enabled)
         readable, unreadable = [], []
         for name, store in self.stores:
             try:
@@ -138,10 +92,15 @@ class ArchiveRouter:
                 unreadable.append(name)
         self._close_unfinished_runs(current_run_id, readable, unreadable)
         try:
-            self.mode = self.emergency.routing_mode()
-            self.external_selected = self.emergency.external_selected()
+            self.mode = self._read_mode()
         except psycopg.Error:
             self.mode = "UNKNOWN"
+
+    def _read_mode(self) -> str:
+        mode = self.emergency.routing_mode()
+        if mode not in ("PRIMARY", "EMERGENCY"):  # the removable route of an earlier version: primary was full then
+            mode = self.emergency.routing_mode("EMERGENCY")
+        return mode
 
     def _close_unfinished_runs(self, current_run_id, readable, unreadable):
         """Close what a crash left open, with what EVERY bound database knows (终版 §5): a run that ended in one of them
@@ -186,55 +145,29 @@ class ArchiveRouter:
 
     # ------------------------------------------------------------------ routing decision
 
-    def route(self, primary_used: float, emergency_free: int | None, external_used: float | None = None) -> bool:
+    def route(self, primary_used: float, emergency_free: int | None, bucket: int | None = None) -> bool:
         """Pick the target for the next group.  Inputs are injectable: never fill a real disk to test.  `emergency_free` is None
-        when the emergency volume cannot be read: the emergency route is then not allowed, its reserve cannot be checked."""
+        when the emergency volume cannot be read: the emergency route is then not allowed, its reserve cannot be checked.
+        The emergency route ends below the deletion start line, once the primary has the group's bucket and a write probe
+        succeeded (§13.5) - asked in that order, so a missing bucket never switches the route back and forth."""
         policy = self.config.storage
         if self.mode == "UNKNOWN":
-            self.mode = self.emergency.routing_mode()
-            self.external_selected = self.emergency.external_selected()
-        if (
-            policy.external_enabled
-            and self.external is not None
-            and primary_used >= policy.external_start
-            and not self.external_selected
-        ):
-            self.emergency.external_selected(select=True)
-            self.external_selected = True
-        if self.external_selected:
-            desired = "EMERGENCY"
-            external_safe = external_used is not None and (
-                external_used <= policy.cleanup_stop
-                if self.mode == "EMERGENCY"
-                else external_used < policy.emergency_start
-            )
-            if policy.external_enabled and self.external is not None and external_safe:
-                try:
-                    validate_external_binding(self.external, self.config, self.primary, self.emergency)
-                    if self.mode != "EXTERNAL":
-                        self.external.probe_write()
-                except (psycopg.Error, ExternalBindingError) as error:
-                    self.health["external"] = type(error).__name__
-                else:
-                    desired = "EXTERNAL"
-                    self.health["external"] = "OK"
-            if self.mode != desired:
-                self.emergency.routing_mode(desired)
-                self.mode = desired
-        elif primary_used >= policy.emergency_start and self.mode != "EMERGENCY":
+            self.mode = self._read_mode()
+        if primary_used >= policy.emergency_start and self.mode != "EMERGENCY":
             self.emergency.routing_mode("EMERGENCY")
             self.mode = "EMERGENCY"
-        elif primary_used <= policy.cleanup_stop and self.mode == "EMERGENCY":
+        elif primary_used < policy.cleanup_start and self.mode == "EMERGENCY":
             try:
-                self.primary.probe_write()
+                if not self.primary.bucket_takes(bucket):
+                    self.health["switchback"] = "NO_BUCKET"
+                else:
+                    self.primary.probe_write()
+                    self.emergency.routing_mode("PRIMARY")
+                    self.mode = "PRIMARY"
+                    self.health["switchback"] = "OK"
             except psycopg.Error as error:
                 self.health["switchback"] = type(error).__name__
-            else:
-                self.emergency.routing_mode("PRIMARY")
-                self.mode = "PRIMARY"
-                self.health["switchback"] = "OK"
         self.health["active_target"] = self.mode
-        self.health["external_selected"] = self.external_selected
         return self.mode != "EMERGENCY" or (
             emergency_free is not None and emergency_free > self.reserve() + policy.batch_budget_bytes
         )
@@ -271,26 +204,26 @@ class ArchiveRouter:
             raise PolicyRefusal("DEVELOPMENT_WRITE_BUDGET_EXHAUSTED")
 
     def write_group(self, group: rec.CommitGroup) -> RouteResult:
-        """Write one whole group.  A group whose commit came back UNKNOWN is remembered with its database: whatever the disks
-        say by the time it is tried again, it is asked of THAT database only - the first attempt may have become durable
-        there, and a copy in another database would be the same group stored twice.  The memory ends when the group is
-        confirmed durable, and it is bounded by `PINNED_LIMIT`: no remembered group is ever dropped to make room.  A NEW group
-        of unknown commit that finds the memory full is refused (`PIN_TABLE_FULL`, counted in `health`), because a retry of it
-        could no longer be kept away from the other databases."""
+        """Write one whole group.  The database its first write went to is remembered until the group is settled (§13.5): a
+        retry - FAILED or UNKNOWN - goes to THAT database only, whatever the disks say by then.  An UNKNOWN commit may have
+        become durable there, and a copy elsewhere would be the same group stored twice; a FAILED one waits there too, so a
+        group's history is never split by the disks of the moment.  The memory ends when the group is durable or refused, and
+        it is bounded by `PINNED_LIMIT`: no remembered group is ever dropped to make room.  A NEW group that finds the memory
+        full is refused (`PIN_TABLE_FULL`, counted in `health`), because a retry of it could no longer be kept where it was."""
         pinned = self.pinned.get(group.group_id)
         if pinned is None:
             result = self._write_routed(group)
         else:
-            result = self._write_to(pinned, group)  # no route, no policy: the question is only whether it is there
+            result = self._write_to(pinned, group)  # no route, no policy: the target was chosen at the first write
             if result.durable:
                 self.bytes_written += group_bytes(group)
-        if result.status == "UNKNOWN" and result.target is not None:
+        if result.status in ("UNKNOWN", "FAILED") and result.target is not None:
             if group.group_id in self.pinned or len(self.pinned) < PINNED_LIMIT:
                 self.pinned[group.group_id] = result.target
             else:
                 self.health["pin_table_full"] = self.health.get("pin_table_full", 0) + 1
                 result = RouteResult("REFUSED", None, "PIN_TABLE_FULL")
-        elif result.durable:
+        else:  # durable, or refused: settled either way
             self.pinned.pop(group.group_id, None)
         return result
 
@@ -301,6 +234,8 @@ class ArchiveRouter:
     def _write_routed(self, group: rec.CommitGroup) -> RouteResult:
         policy = self.config.storage
         size = group_bytes(group)
+        if group.bucket is None:  # no bucket was ready when it was built: a gap, acquisition goes on (§13.6)
+            return RouteResult("REFUSED", None, "NO_BUCKET")
         if size > policy.batch_budget_bytes:
             return RouteResult("REFUSED", None, "WRITE_BATCH_BUDGET")  # whole group, never split
         try:
@@ -311,17 +246,8 @@ class ArchiveRouter:
             free = [primary.free] if emergency is None else [primary.free, emergency.free]
             if self.config.mode == "development" and min(free) < DEV_RESERVE:
                 raise PolicyRefusal("DEVELOPMENT_DISK_RESERVE")
-            external_used = None
-            if self.external is not None:
-                try:
-                    disk = self.disk_usage(policy.external_path)
-                    external_used = 1 - disk.free / disk.total
-                    if self.config.mode == "development" and disk.free < DEV_RESERVE:
-                        external_used = 1.0
-                except OSError:
-                    self.health["external"] = "DISK_UNAVAILABLE"
             previous = self.mode
-            allowed = self.route(1 - primary.free / primary.total, None if emergency is None else emergency.free, external_used)
+            allowed = self.route(1 - primary.free / primary.total, None if emergency is None else emergency.free, group.bucket)
             if self.config.mode == "development":
                 self._development_budget(size)
             if not allowed:
@@ -333,7 +259,19 @@ class ArchiveRouter:
         except psycopg.Error as error:
             return RouteResult("FAILED", None, type(error).__name__)
         name = self.mode.lower()
+        if name == "primary" and self.buckets is not None and self.buckets().lacks("primary"):
+            # chosen before the first write (§13.5): the primary has no bucket a group may be put in at all - the whole group
+            # goes to the emergency database, its bucket unchanged, the route stays where it is.  A primary that lacks only
+            # THIS group's bucket is written to and waits there: the maintenance thread prepares what a database lacks (D2)
+            if emergency is None:
+                return RouteResult("FAILED", None, "EMERGENCY_DISK_UNAVAILABLE")
+            if emergency.free <= self.reserve() + policy.batch_budget_bytes:
+                return RouteResult("REFUSED", None, "EMERGENCY_RESERVE")
+            self.health["no_bucket_to_emergency"] = self.health.get("no_bucket_to_emergency", 0) + 1
+            name = "emergency"
         result = self._write_to(name, group)
+        if name == "emergency" and (result.status, result.reason) == ("FAILED", "NO_BUCKET"):
+            return RouteResult("REFUSED", None, "NO_BUCKET")  # neither database has it: a gap, certain that nothing is stored
         if result.status == "FAILED" and self._may_fall_back(name, previous):
             # nothing was committed (FAILED is certain), so a different target cannot duplicate the group
             self.health["switchback"] = result.reason
@@ -364,7 +302,7 @@ class ArchiveRouter:
         return usage
 
     def _may_fall_back(self, name: str, previous: str) -> bool:
-        return name == "external" or (previous == "EMERGENCY" and name == "primary")
+        return previous == "EMERGENCY" and name == "primary"
 
     def _write_to(self, name: str, group: rec.CommitGroup) -> RouteResult:
         target = dict(self.stores)[name]
@@ -372,17 +310,18 @@ class ArchiveRouter:
             if name not in self.ready:
                 target.initialize(self.config)
                 self.ready.add(name)
-            if name == "external":
-                validate_external_binding(target, self.config, self.primary, self.emergency)
-        except (psycopg.Error, ExternalBindingError, SchemaError) as error:
+        except (psycopg.Error, SchemaError) as error:
             return RouteResult("FAILED", name, type(error).__name__)
         outcome: WriteOutcome = target.write_group(group)
         if outcome.status == "UNKNOWN":  # COMMIT was in flight: ask the same database, never write elsewhere
             try:
-                outcome = WriteOutcome("COMMITTED" if target.group_committed(group.group_id) else "UNKNOWN")
+                committed = target.group_committed(group.group_id, group.bucket)
+                outcome = WriteOutcome("COMMITTED" if committed else "UNKNOWN")
             except psycopg.Error:
                 pass
-        return RouteResult(outcome.status, name, outcome.error)
+        if outcome.status == "RETIRED":  # certain: not stored, and never moved into another bucket - a gap (§13.6)
+            return RouteResult("REFUSED", name, outcome.error)
+        return RouteResult(outcome.status, name, outcome.error, outcome.lacks_baseline)
 
     def maintain(self, now: float | None = None) -> dict:
         """Slow bookkeeping.  There is NO cleanup in this generation: data is kept, nothing here deletes.
@@ -397,7 +336,6 @@ class ArchiveRouter:
             self.last_light, did["light"] = now, True
             self.health["light"] = {
                 "mode": self.mode,
-                "external_selected": self.external_selected,
                 "bytes_written": self.bytes_written,
                 "development_growth": self.development_growth,
             }
@@ -415,11 +353,11 @@ class ArchiveRouter:
                     self.health[name] = "UNAVAILABLE"
         return did
 
-    def verify(self, group_id: str) -> str | None:
-        """Which database holds the group, by stable id (None when none can confirm it)."""
+    def verify(self, group_id: str, bucket: int | None) -> str | None:
+        """Which database holds the group, by stable id in its bucket (None when none can confirm it)."""
         for name, store in self.stores:
             try:
-                if store.group_committed(group_id):
+                if store.group_committed(group_id, bucket):
                     return name
             except psycopg.Error:
                 continue

@@ -19,7 +19,7 @@ CONFIG = small_config()
 RUN = "run1"
 
 
-def make_group(order=1, n_obs=3, config_id=None, **over):
+def make_group(order=1, n_obs=3, config_id=None, bucket=1, **over):
     config_id = config_id or CONFIG.config_id
     obs = tuple(
         r.Observation(
@@ -49,7 +49,7 @@ def make_group(order=1, n_obs=3, config_id=None, **over):
     group = r.CommitGroup(
         r.group_id(RUN, order), order, RUN, "ua", r.GROUP_BATCH, 1001.0, obs, results, states, faults
     )
-    return replace(group, **over)
+    return replace(group, bucket=bucket, **over)
 
 
 @pytest.fixture
@@ -118,9 +118,9 @@ def test_an_unknown_commit_is_reported_as_unknown_and_can_be_verified_by_id(stor
     outcome = store.write_group(make_group())
     assert outcome.status == "UNKNOWN" and outcome.error, "the failure arrived while COMMIT was in flight"
     store._write_members = original
-    assert store.group_committed("run1/g1") is False, "verified by stable id: it did not become durable"
+    assert store.group_committed("run1/g1", 1) is False, "verified by stable id: it did not become durable"
     assert store.write_group(make_group()).status == "COMMITTED", "same target, same ids: safe to retry"
-    assert store.group_committed("run1/g1") is True
+    assert store.group_committed("run1/g1", 1) is True
 
 
 def test_connection_and_session_limits_are_3_3_1_seconds_and_survive_reconnection(store):

@@ -1,7 +1,10 @@
--- HTSG archive schema, generation 5 (终版设计 §5, §10, §13.2).
+-- HTSG archive schema, generation 6 (终版设计 §5, §10, §13.2, §13.6).
 -- Typed records, idempotent by stable id.  Only for NEW databases: a database created by the
--- frame-based generation (schema_version 1-4) is recognised and refused, never upgraded in place.
+-- frame-based generation (schema_version 1-4) or by generation 5 is recognised and refused, never upgraded in place.
 -- Generation numbers continue the legacy numbering so one number never means two layouts.
+-- Generation 6: commit_group, observation, result and state_event are partitioned by bucket - the unit the rolling
+-- deletion takes away whole.  Their partitions are made by the maintenance thread (ArchiveStore.prepare_bucket); the
+-- bucket list says which buckets this database has and what each may take.  Every other table is kept for good.
 
 CREATE TABLE IF NOT EXISTS htsg_meta (key text PRIMARY KEY, value text NOT NULL);
 
@@ -43,17 +46,32 @@ CREATE TABLE IF NOT EXISTS watermark (
     PRIMARY KEY (run_id, source_id, seg)
 );
 
-CREATE TABLE IF NOT EXISTS commit_group (
-    group_id text PRIMARY KEY, order_no bigint NOT NULL, run_id text NOT NULL, source_id text NOT NULL,
-    kind text NOT NULL, records integer NOT NULL, built_wall double precision NOT NULL,
-    committed_at timestamptz NOT NULL DEFAULT now()
+-- READY: prepared, empty.  CURRENT: the newest bucket this database has received a group of.  SEALED: an older one; it
+-- still takes the groups given to it before it was sealed.  DELETING / DELETED: being / been taken away, it takes nothing.
+CREATE TABLE IF NOT EXISTS bucket (
+    no bigint PRIMARY KEY CHECK(no > 0),
+    state text NOT NULL DEFAULT 'READY' CHECK(state IN ('READY','CURRENT','SEALED','DELETING','DELETED')),
+    prepared_at timestamptz NOT NULL DEFAULT now(), changed_at timestamptz NOT NULL DEFAULT now(),
+    baseline_wall double precision,  -- the earliest retention baseline stored in this bucket here: its retention boundary
+    used boolean NOT NULL DEFAULT false,  -- it received a group here; a prepared bucket never used does not count (§13.6)
+    first_wall double precision, last_wall double precision  -- the time its groups covered, taken when it is marked DELETING
 );
+
+-- The bucket is part of every key: "this group was written already" is asked of the group's own bucket.  The record
+-- id leads, so a lookup by id still uses the index.
+CREATE TABLE IF NOT EXISTS commit_group (
+    bucket bigint NOT NULL, group_id text NOT NULL, order_no bigint NOT NULL, run_id text NOT NULL,
+    source_id text NOT NULL, kind text NOT NULL, records integer NOT NULL, built_wall double precision NOT NULL,
+    committed_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (group_id, bucket)
+) PARTITION BY LIST (bucket);
 CREATE INDEX IF NOT EXISTS commit_group_order ON commit_group(run_id, order_no);
+CREATE INDEX IF NOT EXISTS commit_group_wall ON commit_group(built_wall);  -- the time a bucket covers, per partition
 
 -- status_code is bigint: OPC UA status codes are unsigned 32-bit.  effective_wall is the time the
 -- value counts from in history: the receipt time, or the assertion time for a C2 state assertion.
 CREATE TABLE IF NOT EXISTS observation (
-    id text PRIMARY KEY, group_id text NOT NULL,
+    bucket bigint NOT NULL, id text NOT NULL, group_id text NOT NULL,
     run_id text NOT NULL, source_id text NOT NULL, conn_gen integer NOT NULL, seg integer NOT NULL,
     batch_seq bigint NOT NULL, item_seq integer NOT NULL,
     point_id text NOT NULL, value double precision, quality text NOT NULL, status_code bigint,
@@ -61,15 +79,16 @@ CREATE TABLE IF NOT EXISTS observation (
     source_time double precision,
     origin text NOT NULL, orig_id text, asserted_wall double precision, asserted_mono double precision,
     extreme boolean NOT NULL DEFAULT false, tick bigint, poll_id text, response_id text,
-    effective_wall double precision GENERATED ALWAYS AS (coalesce(asserted_wall, received_wall)) STORED
-);
+    effective_wall double precision GENERATED ALWAYS AS (coalesce(asserted_wall, received_wall)) STORED,
+    PRIMARY KEY (id, bucket)
+) PARTITION BY LIST (bucket);
 CREATE INDEX IF NOT EXISTS observation_point_time ON observation(point_id, effective_wall, batch_seq, item_seq);
 CREATE INDEX IF NOT EXISTS observation_batch ON observation(run_id, source_id, batch_seq, item_seq);
 CREATE INDEX IF NOT EXISTS observation_segment ON observation(run_id, source_id, seg, point_id);
 CREATE INDEX IF NOT EXISTS observation_group ON observation(group_id);
 
 CREATE TABLE IF NOT EXISTS result (
-    id text PRIMARY KEY, group_id text NOT NULL,
+    bucket bigint NOT NULL, id text NOT NULL, group_id text NOT NULL,
     run_id text NOT NULL, source_id text NOT NULL, conn_gen integer NOT NULL, seg integer NOT NULL,
     batch_seq bigint NOT NULL,
     point_id text NOT NULL, value double precision, status text NOT NULL, reason text,
@@ -77,17 +96,19 @@ CREATE TABLE IF NOT EXISTS result (
     at_wall double precision NOT NULL, basis jsonb, estimate jsonb,
     origin text NOT NULL, orig_id text, asserted_wall double precision,
     basis_incomplete boolean NOT NULL DEFAULT false,
-    effective_wall double precision GENERATED ALWAYS AS (coalesce(asserted_wall, at_wall)) STORED
-);
+    effective_wall double precision GENERATED ALWAYS AS (coalesce(asserted_wall, at_wall)) STORED,
+    PRIMARY KEY (id, bucket)
+) PARTITION BY LIST (bucket);
 CREATE INDEX IF NOT EXISTS result_point_time ON result(point_id, effective_wall, batch_seq);
 CREATE INDEX IF NOT EXISTS result_batch ON result(run_id, source_id, batch_seq);
 CREATE INDEX IF NOT EXISTS result_group ON result(group_id);
 
 CREATE TABLE IF NOT EXISTS state_event (
-    id text PRIMARY KEY, group_id text NOT NULL, run_id text NOT NULL, source_id text NOT NULL,
+    bucket bigint NOT NULL, id text NOT NULL, group_id text NOT NULL, run_id text NOT NULL, source_id text NOT NULL,
     seg integer NOT NULL, kind text NOT NULL, at_wall double precision NOT NULL,
-    at_mono double precision NOT NULL, detail jsonb NOT NULL DEFAULT '{}'::jsonb
-);
+    at_mono double precision NOT NULL, detail jsonb NOT NULL DEFAULT '{}'::jsonb,
+    PRIMARY KEY (id, bucket)
+) PARTITION BY LIST (bucket);
 CREATE INDEX IF NOT EXISTS state_event_time ON state_event(source_id, at_wall);
 CREATE INDEX IF NOT EXISTS state_event_group ON state_event(group_id);
 
@@ -111,8 +132,7 @@ CREATE TABLE IF NOT EXISTS fault_loss (
 );
 
 CREATE TABLE IF NOT EXISTS routing_state (
-    id integer PRIMARY KEY CHECK(id=1), mode text NOT NULL,
-    external_selected boolean NOT NULL DEFAULT false, updated_at timestamptz NOT NULL DEFAULT now()
+    id integer PRIMARY KEY CHECK(id=1), mode text NOT NULL, updated_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE TABLE IF NOT EXISTS write_probe (id integer PRIMARY KEY CHECK(id=1), touched_at timestamptz NOT NULL);
 

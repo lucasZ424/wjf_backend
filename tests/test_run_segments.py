@@ -6,7 +6,7 @@ or a clock step that did not open a segment, would let a stale value look valid 
 
 import pytest
 from legacy_support import make_legacy
-from owner_support import Recorder, notify
+from owner_support import FixedBucket, Recorder, notify
 from test_source_validity import MONO0, WALL0, at, data, ua_only
 
 from htsg import records as r
@@ -18,7 +18,7 @@ CONFIG = ua_only()
 
 def owner_and_groups(config=None, run_id="run", *, confirm=False):
     rec = Recorder()
-    owner = Owner(config or CONFIG, WALL0, MONO0, publish=rec.publish, run_id=run_id)
+    owner = Owner(config or CONFIG, WALL0, MONO0, publish=rec.publish, run_id=run_id, buckets=FixedBucket())
 
     def commit(group):
         rec.commit(group)
@@ -143,7 +143,7 @@ def test_a_step_back_keeps_both_halves_apart_by_segment_and_re_states_the_values
 
 
 def test_a_legacy_database_is_never_read_from_or_written_to(archive_db_factory):
-    legacy = archive_db_factory()
+    legacy = archive_db_factory(prepare=False)
     make_legacy(legacy, CONFIG)
     fresh = archive_db_factory("emergency")
     router = ArchiveRouter(CONFIG, legacy, fresh)

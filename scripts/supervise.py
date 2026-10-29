@@ -5,7 +5,7 @@
 The task scheduler starts it at boot and again every five minutes (scripts/deploy_databases.py register); a copy that finds another
 one running exits at once.  For as long as it lives it
   * starts every HTSG PostgreSQL service of the deployment that is not running - at once and every minute after, so the database of
-    a disk that came late (a removable disk plugged in after boot) is started once the disk is there;
+    a disk that came late (one that was not ready at boot) is started once the disk is there;
   * waits until the normal database answers, at most three minutes: the backend also runs without it and writes the archive once it
     answers, but the close-out of a crashed run is only done by a start that can read every database;
   * runs the backend, and starts it again whenever it ends, for whatever reason: after 5 s, doubling while it keeps ending quickly up

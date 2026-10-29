@@ -10,7 +10,20 @@ export const REASONS = {
   NOT_A_PLANNED_ROUND: "非计划轮次", EXTREME_INPUT: "输入超出物理极值", NONFINITE: "结果非有限数",
 };
 export const reasonText = code => REASONS[code] || code || "无效";
-export const ORIGINS = {RECEIVED: "实收", STATE_ASSERTION: "状态重申"};
+export const ORIGINS = {RECEIVED: "实收", STATE_ASSERTION: "状态重申", RETENTION_BASELINE: "保留边界基线"};
+const DATABASES = {primary: "正常库", emergency: "应急库"};
+
+// What the rolling deletion took from the window, per database (终版 §13.6, §14): deleted and possibly incomplete stay apart.
+export function retentionNotes(result, stamp) {
+  const notes = [];
+  for (const [db, k] of Object.entries(result.retention || {})) {
+    const name = DATABASES[db] || db;
+    if (k.deleted_before != null) notes.push(`${name}：${stamp(k.deleted_before)} 之前的数据已滚动删除`);
+    for (const r of k.retired) notes.push(`${name}：${stamp(r.from)} → ${stamp(r.to)} ${r.state === "DELETING" ? "正在淘汰，已不可查询" : "已滚动删除"}`);
+    for (const p of k.possibly_incomplete) notes.push(`${name}：${stamp(p.from)} → ${stamp(p.to)} 可能不完整（${p.reason === "CLOCK_OVERLAP" ? "墙钟回拨，与已删除的时段重叠" : "最旧保留桶在保留边界基线之前的部分"}）`);
+  }
+  return notes;
+}
 export const ENDS = {NEXT_CHANGE: "至下一次变化", WATERMARK: "至已确认水位", SEGMENT_END: "至有效段结束", GAP: "至归档缺口起点"};
 
 export const channelRows = channel => channel.segments.flatMap(s => s.rows.map(row => ({...row, run: s.run_id, seg: s.seg})));
@@ -59,6 +72,7 @@ export function buildCsv({result, request, fault, timezone, label, unit}) {
     ["每通道行数上限", result.limit], ["是否达到行数上限", limited.length > 0], ["达到上限的通道", limited.join(" ")],
     ["覆盖终点", Number.isFinite(result.coverage_complete_until) ? isoLocal(result.coverage_complete_until) : "未知"],
     ["不可读的数据库", result.unavailable.join(" ") || "无"],
+    ...retentionNotes(result, isoLocal).map(note => ["滚动删除", note]),
     ...result.gaps.map(g => ["归档缺口", `${g.source_id} ${isoLocal(g.start_wall)} → ${Number.isFinite(g.end_wall) ? isoLocal(g.end_wall) : "未恢复"} ${g.reason}`]),
     ["保持值", "“保持值”为是的行是窗口起点处仍有效的值，保留其原观测时间与来源，不是窗口起点的新采样"],
   ];

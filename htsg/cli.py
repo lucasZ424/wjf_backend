@@ -58,6 +58,37 @@ def init_accounts(accounts: Path, primary_dsn: str, timing=None) -> Path | None:
     return destination
 
 
+BYTES_PER_QUANTITY_PER_DAY = 69 * 10**6  # measured at full scale, every value changing (终版 §13.4)
+
+
+def capacity(config, disk_bytes=None, stop=None) -> dict:
+    """How often the rolling deletion runs and how much is kept after it, for this configuration (终版 §13.4, §13.5).  A
+    scenario from the measured daily growth, never an acceptance: records differ in width and rate, WAL, other files and the
+    tables kept for good take room too, and deletion goes by whole buckets.  The self-check page shows the real pace."""
+    import shutil
+
+    policy = config.storage
+    stop = policy.cleanup_stop if stop is None else stop
+    disk_bytes = shutil.disk_usage(policy.primary_path).total if disk_bytes is None else disk_bytes
+    quantities = len(config.points) + len(config.derived)
+    per_day = quantities * BYTES_PER_QUANTITY_PER_DAY
+    return {
+        "archived_quantities": quantities,
+        "bytes_per_quantity_per_day": BYTES_PER_QUANTITY_PER_DAY,
+        "disk_bytes": disk_bytes,
+        "cleanup_start": policy.cleanup_start,
+        "cleanup_stop": stop,
+        "days_between_deletions": (policy.cleanup_start - stop) * disk_bytes / per_day if per_day else None,
+        "days_kept_after_deletion": stop * disk_bytes / per_day if per_day else None,
+        "note": "Scenario only: the measured daily growth times the channels; adjust the stop line by the deletion period "
+        "the self-check page measures",
+    }
+
+
+# the highest bucket number used, and the run time of the bucket in use (§13.6): the deployment's own, named here only
+NUMBER_FILE = Path(".local/bucket_number.json")
+
+
 def main(*, deployment_locked=False):
     parser = argparse.ArgumentParser(description="HTSG local monitoring backend")
     parser.add_argument("command", choices=["run", "check", "init-accounts", "capacity"])
@@ -65,24 +96,14 @@ def main(*, deployment_locked=False):
     parser.add_argument("--database", default=".local/database.json")
     parser.add_argument("--accounts", default=".local/accounts.json")
     parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--disk-bytes", type=int, help="capacity: the size of the normal database's disk (default: as measured)")
+    parser.add_argument("--cleanup-stop", type=float, help="capacity: the stop line to estimate for (default: the configured one)")
     args = parser.parse_args()
     config = load_settings(args.config)
     if args.command == "check":
         print(f"Valid {config.mode} configuration: {len(config.points)} points; {config.config_id}")
     elif args.command == "capacity":
-        for bytes_per_sample in (128, 256, 512):
-            rates = {s.id: 1 / s.interval for s in config.sources}
-            total = sum(rates[p.source] for p in config.points)
-            print(
-                json.dumps(
-                    {
-                        "assumed_bytes_per_sample": bytes_per_sample,
-                        "observations_per_second": total,
-                        "continuous_capture_gib_per_year": total * bytes_per_sample * 365 * 86400 / 1024**3,
-                        "note": "Scenario only; excludes WAL, indexes, frames and temporary growth",
-                    }
-                )
-            )
+        print(json.dumps(capacity(config, args.disk_bytes, args.cleanup_stop)))
     elif args.command == "init-accounts":
         import psycopg
 
@@ -111,13 +132,12 @@ def _run(args, config):
     from .web import create_web_app
 
     databases = json.loads(Path(args.database).read_text())
-    if config.storage.external_enabled and not databases.get("external"):
-        raise SystemExit("Enabled external storage requires an external database binding")
+    if "external" in databases:  # 修复轮08: the removable database is gone; a file naming it is out of date, not ignored
+        raise SystemExit(f'{args.database} still names an "external" database; the removable database is no longer supported')
     accounts = Accounts(Path(args.accounts))  # unreadable or empty stops nothing: the runtime settles it
     stores = {name: ArchiveStore(databases[name], config.timing) for name in ("primary", "emergency")}
-    external = ArchiveStore(databases["external"], config.timing) if databases.get("external") else None
-    router = ArchiveRouter(config, stores["primary"], stores["emergency"], external)
-    runtime = Runtime(config, router, accounts)
+    router = ArchiveRouter(config, stores["primary"], stores["emergency"])
+    runtime = Runtime(config, router, accounts, number_file=NUMBER_FILE)
     Path(".local").mkdir(exist_ok=True)
     handler = RotatingFileHandler(
         ".local/backend.log", maxBytes=2 * 1024**2, backupCount=3, encoding="utf-8"
@@ -134,6 +154,7 @@ def _run(args, config):
             port=args.port,
             workers=1,
             access_log=False,
+            log_config=None,  # its reports go to the rotated backend.log, never to the console file nothing rotates
             limit_concurrency=32,
             timeout_graceful_shutdown=10,
         )

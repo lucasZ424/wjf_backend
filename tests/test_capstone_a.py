@@ -21,7 +21,7 @@ FULL = load_settings(ROOT / "config" / "research-sim.json")
 
 def put(conn, o: r.Observation, group="run1/g1"):
     data = {name: getattr(o, name) for name in o.__slots__}
-    data["group_id"] = group
+    data["group_id"], data["bucket"] = group, 1
     conn.execute(
         f"INSERT INTO observation({','.join(data)}) VALUES({','.join(['%s'] * len(data))})", list(data.values())
     )
@@ -101,7 +101,7 @@ def test_a_result_naming_an_unknown_configuration_version_is_refused(archive_db_
 
 
 def test_legacy_database_stays_exactly_as_it_was(archive_db_factory):
-    legacy = archive_db_factory()
+    legacy = archive_db_factory(prepare=False)
     make_legacy(legacy, FULL)
     query = "SELECT table_name,column_name FROM information_schema.columns WHERE table_schema='public' ORDER BY 1,2"
     with legacy.session() as conn:

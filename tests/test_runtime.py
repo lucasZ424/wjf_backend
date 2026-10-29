@@ -59,7 +59,7 @@ def build(field, tmp_path, primary, emergency):
     router = ArchiveRouter(field.config, primary, emergency, disk_usage=Disks())
     accounts = Accounts(tmp_path / "accounts.json")
     credentials = {"viewer": accounts.create("viewer", "viewer"), "admin": accounts.create("admin", "admin")}
-    runtime = Runtime(field.config, router, accounts)
+    runtime = Runtime(field.config, router, accounts, number_file=tmp_path / "bucket_number.json")
     app = create_web_app(
         config=field.config, accounts=accounts, owner=runtime.owner, archive_router=router,
         queue=runtime.queue, diagnostics=runtime.diagnostics, lifecycle=runtime,
@@ -101,7 +101,9 @@ async def test_the_runtime_reads_both_protocols_archives_serves_the_history_and_
                 body = (await client.get("/api/replay", params=query, headers=headers)).json()
                 rows = {pid: [x for s in body["channels"][pid]["segments"] for x in s["rows"]] for pid in body["channels"]}
                 assert len(rows["bridge_mvv_01"]) >= 2, "a Modbus round is stored every second"
-                assert len(rows["temp_inner_01"]) == 1, "a value that never changes is stored once, then only restated"
+                still = rows["temp_inner_01"]
+                assert [x["origin"] for x in still].count("RECEIVED") == 1, "a value that never changes is stored once ..."
+                assert {x["origin"] for x in still} <= {"RECEIVED", "STATE_ASSERTION", "RETENTION_BASELINE"}, "... then only restated"
                 by_batch = {x["batch_seq"]: x["value"] for x in rows["bridge_mvv_01"] if x["origin"] == "RECEIVED"}
                 strains = [x for x in rows["strain_01"] if x["origin"] == "RECEIVED"]
                 assert len(strains) == 1, "a result is stored when it changes: the steady bridge gives one"
@@ -124,16 +126,18 @@ async def test_realtime_state_does_not_wait_for_a_database_that_cannot_be_reache
         await runtime.start()
         try:
             await until(lambda: all(v["valid"] for v in runtime.owner.channel_views().values()), "the live state is complete without any archive")
-            await until(lambda: runtime.queue.stats["failures"] + runtime.queue.stats["unknown"] > 0, "the failed writes are counted")
+            # 修复轮09: with no database at the start no bucket can be prepared - the groups are refused as a gap, counted
+            await until(lambda: runtime.queue.stats["refused"] > 0, "the groups that cannot be stored are counted")
+            assert runtime.health["buckets"] == "NONE_READY_AT_START"
             assert runtime.health["accounts"] == "LOCAL_VERIFICATION_CACHE_ONLY" and runtime.health["fatal"] is None
             assert not runtime.failed.is_set(), "no task of the chain died because the archive is away"
         finally:
             await runtime.stop()
     assert runtime.health["shutdown_incomplete"] is True and runtime.health["run_end_status"] != "COMMITTED"
-    assert runtime.health["unsettled_queue_items"] > 0, "what could not be written is reported at the end, not hidden"
+    assert runtime.owner.health["archive_lost_groups"] > 0, "what could not be written is reported at the end, not hidden"
 
 
-async def test_a_slow_archive_start_does_not_use_up_the_time_a_source_may_stay_quiet(monkeypatch):
+async def test_a_slow_archive_start_does_not_use_up_the_time_a_source_may_stay_quiet(monkeypatch, tmp_path):
     """终版 §11: the alarm baseline is when acquisition really starts - not when the owner was built, which is before
     the archive opens.  A slow start must not make the "never responded" alarm come early."""
     from owner_support import small_config
@@ -142,7 +146,7 @@ async def test_a_slow_archive_start_does_not_use_up_the_time_a_source_may_stay_q
     config = small_config(sources=[{"id": "mb", "kind": "modbus", "enabled": True, "host": "127.0.0.1", "port": 1}, {"id": "ua", "kind": "opcua"}])
     dead = "host=127.0.0.1 port=1 dbname=htsg user=nobody connect_timeout=1"
     router = ArchiveRouter(config, ArchiveStore(dead), ArchiveStore(dead), disk_usage=Disks())
-    runtime = Runtime(config, router)
+    runtime = Runtime(config, router, number_file=tmp_path / "bucket_number.json")
     built = time.monotonic()
     open_archive = router.initialize
 
@@ -185,13 +189,13 @@ def test_the_delivered_entry_points_load_none_of_the_old_frame_chain():
     assert done.stdout.strip() == "[]", f"the old chain was imported: {done.stdout}"
 
 
-async def test_a_core_task_that_dies_is_reported_as_the_failure_the_supervisor_acts_on(archive_db_factory, monkeypatch):
+async def test_a_core_task_that_dies_is_reported_as_the_failure_the_supervisor_acts_on(archive_db_factory, monkeypatch, tmp_path):
     """The command line stops the process with a failure code when this fires, and the task scheduler restarts it."""
     from owner_support import small_config
 
     config = small_config(sources=[{"id": "mb", "kind": "modbus"}, {"id": "ua", "kind": "opcua"}])
     router = ArchiveRouter(config, archive_db_factory("primary"), archive_db_factory("emergency"), disk_usage=Disks())
-    runtime = Runtime(config, router)
+    runtime = Runtime(config, router, number_file=tmp_path / "bucket_number.json")
 
     def broken(wall, mono):
         raise RuntimeError("boom")
@@ -203,3 +207,12 @@ async def test_a_core_task_that_dies_is_reported_as_the_failure_the_supervisor_a
         assert runtime.health["fatal"] == "owner loop: RuntimeError"
     finally:
         await runtime.stop()
+
+
+def test_a_runtime_is_always_told_which_bucket_number_file_is_its_own():
+    """修复轮09 审核第2条: the file holds the highest bucket number used and the run time of the bucket in use.  A runtime that
+    fell back to the deployment's own file by default let every test that forgot to name one read and write it - numbers
+    and run time out of other databases - and could do the same to a second deployment.  The caller names it, always."""
+    config = full_config(mb_port=1, ua_endpoint="opc.tcp://127.0.0.1:1/")
+    with pytest.raises(TypeError, match="number_file"):
+        Runtime(config, router=None)

@@ -84,7 +84,7 @@ def test_a_failing_reading_fails_only_that_request_and_every_batch_still_goes_to
     """User rule 5 (修复轮05): the batch path calls no page encoding.  It used to: the push encoded every group with the
     channel views BEFORE the group was handed to the archive, so a failure there lost the batch and ended the owner loop."""
     config = small_config()
-    runtime = Runtime(config, SimpleNamespace())  # the production wiring: owner -> commit queue (not run here)
+    runtime = Runtime(config, SimpleNamespace(), number_file=tmp_path / "bucket_number.json")  # the production wiring: owner -> commit queue (not run here)
     owner = runtime.owner
 
     def broken():

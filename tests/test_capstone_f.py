@@ -12,6 +12,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.testclient import TestClient
 from live_support import BRIDGES, FULL, PROCESS, UA_NAMES
+from owner_support import FixedBucket
 from test_archive_gap import Sink
 from test_archive_router import Disks
 from test_history_merge import Offline
@@ -40,18 +41,16 @@ def bridge(k, t):
     return 0.7 + 0.001 * k + 0.0001 * (t - 100)
 
 
-def config_with_external():
+def config_two_databases():
     payload = FULL.model_dump(mode="json")
     payload["simulation"]["enabled"] = False
-    payload["storage"].update(
-        primary_path="D:/a", emergency_path="D:/b", external_path="D:/c", external_enabled=True
-    )
+    payload["storage"].update(primary_path="D:/a", emergency_path="D:/b")
     return Settings.model_validate(payload)
 
 
 def script(cfg=None):
     """Run the scenario through the owner; returns (config, groups the archive accepted)."""
-    cfg = cfg or config_with_external()
+    cfg = cfg or config_two_databases()
     sink, unconfirmed = Sink(), []
 
     def commit(group):
@@ -64,7 +63,7 @@ def script(cfg=None):
         while unconfirmed:
             owner.committed(unconfirmed.pop(0))
 
-    owner = Owner(cfg, wall(100), MONO0, commit=commit, publish=lambda p: None, run_id="f")
+    owner = Owner(cfg, wall(100), MONO0, commit=commit, publish=lambda p: None, buckets=FixedBucket(), run_id="f")
     for source in ("mb_field", "ua_field"):
         owner.begin_generation(source, 1, wall(100), MONO0)
     seq = 0
@@ -103,14 +102,13 @@ def scenario():
 def world(archive_db_factory, scenario):
     cfg, groups = scenario
     disks = Disks()
-    primary, emergency, external = (archive_db_factory(i) for i in ("primary", "emergency", "primary"))
-    router = ArchiveRouter(cfg, primary, emergency, external, disk_usage=disks)
+    primary, emergency = archive_db_factory("primary"), archive_db_factory("emergency")
+    router = ArchiveRouter(cfg, primary, emergency, disk_usage=disks)
     router.initialize()
     router.bind_run("f", cfg.config_id, wall(100))
     for group in groups:
-        # from wall 1024 on the normal database is over 95 %: later groups go to the removable one
+        # from wall 1024 on the normal database is over 95 %: later groups go to the emergency one
         disks.used["D:/a"] = 0.96 if group.built_wall >= 1024 else 0.2
-        disks.used["D:/c"] = 0.2
         assert router.write_group(group).durable, group.group_id
     bearer = HTTPBearer(auto_error=False)
 
@@ -263,9 +261,9 @@ def test_nothing_crosses_a_segment_and_the_clock_step_opens_one(world):
 
 def test_an_unreadable_database_is_shown_as_incomplete_and_the_row_cap_is_announced(world):
     router = world.router_
-    router.external = Offline(router.external)
+    router.emergency = Offline(router.emergency)
     body = replay(world)
-    assert body["partial"] is True and body["unavailable"] == ["external"]
+    assert body["partial"] is True and body["unavailable"] == ["emergency"]
     assert body["coverage_complete_until"] is None and all(v is None for v in body["coverage_end"].values())
     seen = {x["observed_at"] for x in rows(body, "bridge_mvv_01", origin=r.ORIGIN_RECEIVED)}
     assert seen and max(seen) < 1030.0, "only what the readable database holds; nothing after is implied"

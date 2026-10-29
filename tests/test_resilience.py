@@ -43,19 +43,18 @@ async def test_a_hard_kill_at_any_moment_leaves_no_half_written_group_and_the_ne
 
 async def test_the_injected_thresholds_choose_the_route_and_history_stays_whole_across_the_switches():
     report = await resilience.storage(3)
-    for variant in ("with_removable_disk", "without"):
-        part = report[variant]
-        for step in part["steps"]:
-            assert step["route"] == step["expected"], step
-            assert set(step["archive"].values()) == {"OK"}, f"the switch did not cost the archive anything: {step}"
-            landed = {name: n for name, n in step["groups_landed"].items() if n}
-            target = step["expected"].lower()
-            assert set(landed) == {target}, f"every new group went to the one database the route names: {step}"
-        assert all(w == {"half_written_groups": 0, "orphan_rows": 0} for w in part["whole_groups"].values())
-        assert part["group_ids_unique"], "no group is stored in two databases"
-        assert part["history"]["partial"] is False and part["history"]["duplicates"] == 0 and part["history"]["in_order"]
-        assert part["history"]["raw_rows"] >= 6, "the merged history carries the rounds from every database"
-        assert part["owner_archive_lost_groups"] == 0
+    part = report["switching"]
+    for step in part["steps"]:
+        assert step["route"] == step["expected"], step
+        assert set(step["archive"].values()) == {"OK"}, f"the switch did not cost the archive anything: {step}"
+        landed = {name: n for name, n in step["groups_landed"].items() if n}
+        target = step["expected"].lower()
+        assert set(landed) == {target}, f"every new group went to the one database the route names: {step}"
+    assert all(w == {"half_written_groups": 0, "orphan_rows": 0} for w in part["whole_groups"].values())
+    assert part["group_ids_unique"], "no group is stored in two databases"
+    assert part["history"]["partial"] is False and part["history"]["duplicates"] == 0 and part["history"]["in_order"]
+    assert part["history"]["raw_rows"] >= 6, "the merged history carries the rounds from every database"
+    assert part["owner_archive_lost_groups"] == 0
     assert report["real_disk_growth_bytes"] < GIB, "the thresholds were injected: no real disk was filled"
 
 

@@ -4,12 +4,16 @@
     start     start them; create an EMPTY database `htsg` where it is missing
     build     bring `htsg` of both clusters to the current archive generation (终版 §13.2): an empty one gets its
               schema, one already at this generation is accepted, a legacy (frame-based) or foreign one is refused here
+    new       --name htsg_<x>: a NEW pair <x> on both clusters at the current generation, its connections in
+              .local/database-<x>.json; `htsg` and .local/database.json are left as they are (a new generation goes into new
+              databases, the connection file is switched by hand once they are checked - 终版 §13.6)
 """
 
 import argparse
 import hashlib
 import json
 import os
+import re
 import secrets
 import shutil
 import subprocess
@@ -19,6 +23,7 @@ from pathlib import Path
 ROOT = Path("D:/HTSG-dev")
 PROJECT = Path(__file__).resolve().parents[1]
 URL = "https://sbp.enterprisedb.com/getfile.jsp?fileid=1260488"
+NEW_NAME = re.compile(r"htsg_[a-z0-9_]{1,58}")
 
 
 def run(args):
@@ -48,9 +53,44 @@ def build(local):
         print(f"{name}: database htsg is at the current archive generation.")
 
 
+def new_databases(conf: dict, name: str, out: Path):
+    """A NEW pair `name` on both clusters at the current archive generation, its connections written to `out`.  The databases
+    in use and their connection file are not touched; a name that exists is refused - an old database is never taken for a new one."""
+    import psycopg
+    from psycopg import sql
+
+    from htsg.archive import ArchiveStore
+    from htsg.config import load_settings
+
+    if not NEW_NAME.fullmatch(name):
+        raise SystemExit(f"{name!r}: a new database name is htsg_ and then lower-case letters, digits or _ (63 characters at most)")
+    if out.exists():
+        raise SystemExit(f"{out} already exists")
+    admin = {role: conf[role].rsplit("/", 1)[0] + "/postgres" for role in ("primary", "emergency")}
+    for role, dsn in admin.items():
+        with psycopg.connect(dsn) as conn:
+            if conn.execute("SELECT 1 FROM pg_database WHERE datname=%s", (name,)).fetchone():
+                raise SystemExit(f"{role}: database {name} already exists; a new generation goes into a new database")
+    config = load_settings(PROJECT / "config/development.json")
+    written = {"password": conf["password"]}
+    for role, dsn in admin.items():
+        with psycopg.connect(dsn, autocommit=True) as conn:
+            conn.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
+        written[role] = conf[role].rsplit("/", 1)[0] + "/" + name
+        store = ArchiveStore(written[role])
+        try:
+            store.initialize(config)
+        finally:
+            store.close()
+        print(f"{role}: new database {name} is at the current archive generation.")
+    out.write_text(json.dumps(written))
+    print(f"Connections in {out} (not printed); .local/database.json is unchanged.")
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=["install", "start", "build", "stop", "status"])
+    parser.add_argument("action", choices=["install", "start", "build", "new", "stop", "status"])
+    parser.add_argument("--name", help="new: the name of the new pair of databases")
     args = parser.parse_args()
     if os.name != "nt" or ROOT.resolve().drive.upper() != "D:":
         raise SystemExit("Development databases must be on D:")
@@ -132,6 +172,11 @@ def main():
         print("Installed two isolated D: clusters; credentials in .local/database.json (not printed).")
     if args.action == "build":
         build(local)
+        return
+    if args.action == "new":
+        if not args.name:
+            raise SystemExit("new needs --name htsg_<x>")
+        new_databases(json.loads((local / "database.json").read_text()), args.name, local / f"database-{args.name}.json")
         return
     for name in ["primary", "emergency"]:
         data = ROOT / name

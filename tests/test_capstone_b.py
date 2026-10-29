@@ -9,7 +9,7 @@ import dataclasses
 from pathlib import Path
 
 import pytest
-from owner_support import Recorder, notify, poll
+from owner_support import FixedBucket, Recorder, notify, poll
 
 from htsg import records as r
 from htsg.config import load_settings
@@ -28,7 +28,7 @@ COEFFICIENT = 170000 * 1.35e-5 * 0.5  # E * alpha * restraint, MPa per K
 
 def build():
     recorder = Recorder()
-    owner = Owner(FULL, 1000.0, 100.0, commit=recorder.commit, publish=recorder.publish, run_id="full")
+    owner = Owner(FULL, 1000.0, 100.0, commit=recorder.commit, publish=recorder.publish, buckets=FixedBucket(), run_id="full")
     for source in ("mb_field", "ua_field"):
         owner.begin_generation(source, 1, 1000.0, 100.0)
     return owner, recorder

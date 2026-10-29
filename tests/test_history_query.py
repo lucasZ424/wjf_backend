@@ -218,9 +218,9 @@ def test_a_long_series_is_answered_quickly_from_the_point_time_index(archive_db_
             "INSERT INTO segment(run_id,source_id,seg,conn_gen,start_wall,start_reason) VALUES('run','ua',1,1,0,'CONNECT')"
         )
         conn.execute(
-            "INSERT INTO observation(id,group_id,run_id,source_id,conn_gen,seg,batch_seq,item_seq,point_id,value,quality,"
+            "INSERT INTO observation(bucket,id,group_id,run_id,source_id,conn_gen,seg,batch_seq,item_seq,point_id,value,quality,"
             "status_code,received_wall,received_mono,origin) "
-            "SELECT 'o'||n,'g','run','ua',1,1,n,0,'ti',n::float8,'GOOD',0,n,n,'RECEIVED' FROM generate_series(1,60000) n"
+            "SELECT 1,'o'||n,'g','run','ua',1,1,n,0,'ti',n::float8,'GOOD',0,n,n,'RECEIVED' FROM generate_series(1,60000) n"
         )
         conn.execute("ANALYZE observation")
     started = time.perf_counter()

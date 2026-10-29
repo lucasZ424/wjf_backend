@@ -45,12 +45,31 @@ def real_modbus(server, timing=FAST):
     owner = Owner(config, time.time(), time.monotonic(), commit=Recorder().commit, run_id="run")
     ingress = Ingress(owner, 10_000)
 
-    def build(attempts):
+    def build(attempts, ticker=None):
         gate = Gate(attempts)
-        acquirer = ModbusAcquirer(config.sources[0], points, timing, ingress, ticker=fast_ticker(0.02), sleep=gate)
+        acquirer = ModbusAcquirer(config.sources[0], points, timing, ingress, ticker=ticker or fast_ticker(0.02), sleep=gate)
         return acquirer, gate
 
     return owner, ingress, build
+
+
+class HeldTicker:
+    """fast_ticker that stops ONCE between two rounds: the first time `pause_when` holds after a round has ended, the next
+    tick waits for `go`.  `parked` says the acquirer is there - its round returned, no request is on the wire."""
+
+    def __init__(self, period=0.02):
+        self.period, self.pause_when, self.parked, self.go = period, None, asyncio.Event(), asyncio.Event()
+
+    async def __call__(self):
+        n = 0
+        while True:
+            yield n
+            n += 1
+            if self.pause_when and self.pause_when():
+                self.pause_when = None
+                self.parked.set()
+                await self.go.wait()
+            await asyncio.sleep(self.period)
 
 
 # ================================================================================ Modbus, real server
@@ -135,15 +154,24 @@ async def test_a_device_that_connects_but_never_answers_reaches_five_resyncs_and
 
 
 async def test_five_refused_reconnects_after_a_real_disconnect_count_five_with_one_resync_and_the_return_is_unalarmed():
+    """The disconnect is made between two rounds and the next round starts only once the client has seen the connection
+    close: a request on the wire when the server goes would time out first (a true POLL_TIMEOUT before the RESYNC), and
+    that is a different case from the one this test pins down."""
     server = FieldModbus()
     await server.start()
     owner, ingress, build = real_modbus(server)
-    acquirer, gate = build(6)  # one session, then five failed connects
+    ticker = HeldTicker()
+    acquirer, gate = build(6, ticker)  # one session, then five failed connects
+    clients, make = [], acquirer.client_factory
+    acquirer.client_factory = lambda: clients.append(make()) or clients[-1]  # the real client, kept to look at
+    ticker.pause_when = lambda: acquirer.outcomes[-3:] == ["OK"] * 3
     task = asyncio.create_task(acquirer.run())
     s = owner.sources["mb"]
     try:
-        await drain_until(ingress, lambda: acquirer.outcomes[-3:] == ["OK"] * 3, why="a live connection")
+        await drain_until(ingress, ticker.parked.is_set, why="a live connection, parked after three answered rounds")
         await server.stop()
+        await drain_until(ingress, lambda: not clients[0].connected, why="the client has seen the connection close")
+        ticker.go.set()
         await drain_until(ingress, lambda: gate.blocked, timeout=60, why="the failed reconnects")
         ingress.drain()  # what the acquirer reported just before it parked
         assert (acquirer.connect_failures, s.resync_count, s.conn_gen) == (5, 1, 1)

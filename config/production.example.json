@@ -1,0 +1,20 @@
+{
+  "mode": "production",
+  "time_basis": "received",
+  "sources": [
+    {"id": "bridge", "kind": "modbus", "enabled": false, "host": "192.168.1.20", "port": 502, "interval": 1},
+    {"id": "dcs", "kind": "opcua", "enabled": false, "endpoint": "opc.tcp://192.168.1.30:4840", "interval": 1}
+  ],
+  "points": [
+    {"id": "example_strain_1", "source": "bridge", "unit": "mV/V", "device_id": 1, "register_kind": "input", "address": 0, "data_type": "float32", "byte_order": "big", "word_order": "little", "low": -1.5, "high": 1.5, "hysteresis_low": 0.05, "hysteresis_high": 0.05, "extreme_low": -3, "extreme_high": 3, "invalid_values": [-9999]},
+    {"id": "example_wall_temp", "source": "bridge", "unit": "°C", "device_id": 2, "register_kind": "holding", "address": 0, "data_type": "int16", "byte_order": "big", "word_order": "big", "scale": 0.1, "offset": -50, "high": 120, "hysteresis_high": 2},
+    {"id": "example_steam_temp", "source": "dcs", "unit": "°C", "node_id": "ns=2;s=Boiler.T101", "high": 540, "hysteresis_high": 5, "extreme_low": -50, "extreme_high": 700},
+    {"id": "example_steam_pressure", "source": "dcs", "unit": "MPa", "node_id": "ns=2;s=Boiler.P201", "low": 0.5, "hysteresis_low": 0.05, "extreme_low": 0, "extreme_high": 40},
+    {"id": "example_feed_flow", "source": "dcs", "unit": "t/h", "node_id": "ns=2;i=1005"}
+  ],
+  "derived": [
+    {"id": "example_steam_temp_change", "inputs": ["example_steam_temp"], "operation": "change", "unit": "°C", "low": -30, "high": 30, "hysteresis_low": 2, "hysteresis_high": 2, "extreme_low": -100, "extreme_high": 100},
+    {"id": "thermal_stress", "inputs": [], "operation": "unconfigured", "unit": "MPa"}
+  ],
+  "storage": {"primary_path": "D:/HTSG/primary", "emergency_path": "C:/HTSG/emergency", "cleanup_enabled": true, "cleanup_stop": 0.8}
+}

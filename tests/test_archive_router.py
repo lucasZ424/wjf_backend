@@ -34,7 +34,7 @@ class Disks:
 def config(**storage):
     payload = small_config().model_dump(mode="json")
     payload["storage"] = {
-        "primary_path": "D:/a", "emergency_path": "D:/b", "external_path": "D:/c", **storage,
+        "primary_path": "D:/a", "emergency_path": "D:/b", **storage,
     }  # fmt: skip
     return type(CONFIG).model_validate(payload)
 
@@ -98,7 +98,7 @@ def test_each_group_lands_complete_in_exactly_one_database(rig):
     assert all(len(where) == 1 for where in per_db.values()), "no group is spread over two databases"
     assert {g: next(iter(w)) for g, w in per_db.items()} == {
         "run1/g1": "primary", "run1/g2": "primary", "run1/g3": "emergency", "run1/g4": "emergency",
-        "run1/g5": "primary",  # usage fell to 40 %, below the 70 % recovery line: back to the normal database
+        "run1/g5": "primary",  # usage fell to 40 %, below the 90 % recovery line: back to the normal database
     }  # fmt: skip
 
 
@@ -134,7 +134,7 @@ def test_a_commit_that_really_did_not_happen_stays_unknown_and_is_retried_on_the
     assert rows(rig.emergency, "commit_group") == 0
     second = rig.router.write_group(make_group(config_id=rig.cfg.config_id))  # what the writer does: same group, same target
     assert second.status == "COMMITTED" and second.target == "primary"
-    assert rows(rig.primary) == 3 and rig.router.verify("run1/g1") == "primary"
+    assert rows(rig.primary) == 3 and rig.router.verify("run1/g1", 1) == "primary"
 
 
 def lose_the_reply(rig):
@@ -146,7 +146,7 @@ def lose_the_reply(rig):
         real(group)  # it really became durable ...
         return WriteOutcome("UNKNOWN", "OperationalError")  # ... but nobody was told
 
-    def away(group_id):
+    def away(group_id, bucket):
         raise psycopg.OperationalError("the database is away")
 
     rig.primary.write_group, rig.primary.group_committed = write, away
@@ -189,11 +189,15 @@ def test_a_group_of_unknown_commit_is_not_sent_elsewhere_while_its_database_keep
     assert rig.router.write_group(group).status == "ALREADY" and rig.router.pinned == {}
 
 
-def test_only_a_group_of_unknown_commit_is_remembered(rig):
+def test_a_group_is_remembered_with_its_database_until_it_is_settled(rig):
+    """终版 §13.5 (修复轮09 审核第4条): a certain failure is remembered too - its retry keeps the database it was sent to."""
     assert rig.router.write_group(make_group(config_id=rig.cfg.config_id)).durable and rig.router.pinned == {}
+    real = rig.primary.write_group
     rig.primary.write_group = lambda group: WriteOutcome("FAILED", "OperationalError")  # certain: rolled back, nothing is there
-    failed = rig.router.write_group(make_group(order=2, config_id=rig.cfg.config_id))
-    assert failed.status == "FAILED" and rig.router.pinned == {}, "a failure that is certain needs no memory"
+    group = make_group(order=2, config_id=rig.cfg.config_id)
+    assert rig.router.write_group(group).status == "FAILED" and rig.router.pinned == {group.group_id: "primary"}
+    rig.primary.write_group = real
+    assert rig.router.write_group(group).durable and rig.router.pinned == {}, "settled: nothing left to remember"
 
 
 def test_the_memory_of_groups_of_unknown_commit_is_bounded_and_never_drops_one_to_make_room(rig, monkeypatch):

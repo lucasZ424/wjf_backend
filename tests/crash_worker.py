@@ -15,7 +15,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT), str(ROOT / "tests")]
 
-from owner_support import small_config  # noqa: E402
+from owner_support import FixedBucket, small_config  # noqa: E402
 from test_archive_router import Disks  # noqa: E402
 
 from htsg import records as r  # noqa: E402
@@ -59,7 +59,7 @@ def main():
     router.bind_run(run_id, cfg.config_id, base_wall)
 
     groups = []
-    owner = Owner(cfg, base_wall, 100.0, commit=groups.append, publish=lambda p: None, run_id=run_id)
+    owner = Owner(cfg, base_wall, 100.0, commit=groups.append, publish=lambda p: None, buckets=FixedBucket(), run_id=run_id)
     owner.start(base_wall, 100.0)
     owner.begin_generation("ua", 1, base_wall, 100.0)
     for n in range(1, 6):

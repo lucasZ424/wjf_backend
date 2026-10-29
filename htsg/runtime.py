@@ -13,10 +13,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from pathlib import Path
 from uuid import uuid4
 
 import psycopg
 
+from .buckets import BucketClock, Maintenance
 from .commitq import CommitQueue
 from .ingress import Ingress
 from .modbus import ModbusAcquirer
@@ -26,10 +28,12 @@ from .ua import UaAcquirer
 log = logging.getLogger(__name__)
 DRAIN_SLICE = 256  # batches handled in a row before the loop looks at the clock and the other tasks again
 STOP_WRITE_WAIT = 8.0  # seconds the archive gets at shutdown to write what is already queued
+START_WAIT = 5.0  # seconds a start waits, in all, for a bucket a group can be put in (plan D7)
+MAINTENANCE_STOP_WAIT = 5.0
 
 
 class Runtime:
-    def __init__(self, config, router, accounts=None, *, run_id=None):
+    def __init__(self, config, router, accounts=None, *, number_file: Path, run_id=None):
         self.config, self.router, self.accounts = config, router, accounts
         self.run_id = run_id or uuid4().hex
         # What the stop ended with, as facts and not as a total (细则 8.1): `shutdown_incomplete` is False only when the end of the
@@ -45,7 +49,14 @@ class Runtime:
             on_refused=lambda group, reason: self.owner.refused(group, reason),
             is_void=lambda group: self.owner.is_void(group),
         )  # fmt: skip
-        self.owner = Owner(config, time.time(), time.monotonic(), commit=self.queue.offer, run_id=self.run_id)
+        dsns = {name: store.dsn for name, store in getattr(router, "stores", ())}
+        self.maintenance = Maintenance(config, dsns, number_file)  # buckets: own thread and connections (§13.6)
+        self.buckets = BucketClock(self.maintenance)
+        self.maintenance.clock = self.buckets
+        router.buckets = lambda: self.maintenance.snapshot  # one reference read: which database has buckets (§13.5)
+        self.owner = Owner(
+            config, time.time(), time.monotonic(), commit=self.queue.offer, run_id=self.run_id, buckets=self.buckets
+        )
         self.ingress = Ingress(self.owner, config.limits.ingress)
         self.ingress.wakeup = self.wake.set
         self.owner.on_rebuild = self._rebuild
@@ -109,7 +120,15 @@ class Runtime:
         return self.accounts is not None and (self.accounts.uncertain or self.health["accounts"] != "DATABASE_AUTHORITATIVE")
 
     async def start(self):
-        await asyncio.get_running_loop().run_in_executor(self.queue.io, self._open_archive)
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(self.queue.io, self._open_archive)
+        self.maintenance.start()
+        # a bucket that is there already is found in the first round; a new database waits START_WAIT at most, then the
+        # groups without one are a gap and the same thread goes on preparing (plan D7)
+        if not await loop.run_in_executor(None, self.maintenance.usable.wait, START_WAIT):
+            self.health["buckets"] = "NONE_READY_AT_START"
+            log.warning("no bucket ready after %.0f s: groups are refused as a gap until one is", START_WAIT)
+        self.buckets.tick(time.time(), time.monotonic())
         self.running = True
         self.owner.start(time.time(), time.monotonic())  # the run is registered before any data
         self.tasks = [
@@ -147,6 +166,8 @@ class Runtime:
                 except TimeoutError:
                     pass
             self.ingress.drain(DRAIN_SLICE)
+            # buckets a group is still on its way to: never taken away (§13.6); one reference, read by the maintenance thread
+            self.maintenance.unsettled = frozenset({g.bucket for g in self.queue.queue} | self.owner.unsettled_buckets())
             now = time.monotonic()
             if now >= next_tick:
                 self.owner.tick(time.time(), now)
@@ -180,6 +201,7 @@ class Runtime:
 
     async def stop(self):
         self.running = False
+        self.maintenance.request_stop()  # it ends its step while the rest stops, inside the same deadline
         named = {task.get_name(): task for task in self.tasks}
         await self._end([t for name, t in named.items() if name.startswith("acquire ")])  # no more input
         await self._end([named[n] for n in ("owner loop", "maintenance") if n in named])
@@ -210,3 +232,7 @@ class Runtime:
             except (TimeoutError, asyncio.CancelledError):
                 await self._end([named["archive writer"]])
         self.router.close()
+        wait = min(MAINTENANCE_STOP_WAIT, max(0.1, deadline - time.monotonic()))
+        # False: its step was still running (a statement may take up to a minute); it ends after it and closes its own
+        # connections - the caller must not take this stop for the end of every use of the databases
+        self.health["maintenance_stopped"] = await asyncio.get_running_loop().run_in_executor(None, self.maintenance.stop, wait)

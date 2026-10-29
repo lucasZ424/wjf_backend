@@ -15,8 +15,8 @@ Windows 单机监测后端和科研前端（七页）。后端主动读取一路
 ```
 Modbus 轮询 ─┐                                        ┌─ 当前状态 ← 浏览器每秒读取一次完整状态（七页）
              ├→ 有序入口 → 单一状态所有者 ──────────┤
-OPC UA 订阅 ─┘   (批次/代次/断连事件同序)  (有效性、批末派生、       └─ 有序提交队列 → 归档路由 → PostgreSQL（正常库／移动库／应急库）
-                                            故障、段、水位)                          ↑ 历史查询按稳定 ID 合并三库
+OPC UA 订阅 ─┘   (批次/代次/断连事件同序)  (有效性、批末派生、       └─ 有序提交队列 → 归档路由 → PostgreSQL（正常库／应急库）
+                                            故障、段、水位)                          ↑ 历史查询按稳定 ID 合并两库
 ```
 
 - 所有者只处理完整批次，不读时钟、不做 I/O；输入、有效性和这一批算出的结果成组提交；页面读取的当前状态在两次批次处理之间整体截取，页面与数据库都不会看到“新输入配旧结果”。
@@ -42,7 +42,8 @@ py -3.13 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install --no-build-isolation --no-deps -e .
 .\.venv\Scripts\python.exe scripts\bootstrap_db.py install    # 首次
 .\.venv\Scripts\python.exe scripts\bootstrap_db.py start      # 开发实例默认不启动；不启动则数据库用例超时；只建空库 htsg
-.\.venv\Scripts\python.exe scripts\bootstrap_db.py build      # 把两实例的 htsg 建到当前归档代（建表）；旧的帧式库会被拒绝，须删库重建
+.\.venv\Scripts\python.exe scripts\bootstrap_db.py build      # 把两实例的 htsg 建到当前归档代（建表）；旧的帧式库或旧代的库会被拒绝
+.\.venv\Scripts\python.exe scripts\bootstrap_db.py new --name htsg_v6   # 另建一对当前代的新库，连接写入 .local\database-htsg_v6.json；原库与 .local\database.json 不动，核对后再手动切换
 .\.venv\Scripts\python.exe -m htsg.cli init-accounts         # 唯一管理员，写进主库和账户文件；现场由 deploy_databases.py install 完成
 .\scripts\run.ps1                                              # 默认 config/development.json，127.0.0.1:8000
 ```
@@ -56,8 +57,11 @@ py -3.13 -m venv .venv
 | `config/research-sim.json` | 满量研究演示入口：8 路 Bridge＋200 个 OPC UA 点＋209 路派生量，配套独立的现场模拟器，见[模拟现场使用说明](dev-docs/HTSG_V1_模拟现场使用说明_v0.1.md)与[通道分配](dev-docs/模拟通道分配.md) |
 | `config/development.json` | 最小开发配置：一个 Modbus 源（127.0.0.1:15020）、两个演示点；进程内模拟源已取消 |
 | `config/production.template.json` | 空点表、禁用的真实源；填入现场资料后用 `htsg check --config ...` 校验 |
+| `config/production.example.json` | 填写示例：两个禁用的源、五个通道和一个派生量，演示寄存器与 NodeId 映射、上下限、回差、极值、比例偏移和无效值；地址与数值都是虚构的，照抄时须换成现场资料 |
 
-配置是严格校验的：旧机制的字段（`stale_after`、`aggregation`、`max_age`、`derivative`、`profiles`、捕获窗口类 `limits`、`sources[].timeout`、`simulator` 源）已删除且不再被接受。队列容量在 `limits.ingress`（入口）、`limits.commit_queue`（提交，默认 400 组）、`limits.ws_queue`（每客户端发送，默认 64）。时限与订阅参数在 `timing`，其含义与取值依据见终版设计第 11 节。极值与普通阈值见[默认极值阈值](dev-docs/默认极值阈值.md)、[默认越限阈值与回差](dev-docs/默认越限阈值与回差.md)，热应力模型见[热应力估算模型](dev-docs/热应力估算模型.md)。配置修改后重启生效，系统不提供在线改通道、阈值或配置的入口。
+阈值字段：越过 `low`/`high`（严格小于/大于）开始计时，同方向持续 `timing.fault_confirm_seconds`（默认5秒）确认故障；确认后回到 `low + hysteresis_low` / `high − hysteresis_high` 以内才复归。`extreme_low`/`extreme_high` 以外的值标为极值、不参与计算。`invalid_values` 是设备约定的无效值，按换算前的原始值比较，读到即判为坏值。
+
+配置是严格校验的：旧机制的字段（`stale_after`、`aggregation`、`max_age`、`derivative`、`profiles`、捕获窗口类 `limits`、`sources[].timeout`、`simulator` 源）已删除且不再被接受。队列容量在 `limits.ingress`（入口）、`limits.commit_queue`（提交，默认 400 组）。时限与订阅参数在 `timing`，其含义与取值依据见终版设计第 11 节。极值与普通阈值见[默认极值阈值](dev-docs/默认极值阈值.md)、[默认越限阈值与回差](dev-docs/默认越限阈值与回差.md)，热应力模型见[热应力估算模型](dev-docs/热应力估算模型.md)。配置修改后重启生效，系统不提供在线改通道、阈值或配置的入口。
 
 开发简化登录：`dev_admin_login=true` 时登录页用户名、口令都填 `admin`（HTTP 用 `Authorization: Bearer admin:admin`），只对应现有且有效的 admin 账户；生产模式拒绝启用。
 
@@ -82,9 +86,11 @@ HTTP 传 `Authorization: Bearer <username:token>`（凭据不放 URL），每个
 
 ## 存储与路由
 
-三个库（正常库、可选的移动库、应急库）都接收完整提交组，不拆组、不丢派生结果。主数据盘达到 95% 后转向移动盘（已启用且绑定校验通过时），移动盘选择跨重启保持、不自动切回；移动盘未启用、不可用或达到 95% 时转应急库；正常目标降到 70% 且写探测成功后退出应急。开发各数据卷保留至少 1 GiB 余量，单批预算 8 MiB，开发写入预算 10 GiB（仅开发阶段），自动清理关闭、满一年不自动删除。
+两个库（正常库、应急库）都接收完整提交组，不拆组、不丢派生结果。主数据盘达到 95% 后转应急库，正常库低于 90%、有这一组的桶且写探测成功后退出应急。移动库已移除（修复轮08）：配置、连接文件或部署文件里仍写有它时按名称拒绝，不静默忽略。开发各数据卷保留至少 1 GiB 余量，单批预算 8 MiB，开发写入预算 10 GiB（仅开发阶段）。
 
-一年容量按满量实测日增长乘 365，另计索引、WAL 与维护峰值并列出磁盘余量，不足不得通过一年留存验收；实测见[满量测量与容量报告](dev-docs/HTSG_V1_满量测量与容量报告_v0.1.md)。运行时 `htsg capacity` 只给情景估算，不是验收。
+正常库按占用率滚动删除（终版第13.6节，归档结构第 6 代）：记录按桶分区，桶由维护线程预先准备，满 12 小时运行且换日后换桶；达到 `cleanup_start`（90%）时从最旧的桶起整桶删除，直到低于 `cleanup_stop`（生产模板 80%，按存档量分档写定）；保底保留 `retention_min_buckets`（14）个桶；每个桶开头存一份保留边界基线，历史页按库标明已删除、正在淘汰与可能不完整的时段。应急库不滚动删除；不做备份。`cleanup_enabled` 只决定是否开始新的删除，生产配置打开，开发与研究配置关闭。桶号与当前桶的累计运行时长在 `.local\bucket_number.json`。
+
+删除周期与删除后的保留时长按满量实测日增长估算，另计索引、WAL 与永久保留的小表；实测见[满量测量与容量报告](dev-docs/HTSG_V1_满量测量与容量报告_v0.1.md)。`htsg capacity` 按每个存档量每天 69 MB 给出情景估算（可加 `--disk-bytes`、`--cleanup-stop`），不是验收；部署后以自检页的实测删除周期为准调整停止线。
 
 ## 运行管理
 

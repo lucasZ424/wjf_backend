@@ -7,6 +7,7 @@ show history as complete while a gap is still open; unbounded waiting would exha
 import asyncio
 import time
 
+from owner_support import FixedBucket
 from test_archive_gap import Sink, build, lose_the_archive
 from test_run_segments import CONFIG
 from test_source_validity import WALL0, at, data, keepalive
@@ -142,7 +143,7 @@ def test_against_postgres_the_recovery_unit_lands_in_one_transaction_with_every_
     router.initialize()
     router.bind_run("run", cfg_ua.config_id, WALL0)
     sink = Sink()
-    owner = Owner(cfg_ua, WALL0, 100.0, commit=sink, publish=lambda p: None, run_id="run")
+    owner = Owner(cfg_ua, WALL0, 100.0, commit=sink, publish=lambda p: None, buckets=FixedBucket(), run_id="run")
     sink.owner = owner
     owner.begin_generation("ua", 1, WALL0, 100.0)
     data(owner, 101.0)

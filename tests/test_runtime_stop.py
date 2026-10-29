@@ -10,9 +10,11 @@ gaps, and the order in which the archive TOOK the groups (commit time, not the n
 """
 
 import asyncio
+import tempfile
 import threading
 import time
 from collections import namedtuple
+from pathlib import Path
 
 import pytest
 from owner_support import notify, poll, small_config
@@ -143,7 +145,8 @@ class Lab:
         self.disks = disks or Disks()
         self.router = ArchiveRouter(self.config, self.primary, self.emergency, disk_usage=self.disks)
         self.wire = Wire(self.router)
-        self.runtime = Runtime(self.config, self.router)
+        self.numbers = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)  # this lab's own bucket number file
+        self.runtime = Runtime(self.config, self.router, number_file=Path(self.numbers.name) / "bucket_number.json")
         self.owner, self.queue = self.runtime.owner, self.runtime.queue
         self.seq, self.stopped, self.took = 0, False, None
 
@@ -360,8 +363,8 @@ async def test_a_source_whose_archive_is_lost_gets_its_gap_and_its_segment_end_a
         (gap,) = gaps_of(lab.primary)
         assert gap["start_wall"] == lost_since and stopped_at <= gap["end_wall"] <= time.time()
         assert gap["reason"].startswith("REFUSED")
-        assert count(lab.primary, "observation", "origin <> 'RECEIVED'") == 0, "no baseline of the retained state"
-        assert count(lab.primary, "result", "origin <> 'RECEIVED'") == 0 and count(lab.primary, "watermark") == 0
+        assert count(lab.primary, "observation", "origin = 'STATE_ASSERTION'") == 0, "no baseline of the retained state"
+        assert count(lab.primary, "result", "origin = 'STATE_ASSERTION'") == 0 and count(lab.primary, "watermark") == 0
         assert run_of(lab.primary)[1] == "NORMAL" and taken_in_order(lab.primary)[-1] == "RUN_END"
         assert stop_facts(lab.runtime) == (False, "COMMITTED", [], 0) and lab.took < 3.0
 

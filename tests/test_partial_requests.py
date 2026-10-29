@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 from acquirer_support import FakeResponse, Gate, drain_until, float_registers, stop
-from owner_support import Recorder
+from owner_support import FixedBucket, Recorder
 from protocol_support import FieldModbusDevices, device_points, fast_ticker
 from pymodbus.exceptions import ModbusIOException
 from pymodbus.pdu import ExceptionResponse
@@ -249,7 +249,7 @@ class Live:
     def __init__(self, server, *, timing=QUICK, ticker=fast_ticker(0.02), devices=(1, 2), on_round=None):
         self.config = settings(device_points(devices), server.port, timing)
         self.recorder = Recorder()
-        self.owner = Owner(self.config, time.time(), time.monotonic(), commit=self.recorder.commit, run_id="run")
+        self.owner = Owner(self.config, time.time(), time.monotonic(), commit=self.recorder.commit, buckets=FixedBucket(), run_id="run")
         self.ingress = Ingress(self.owner, 10_000)
         self.rounds, self.gens = [], []  # the outcome of every offered round, and the generation it was made in
         offer = self.ingress.offer

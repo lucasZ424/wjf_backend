@@ -17,7 +17,7 @@ from uuid import uuid4
 import psycopg
 import uvicorn
 from live_support import BRIDGES, FULL, PROCESS, UA_NAMES
-from owner_support import poll
+from owner_support import FixedBucket, poll
 from psycopg import sql
 from psycopg.conninfo import make_conninfo
 from test_archive_router import Disks
@@ -121,6 +121,8 @@ class WebRig:
                     disk_usage=Disks(),
                 )  # fmt: skip
                 self.router.initialize()
+                for _, store in self.router.stores:  # the fixed bucket its hand-built owner puts every group in
+                    store.prepare_bucket(1)
                 self.router.bind_run(self.run_id, self.config.config_id, now)
                 self.accounts.persist = self.router.primary.sync_accounts  # account changes and their audit go to the archive
             if self.archive and self.feed_archive:
@@ -132,7 +134,7 @@ class WebRig:
                 )  # fmt: skip
                 commit = self.queue.offer
                 writer = asyncio.create_task(self.queue.run())
-            self.owner = Owner(self.config, now, mono, commit=commit, run_id=self.run_id)
+            self.owner = Owner(self.config, now, mono, commit=commit, run_id=self.run_id, buckets=FixedBucket())
             if commit:
                 self.owner.start(now, mono)
             for source in (MB, UA):
@@ -217,7 +219,7 @@ class WebRig:
         )  # fmt: skip
         group = r.CommitGroup(
             f"{self.run_id}/gseed{self.seeded}", 1_000_000 + self.seeded, self.run_id, "ua_field", r.GROUP_FAULT, time.time(),
-            faults=records,
+            faults=records, bucket=1,
         )  # fmt: skip
         assert self.router.write_group(group).durable
 

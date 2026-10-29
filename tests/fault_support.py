@@ -1,6 +1,6 @@
 """Builders for fault tests: a small config with ordinary thresholds, fake-time helpers and a sink."""
 
-from owner_support import Recorder, notify, small_config
+from owner_support import FixedBucket, Recorder, notify, small_config
 
 from htsg import records as r
 from htsg.owner import Owner
@@ -52,7 +52,7 @@ class Accepting:
 def fault_owner(config=None, sink=None):
     sink = sink if sink is not None else Accepting()
     rec = Recorder()
-    owner = Owner(config or fault_config(), WALL0, MONO0, commit=sink, publish=rec.publish, run_id="run")
+    owner = Owner(config or fault_config(), WALL0, MONO0, commit=sink, publish=rec.publish, buckets=FixedBucket(), run_id="run")
     sink.owner = owner
     owner.begin_generation("ua", 1, WALL0, MONO0)
     return owner, sink, rec

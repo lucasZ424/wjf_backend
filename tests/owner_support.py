@@ -59,10 +59,21 @@ class Recorder:
         return [x for g in self.commits for x in g.states if kind in (None, x.kind)]
 
 
+class FixedBucket:
+    """For a test that builds the state owner by hand and stores its groups: every group goes into bucket 1, which
+    `archive_db_factory` prepares (修复轮09).  The runtime gives the owner the real BucketClock."""
+
+    def label(self):
+        return 1
+
+    def tick(self, wall, mono):
+        pass
+
+
 def make_owner(config=None, wall=1000.0, mono=100.0, generations=("mb", "ua")):
     config = config or small_config()
     recorder = Recorder()
-    owner = Owner(config, wall, mono, commit=recorder.commit, publish=recorder.publish, run_id="run")
+    owner = Owner(config, wall, mono, commit=recorder.commit, publish=recorder.publish, buckets=FixedBucket(), run_id="run")
     for source in generations:
         owner.begin_generation(source, 1, wall, mono)
     return owner, recorder

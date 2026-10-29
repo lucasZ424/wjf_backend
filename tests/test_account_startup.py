@@ -68,7 +68,7 @@ async def test_a_change_the_database_did_not_confirm_locks_sign_in_only_until_th
     router = ArchiveRouter(config, archive_db_factory("primary"), archive_db_factory("emergency"), disk_usage=Disks())
     accounts = Accounts(tmp_path / "accounts.json")
     admin, viewer = accounts.create("admin", "admin"), accounts.create("viewer", "viewer")
-    runtime = Runtime(config, router, accounts)
+    runtime = Runtime(config, router, accounts, number_file=tmp_path / "bucket_number.json")
     await runtime.start()
     try:
         assert runtime.health["accounts"] == "DATABASE_AUTHORITATIVE"
@@ -114,7 +114,7 @@ async def test_account_trouble_at_the_start_never_stops_it_and_settles_once_it_c
     else:
         away = Trouble(OSError("account file cannot be written"))
         monkeypatch.setattr(Path, "replace", away.wrap(Path.replace))
-    runtime = Runtime(config, router, accounts)
+    runtime = Runtime(config, router, accounts, number_file=tmp_path / "bucket_number.json")
     await runtime.start()
     try:
         assert runtime.running and not runtime.failed.is_set(), "the start went on"

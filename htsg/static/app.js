@@ -1,6 +1,6 @@
 "use strict";
 import {newLive, Rejected, take} from "/static/stream.js";
-import {buildCsv, channelRows, ENDS, gapMark, ORIGINS, reasonText, rowState} from "/static/replay.js";
+import {buildCsv, channelRows, ENDS, gapMark, ORIGINS, reasonText, retentionNotes, rowState} from "/static/replay.js";
 
 const $ = id => document.getElementById(id);
 const esc = value => String(value ?? "—").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
@@ -501,6 +501,7 @@ function drawReplay() {
   const notes = [];
   if (result.partial) notes.push(`数据库 ${result.unavailable.map(esc).join("、")} 无法读取，结果不完整；不能据此断定窗口内没有记录。`);
   if (result.truncated) notes.push(`已达每通道 ${result.limit} 行的显示上限，下列通道被截断：${Object.entries(result.channels).filter(([, c]) => c.truncated).map(([id]) => esc(label(id))).join("、")}。请缩短窗口。`);
+  for (const note of retentionNotes(result, stamp)) notes.push(`${esc(note)}。`);
   for (const gap of result.gaps) notes.push(`归档缺口（${esc(gap.source_id)}）：${stamp(gap.start_wall)} → ${Number.isFinite(gap.end_wall) ? stamp(gap.end_wall) : "未恢复"}，原因 ${esc(gap.reason)}；缺口内的数值未知，不连线。`);
   const summary = request.points.map(id => {
     const channel = result.channels[id], rows = channelRows(channel), last = lastOf(rows);
@@ -597,7 +598,7 @@ function plotReplay(canvas, channel, result) {
 // ------------------------------------------- pages 12, 14 and the archive banner (终版 §11, §12, §15)
 
 const ARCHIVE_STATES = {OK: ["正常", "ok"], LOST: ["已中断，缺口尚未恢复", "bad"], RECOVERING: ["恢复中，等待确认写入", "warn"]};
-const ROUTES = {PRIMARY: "正常库", EXTERNAL: "移动库", EMERGENCY: "应急库", UNKNOWN: "未知"};
+const ROUTES = {PRIMARY: "正常库", EMERGENCY: "应急库", UNKNOWN: "未知"};
 const ROLES = {admin: "管理员", viewer: "只读用户"};
 const health = {data: null, error: "", seq: 0};
 const HEALTH_PAGES = [12, 13];  // the only pages that read /api/health, and only while they are in front
@@ -644,8 +645,33 @@ function counterCells(id) {
 function selfcheckHtml() {
   return `<div class="grid two"><div class="card"><h3>数据源与通信</h3><div id="check-sources"></div></div><div class="card"><h3>OPC UA 订阅协商参数</h3><div id="check-negotiated"></div></div></div>
     <div class="grid two"><div class="card"><h3>历史归档</h3><div id="check-archive"></div></div><div class="card"><h3>故障记录归档</h3><div id="check-faults"></div></div></div>
+    <div class="card"><h3>存储保留与滚动删除</h3><div id="check-retention"></div></div>
     <div class="card"><h3>运行时限（配置值）</h3><div id="check-timing"></div></div>
     <div class="note">传感器零漂、自检信号、硬件温度与设备运行时间：未提供硬件诊断输入。此处展示的是软件采集、协商参数与归档的实际状态。</div>`;
+}
+// 终版 §13.6 自检与报警: what each database keeps, the deletion's real pace, the next one or why it cannot be foreseen, the alarm.
+const ALARM_REASONS = {
+  NO_ELIGIBLE_RANGE: "没有满足条件的删除范围", BOUNDARY_WITHOUT_BASELINE: "保留边界缺基线", POSTPONED_BY_LONG_TRANSACTION: "长事务推迟了删除",
+  DELETION_FAILING: "删除连续失败", OTHER_FILES_GROWING: "其他文件在增长", NO_WRITABLE_BUCKET: "没有可写的桶",
+  DELETION_SWITCHED_OFF: "滚动删除未启用", DISK_UNAVAILABLE: "主数据卷无法读取",
+};
+const FORECAST_REASONS = {
+  INSUFFICIENT_DATA: "数据不足7天", NO_GROWTH: "近7天没有增长", EMERGENCY: "处在应急期间", DISK_GROWS_FASTER: "磁盘占用增长明显超过数据库自身增长",
+  DISK_UNAVAILABLE: "主数据卷无法读取",
+};
+function retentionHtml(archive) {
+  const r = archive?.retention;
+  if (!r) return '<p class="muted">正在读取…</p>';
+  const parts = [];
+  if (archive.routing === "EMERGENCY") parts.push(`<p class="log-error" role="alert">已转写应急库：主库占用达到应急线，新数据写入应急库。</p>`);
+  if (r.alarm?.active) parts.push(`<p class="log-error" role="alert">主库超水位报警：占用持续高于删除启动线 ${fmt((r.alarm.above_seconds || 0) / 60, 0)} 分钟。原因：${(r.alarm.reasons || []).map(x => esc(ALARM_REASONS[x] || x)).join("、") || "未查明"}</p>`);
+  const names = {primary: "正常库", emergency: "应急库"};
+  parts.push(table(["数据库", "保留的桶", "保留自", "保留边界"], Object.entries(r.databases || {}).map(([db, k]) => [esc(names[db] || db),
+    k.readable === false ? "无法读取" : k.kept_buckets, k.kept_from == null ? "—" : stamp(k.kept_from), k.boundary == null ? "—" : stamp(k.boundary)])));
+  const f = r.forecast;
+  const next = !f ? "—" : f.next_deletion == null ? `无法可靠预计（${esc(FORECAST_REASONS[f.reason] || f.reason)}）` : stamp(f.next_deletion);
+  parts.push(`<p>最近一次删除：${r.last_deletion == null ? "尚未删除" : stamp(r.last_deletion)} · 实测删除周期：${r.deletion_period_s == null ? "尚无" : `${fmt(r.deletion_period_s / 86400, 1)} 天`} · 预计下次删除：${next}</p>`);
+  return parts.join("");
 }
 function negotiatedRows(n) {
   const r = n.requested || {}, rows = [
@@ -674,6 +700,7 @@ function updateSelfcheck() {
       const [text, kind] = ARCHIVE_STATES[s.archive] || [s.archive, "warn"];
       return [esc(id), badge(text, kind), s.confirmed_watermark == null ? "尚无已确认水位：只能说明已存的点，不推断其后" : stamp(s.confirmed_watermark), s.gap_since == null ? "—" : stamp(s.gap_since)];
     }));
+  $("check-retention").innerHTML = retentionHtml(archive);
   const f = status?.faults;
   $("check-faults").innerHTML = !f ? '<p class="muted">等待实时数据</p>' : `<p>${f.archive_incomplete ? badge("故障归档不完整", "bad") : badge("故障归档完整", "ok")} 未写入的缓冲 <b>${f.buffered}/${f.limit}</b> · 累计拒绝 <b>${f.rejected_total}</b> 条</p>`
     + table(["数据源", "缺口摘要：丢失条数", "最早", "最晚", "涉及通道"], Object.entries(f.loss || {}).map(([id, l]) => [esc(id), l.count, stamp(l.first_wall), stamp(l.last_wall), esc((l.points || []).join("、"))]))

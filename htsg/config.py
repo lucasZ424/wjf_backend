@@ -70,7 +70,6 @@ class Point(StrictModel):
     hysteresis_high: float | None = Field(None, ge=0)
     extreme_low: float | None = None
     extreme_high: float | None = None
-    inclusive: bool = False
     address: int | None = Field(None, ge=0, le=65535)
     device_id: int = Field(1, ge=0, le=255)
     register_kind: Literal["holding", "input"] = "holding"
@@ -205,12 +204,10 @@ class Timing(StrictModel):
 class Storage(StrictModel):
     primary_path: str = "D:/HTSG-dev/primary"
     emergency_path: str = "D:/HTSG-dev/emergency"
-    external_enabled: bool = False
-    external_path: str = ""
-    external_start: float = Field(0.95, gt=0, lt=1)
-    cleanup_enabled: bool = False
-    cleanup_start: float = Field(0.8, gt=0, lt=1)
-    cleanup_stop: float = Field(0.7, gt=0, lt=1)
+    cleanup_enabled: bool = False  # starts NEW deletions only: buckets, baselines and a deletion already marked go on (§13.6)
+    cleanup_start: float = Field(0.90, gt=0, lt=1)  # deletion starts here, and the emergency route ends below it
+    cleanup_stop: float = Field(0.80, gt=0, lt=1)  # deletion stops below it: a deployment value, by band (§13.4)
+    retention_min_buckets: int = Field(14, ge=1, strict=True)
     emergency_start: float = Field(0.95, gt=0, lt=1)
     emergency_reserve_bytes: int = Field(100 * 1024**3, ge=0)
     batch_budget_bytes: int = Field(8 * 1024**2, gt=0)
@@ -220,10 +217,6 @@ class Storage(StrictModel):
     def watermarks(self):
         if not self.cleanup_stop < self.cleanup_start < self.emergency_start:
             raise ValueError("require stop < cleanup_start < emergency_start")
-        if self.external_enabled and not self.external_path.strip():
-            raise ValueError("enabled external storage needs external_path")
-        if self.external_start > self.emergency_start:
-            raise ValueError("external_start must not exceed emergency_start")
         return self
 
 

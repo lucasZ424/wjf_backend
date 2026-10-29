@@ -78,9 +78,9 @@ def spread(values) -> dict:
     return {"count": len(values), "min": values[0], "p50": statistics.median(values), "p95": at(0.95), "p99": at(0.99), "max": values[-1]}
 
 
-def make_config(stats_interval=5.0, outage=0.0, quiet=False, external=False) -> Settings:
+def make_config(stats_interval=5.0, outage=0.0, quiet=False) -> Settings:
     """The research configuration on free local ports.  `outage` sets how long the disconnect scenarios last; `quiet`
-    holds every simulated value still; `external` enables a removable-disk database."""
+    holds every simulated value still."""
     data = load_settings(ROOT / "config/research-sim.json").model_dump()
     data["sources"][0]["port"] = free_port()
     data["sources"][1]["endpoint"] = f"opc.tcp://127.0.0.1:{free_port()}/measure/"
@@ -93,8 +93,6 @@ def make_config(stats_interval=5.0, outage=0.0, quiet=False, external=False) -> 
     if quiet:
         for signal in data["simulation"]["signals"]:
             signal["amplitude"], signal["noise"] = 0, 0
-    if external:
-        data["storage"].update(external_enabled=True, external_path="D:/HTSG-dev/external")
     return Settings.model_validate(data)
 
 
@@ -164,26 +162,25 @@ PAGE_PROBE = """
 class Lab:
     """One complete system on throw-away databases; `async with` builds it and tears it down."""
 
-    def __init__(self, stats_interval=5.0, browser=False, outage=0.0, quiet=False, disk_usage=None, external=False, prefix="htsg_perf_"):
-        """`quiet`: the simulated plant holds every value still.  `disk_usage`: injected free-space readings.
-        `external`: a third (removable-disk) database is bound and enabled."""
+    def __init__(self, stats_interval=5.0, browser=False, outage=0.0, quiet=False, disk_usage=None, prefix="htsg_perf_"):
+        """`quiet`: the simulated plant holds every value still.  `disk_usage`: injected free-space readings."""
         self.stats_interval, self.want_browser, self.outage, self.quiet = stats_interval, browser, outage, quiet
-        self.disk_usage, self.external, self.databases = disk_usage, external, Databases(prefix)
+        self.disk_usage, self.databases = disk_usage, Databases(prefix)
         self.rows_written = 0
         self.samples = []
         self.commit_wait, self.offered = [], {}
 
     async def __aenter__(self):
-        self.config = make_config(self.stats_interval, self.outage, self.quiet, self.external)
+        self.config = make_config(self.stats_interval, self.outage, self.quiet)
         self.field = FieldSimulator(self.config)
         await self.field.start()
-        stores = [self.databases.make(i, self.config.timing) for i in ("primary", "emergency", "primary")[: 3 if self.external else 2]]
+        stores = [self.databases.make(i, self.config.timing) for i in ("primary", "emergency")]
         extra = {"disk_usage": self.disk_usage} if self.disk_usage else {}
         self.router = ArchiveRouter(self.config, *stores, **extra)
         self.work = Path(os.environ.get("TEMP", ".")) / ("htsg-measure-" + uuid4().hex)
         accounts = Accounts(self.work / "accounts.json")
         self.viewer = accounts.create("viewer", "viewer")
-        self.runtime = Runtime(self.config, self.router, accounts)
+        self.runtime = Runtime(self.config, self.router, accounts, number_file=self.work / "bucket_number.json")
         self.instrument()
         app = create_web_app(
             config=self.config, accounts=accounts, owner=self.runtime.owner, archive_router=self.router,

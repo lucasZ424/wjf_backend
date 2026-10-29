@@ -114,7 +114,7 @@ class Records:
         if run_end is not None:
             state("RUN_END", run_end, ended_wall=run_end, reason="NORMAL")
         group = r.CommitGroup(
-            r.group_id(RUN, n), n, RUN, source, r.GROUP_BATCH, 1000.0 + n, tuple(observations), (), tuple(states), ()
+            r.group_id(RUN, n), n, RUN, source, r.GROUP_BATCH, 1000.0 + n, tuple(observations), (), tuple(states), (), 1
         )  # fmt: skip
         assert store.write_group(group).durable
 
