@@ -1,9 +1,10 @@
-"""D47: crash recovery, storage switching and the one-year capacity statement (方案模块 H).
+"""D47: crash recovery, storage switching and the capacity statement (方案模块 H; 终版 §13.5 容量报告).
 
 The checks live in scripts/verify_resilience.py; these tests run them short against the real system - a backend
 process that is killed hard, injected disk readings through the live runtime, measured database growth - and
 insist on the conclusions that matter: never a half-written group, never a route chosen against the thresholds,
-never a one-year pass for a volume that cannot hold the year.
+never a floor of buckets called held that the space below the stop line cannot hold.  With the rolling deletion there is
+no one-year retention to pass any more: the capacity is how often a deletion comes and how long is kept after it.
 """
 
 import sys
@@ -15,13 +16,19 @@ import verify_resilience as resilience  # noqa: E402
 GIB = 1024**3
 
 
-def test_a_year_that_does_not_fit_is_never_passed_and_the_wal_is_counted_once():
-    fits = resilience.year_capacity(1000.0, wal_peak=2 * GIB, maintenance_peak=GIB, free_bytes=100 * GIB, reserve_bytes=10 * GIB)
-    assert fits["bytes_per_year"] == 1000 * 86400 * 365 and fits["verdict"] == "ENOUGH_ON_THIS_VOLUME"
-    assert fits["needed_bytes"] == fits["bytes_per_year"] + 3 * GIB, "the log peak and the maintenance peak are added once, not per day"
-    assert fits["margin_bytes"] == 100 * GIB - 10 * GIB - fits["needed_bytes"]
-    short = resilience.year_capacity(1000.0, wal_peak=None, maintenance_peak=0, free_bytes=fits["bytes_per_year"], reserve_bytes=1)
-    assert short["margin_bytes"] == -1 and short["verdict"].startswith("INSUFFICIENT"), "one byte short is not a pass"
+def test_the_capacity_is_a_deletion_period_and_a_retention_and_the_floor_is_checked_against_the_stop_line():
+    ten_gib_a_day = 10 * GIB / 86400
+    lines = {"cleanup_start": 0.9, "cleanup_stop": 0.8, "floor_buckets": 14, "reserve_bytes": 100 * GIB}
+    fits = resilience.retention_capacity(ten_gib_a_day, wal_peak=2 * GIB, maintenance_peak=GIB, primary_total=1000 * GIB,
+                                         emergency_free=200 * GIB, **lines)  # fmt: skip
+    assert abs(fits["days_between_deletions"] - 10.0) < 1e-9, "100 GiB between the lines at 10 GiB a day"
+    assert abs(fits["days_kept_after_deletion"] - 79.7) < 1e-9, "800 GiB below the stop line, the log and maintenance peaks once"
+    assert abs(fits["emergency_days"] - 10.0) < 1e-9, "the emergency database is not thinned: its room above the reserve"
+    assert fits["verdict"] == "FLOOR_HELD" and "bytes_per_year" not in fits, "no one-year retention pass any more (§13.5)"
+    tight = resilience.retention_capacity(ten_gib_a_day, wal_peak=2 * GIB, maintenance_peak=GIB, primary_total=150 * GIB,
+                                          emergency_free=50 * GIB, **lines)  # fmt: skip
+    assert tight["days_kept_after_deletion"] < 14 and tight["verdict"].startswith("FLOOR_NOT_HELD")
+    assert tight["emergency_days"] == 0, "below the reserve it takes nothing"
 
 
 async def test_a_hard_kill_at_any_moment_leaves_no_half_written_group_and_the_next_start_closes_the_run():
@@ -69,6 +76,6 @@ async def test_the_measured_growth_gives_a_year_figure_with_indexes_inside_and_a
         assert 0 < part["tables_total_bytes"] <= part["database_size_bytes"], "the tables with their indexes are inside the database size: counted once"
         assert all(t["indexes"] > 0 for name, t in part["tables"].items() if name in ("observation", "result")), "the indexes are part of the figure"
         cap = part["capacity"]
-        assert (cap["margin_bytes"] >= 0) == (cap["verdict"] == "ENOUGH_ON_THIS_VOLUME")
-        assert abs(cap["bytes_per_year"] - cap["bytes_per_day"] * 365) < 365
+        assert (cap["days_kept_after_deletion"] >= cap["floor_buckets"]) == (cap["verdict"] == "FLOOR_HELD")
+        assert cap["days_between_deletions"] > 0 and "bytes_per_year" not in cap
     assert "simulated field only" in report["not_proven"]

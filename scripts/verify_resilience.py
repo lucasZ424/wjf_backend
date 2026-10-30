@@ -1,4 +1,4 @@
-"""Crash recovery, storage switching and one-year capacity, verified against the real system (方案 D47).
+"""Crash recovery, storage switching and capacity, verified against the real system (方案 D47; 终版 §13.5 容量报告).
 
     python scripts/verify_resilience.py crash|storage|capacity|all --out docs/evidence/d47
 
@@ -7,8 +7,10 @@ crash     the backend runs as its own process on throw-away databases and is kil
           after the restart every earlier run has been closed from what is persisted.
 storage   the 95 % / 90 % thresholds are driven with INJECTED free-space readings through the live runtime (a real
           disk is never filled): which database each group lands in, hysteresis, no archive loss, history merged.
-capacity  the measured growth of the full-scale input (all 208 inputs changing every second, and nothing changing)
-          times 365, with the write-ahead log peak and the disk margin; not enough room means no one-year pass.
+capacity  the measured growth of the full-scale input (all 208 inputs changing every second, and nothing changing), taken
+          after the first start prepared its buckets: how often the rolling deletion comes, how many days are kept after
+          it - less the write-ahead log and maintenance peaks - whether that holds the floor of buckets, and how long the
+          emergency database lasts above its reserve.  There is no one-year retention to pass any more.
 
 Everything is created and dropped here; the existing development and research databases are never touched.
 """
@@ -242,16 +244,27 @@ async def storage(seconds: float) -> dict:
 # ---------------------------------------------------------------------------------------------------- capacity
 
 
-def year_capacity(bytes_per_second: float, wal_peak: int | None, maintenance_peak: int, free_bytes: int, reserve_bytes: int) -> dict:
-    """One year of the measured growth (indexes are inside it: the database size counts them once), plus the write-ahead log
-    peak and the maintenance peak ONCE each (they do not grow with the years), against the free space less the reserve."""
-    year = int(bytes_per_second * 86400 * 365)
-    needed = year + (wal_peak or 0) + maintenance_peak
-    margin = free_bytes - reserve_bytes - needed
+def retention_capacity(bytes_per_second: float, *, wal_peak: int | None, maintenance_peak: int, primary_total: int,
+                       emergency_free: int, reserve_bytes: int, cleanup_start: float, cleanup_stop: float,
+                       floor_buckets: int) -> dict:  # fmt: skip
+    """The capacity with the rolling deletion (终版 §13.5 容量报告): there is no year to hold any more.  From the measured daily
+    growth (indexes inside it: the database size counts them once): how often a deletion comes - the room between the start
+    and the stop line - and how many days are kept after one - the room below the stop line, less the write-ahead log peak
+    and the maintenance peak once each.  The floor of buckets is held when those days are at least as many as the buckets
+    (a bucket holds about a day).  The emergency database is not thinned: its days are its room above the reserve.  Other
+    files on the disks, and the tables kept for good growing, are not counted here: the self-check page shows the real pace."""
+    per_day = bytes_per_second * 86400
+    room = cleanup_stop * primary_total - (wal_peak or 0) - maintenance_peak
+    between = (cleanup_start - cleanup_stop) * primary_total / per_day if per_day else None
+    kept = room / per_day if per_day else None
+    held = kept is not None and kept >= floor_buckets
     return {
-        "bytes_per_day": int(bytes_per_second * 86400), "bytes_per_year": year, "wal_peak_bytes": wal_peak, "maintenance_peak_bytes": maintenance_peak,
-        "needed_bytes": needed, "free_bytes": free_bytes, "reserve_bytes": reserve_bytes, "margin_bytes": margin,
-        "verdict": "ENOUGH_ON_THIS_VOLUME" if margin >= 0 else "INSUFFICIENT: no one-year retention pass",
+        "bytes_per_day": int(per_day), "primary_total_bytes": primary_total, "cleanup_start": cleanup_start, "cleanup_stop": cleanup_stop,
+        "wal_peak_bytes": wal_peak, "maintenance_peak_bytes": maintenance_peak, "days_between_deletions": between,
+        "days_kept_after_deletion": kept, "floor_buckets": floor_buckets,
+        "emergency_free_bytes": emergency_free, "reserve_bytes": reserve_bytes,
+        "emergency_days": max(0, emergency_free - reserve_bytes) / per_day if per_day else None,
+        "verdict": "FLOOR_HELD" if held else "FLOOR_NOT_HELD: the space below the stop line keeps fewer days than the floor of buckets",
     }  # fmt: skip
 
 
@@ -282,8 +295,10 @@ async def first_preparation(lab, deadline: float) -> dict | None:
 async def capacity(seconds: float) -> dict:
     report = {}
     config = measure.load_settings(measure.ROOT / "config/research-sim.json")
-    drive = Path(config.storage.primary_path).drive + "/"
+    policy = config.storage
+    drive = Path(policy.primary_path).drive + "/"
     usage = shutil.disk_usage(drive)
+    emergency = shutil.disk_usage(Path(policy.emergency_path).drive + "/")
     for name, quiet in (("every_input_changes_every_second", False), ("no_input_changes", True)):
         async with measure.Lab(stats_interval=5, quiet=quiet, prefix="htsg_cap_") as lab:
             await measure.initial_burst(lab)
@@ -310,10 +325,15 @@ async def capacity(seconds: float) -> dict:
                 "measured_seconds": part["seconds"], "rows_per_second": part["rows_per_second"], "database_bytes_per_second": rate,
                 "bytes_per_row": round(rate / part["rows_per_second"], 1) if part["rows_per_second"] else None,
                 "tables": tables, "tables_total_bytes": total, "database_size_bytes": size_now,
-                "capacity": year_capacity(rate, part["wal_bytes_peak"], swing, usage.free, config.storage.emergency_reserve_bytes),
+                "capacity": retention_capacity(
+                    rate, wal_peak=part["wal_bytes_peak"], maintenance_peak=swing, primary_total=usage.total,
+                    emergency_free=emergency.free, reserve_bytes=policy.emergency_reserve_bytes, cleanup_start=policy.cleanup_start,
+                    cleanup_stop=policy.cleanup_stop, floor_buckets=policy.retention_min_buckets,
+                ),  # fmt: skip
             }
     report["volume"] = {"drive": drive, "total_bytes": usage.total, "free_bytes": usage.free}
-    report["not_proven"] = "simulated field only: neither the real plant's change rate nor the real disk is evidence for a one-year pass"
+    report["not_proven"] = ("simulated field only: neither the real plant's change rate nor the real disk is evidence for the deletion "
+                            "period or the days kept after a deletion")
     return report
 
 
