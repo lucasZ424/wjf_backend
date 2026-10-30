@@ -8,6 +8,8 @@ boot), and stop everything the normal way and start nothing while the maintenanc
 
 import logging
 import msvcrt
+import signal
+import subprocess
 import sys
 import threading
 import time
@@ -147,3 +149,62 @@ def test_a_backend_that_answers_in_time_is_left_running_however_long_it_runs(fas
     assert sup.supervise([sys.executable, "-c", serve], [], None, max_runs=1, ready_url=f"http://127.0.0.1:{port}/live", **files) == 1
     assert not any("not ready after" in r.getMessage() for r in caplog.records)
     assert any("ended with code 3" in r.getMessage() for r in caplog.records), "it ran to its own end"
+
+
+def test_a_hung_start_that_ignores_the_normal_stop_is_ended_after_the_grace_and_started_again_with_growing_pauses(
+    fast, monkeypatch, caplog, tmp_path
+):
+    """The whole chain a start that hangs goes through (修复轮10), step by step on the real process: alive and not ready,
+    the start-up limit, Ctrl+Break, the grace running out, the end by force, the process gone - and the next start after a
+    pause that grows while it goes on.  The fake backend says when it ignores Ctrl+Break, and the signal waits for that:
+    a slow start cannot turn the forced end into a normal one.  The process started is the virtual environment's launcher,
+    which runs the interpreter as a child: the interpreter itself must be gone too."""
+    pauses, files = fast
+    monkeypatch.setattr(sup, "STARTUP_READY", 2.0)
+    monkeypatch.setattr(sup, "STOP_GRACE", 2.0)
+    caplog.set_level(logging.WARNING, logger=sup.log.name)
+    marks, steps = tmp_path / "marks", {}
+    marks.mkdir()
+
+    class Watched(subprocess.Popen):
+        """The real process, every stop step noted."""
+
+        stopping = False
+
+        def send_signal(self, sig):
+            ready = marks / f"{self.pid}.ready"
+            deadline = time.monotonic() + 10
+            while not ready.exists() and time.monotonic() < deadline:
+                time.sleep(0.05)
+            assert ready.exists(), "the fake backend never said it ignores Ctrl+Break"
+            steps.setdefault(self.pid, []).append("ctrl-break" if sig == signal.CTRL_BREAK_EVENT else sig)
+            self.stopping = True
+            super().send_signal(sig)
+
+        def wait(self, timeout=None):
+            try:
+                code = super().wait(timeout)
+            except subprocess.TimeoutExpired:
+                if self.stopping:
+                    steps[self.pid].append("grace ran out")
+                raise
+            if self.stopping:
+                steps[self.pid].append("gone")
+            return code
+
+        def kill(self):
+            steps[self.pid].append("killed")
+            super().kill()
+
+    monkeypatch.setattr(sup.subprocess, "Popen", Watched)
+    deaf = [sys.executable, "-c", "import os, pathlib, signal, sys, time; signal.signal(signal.SIGBREAK, signal.SIG_IGN); "
+            "[pathlib.Path(sys.argv[1], f'{n}.ready').write_text(str(os.getpid())) for n in {os.getpid(), os.getppid()}]; "
+            "time.sleep(60)", str(marks)]  # fmt: skip  # named for the launcher and for the interpreter: which one is started varies
+    assert sup.supervise(deaf, [], None, max_runs=3, ready_url=f"http://127.0.0.1:{free_port()}/live", **files) == 3
+    assert list(steps.values()) == [["ctrl-break", "grace ran out", "killed", "gone"]] * 3, steps
+    for started in steps:
+        interpreter = int((marks / f"{started}.ready").read_text())
+        listing = subprocess.run(["tasklist", "/FI", f"PID eq {interpreter}", "/NH"], capture_output=True, text=True).stdout
+        assert str(interpreter) not in listing, "the interpreter the launcher ran is gone with it"
+    assert sum("not ready after" in r.getMessage() for r in caplog.records) == 3
+    assert pauses == [1.0, 2.0], "started again each time, the pause doubling while the starts keep failing"
