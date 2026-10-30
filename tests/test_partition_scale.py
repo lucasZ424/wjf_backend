@@ -27,6 +27,13 @@ def test_a_window_over_240_buckets_is_answered_within_the_bound_of_one_table(arc
             "FROM generate_series(1,%s) n",
             (PER_BUCKET, BUCKETS * PER_BUCKET),
         )
+        # what writing them through the archive records: used, the newest current, and the time each one's rows cover
+        conn.execute(
+            "UPDATE bucket b SET used=true,state=CASE WHEN b.no=%s THEN 'CURRENT' ELSE 'SEALED' END,data_lo=s.lo,data_hi=s.hi "
+            "FROM (SELECT bucket,min(effective_wall) AS lo,max(effective_wall) AS hi FROM observation GROUP BY bucket) s "
+            "WHERE b.no=s.bucket",
+            (BUCKETS,),
+        )
         conn.execute("ANALYZE observation")
     assert len(store.bucket_catalog()) == BUCKETS
     h.query([("primary", store)], {"ti": "ua"}, 1.0, 2.0)  # the first plan of a session is not what a page waits for

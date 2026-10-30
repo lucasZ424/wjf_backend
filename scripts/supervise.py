@@ -9,7 +9,9 @@ one running exits at once.  For as long as it lives it
   * waits until the normal database answers, at most three minutes: the backend also runs without it and writes the archive once it
     answers, but the close-out of a crashed run is only done by a start that can read every database;
   * runs the backend, and starts it again whenever it ends, for whatever reason: after 5 s, doubling while it keeps ending quickly up
-    to 60 s, back to 5 s once a run has lasted ten minutes.
+    to 60 s, back to 5 s once a run has lasted ten minutes;
+  * stops a backend that has not answered on /live two minutes after its start (a start that hangs leaves a process alive with no
+    port) the same way as at STOP, and handles it like one that ended.  Only the start is watched: once it answered, it is not.
 A backend that already owns the deployment (one left behind by a supervisor that was killed) is waited for, never doubled.
 The file .local/STOP stops the backend the normal way (Ctrl+Break: its run ends NORMAL) and ends the supervisor; while the file exists
 nothing is started.  Delete it to resume: the next five-minute trigger starts the supervisor again.
@@ -37,6 +39,7 @@ FIRST_DELAY, MAX_DELAY = 5.0, 60.0  # between a backend's end and its next start
 STABLE = 600.0  # a run that lasted this long starts the delays over
 SERVICE_CHECK = 60.0  # seconds between two looks at the database services
 STOP_GRACE = 60.0  # seconds the backend gets to stop the normal way before it is ended
+STARTUP_READY = 120.0  # seconds a start may take to answer on /live before it is taken for hung (修复轮10)
 log = logging.getLogger("htsg.supervisor")
 
 
@@ -126,14 +129,33 @@ def stop_backend(proc: subprocess.Popen):
         proc.wait()
 
 
-def watch(proc: subprocess.Popen, services, seen: dict, stop_file: Path) -> int | None:
-    """The backend's exit code, or None when it was stopped because of the STOP file."""
-    last_check = time.monotonic()
+def answers(url: str) -> bool:
+    """/live answers: the web application serves.  It reads no database and needs no account."""
+    from urllib.request import urlopen
+
+    try:
+        with urlopen(url, timeout=1.0) as response:
+            return response.status == 200
+    except OSError:
+        return False
+
+
+def watch(proc: subprocess.Popen, services, seen: dict, stop_file: Path, ready_url: str | None = None) -> int | None:
+    """The backend's exit code, or None when it was stopped because of the STOP file.  With `ready_url`, a backend that has
+    not answered there within STARTUP_READY seconds of its start is stopped and its code returned, as if it had ended."""
+    last_check = started = time.monotonic()
+    ready = ready_url is None
     while True:
         try:
             return proc.wait(timeout=1.0)
         except subprocess.TimeoutExpired:
             pass
+        if not ready:
+            ready = answers(ready_url)
+            if not ready and time.monotonic() - started >= STARTUP_READY:
+                log.warning("backend not ready after %.0f s (no answer on %s): stopping it", STARTUP_READY, ready_url)
+                stop_backend(proc)
+                return proc.returncode
         if stop_file.exists():
             log.info("STOP found: stopping the backend")
             stop_backend(proc)
@@ -144,7 +166,7 @@ def watch(proc: subprocess.Popen, services, seen: dict, stop_file: Path) -> int 
 
 
 def supervise(command: list[str], services, primary_dsn: str | None, *, stop_file: Path, backend_lock: Path,
-              console: Path, max_runs: int | None = None) -> int:  # fmt: skip
+              console: Path, max_runs: int | None = None, ready_url: str | None = None) -> int:  # fmt: skip
     """Run the backend again and again until the STOP file appears.  The number of runs started is returned."""
     seen: dict = {}
     runs, next_delay, waiting_logged = 0, FIRST_DELAY, False
@@ -168,7 +190,7 @@ def supervise(command: list[str], services, primary_dsn: str | None, *, stop_fil
             )  # fmt: skip
             runs += 1
             log.info("backend started (pid %s, start %s)", proc.pid, runs)
-            code = watch(proc, services, seen, stop_file)
+            code = watch(proc, services, seen, stop_file, ready_url)
         if code is None:
             break
         ran = time.monotonic() - started
@@ -211,7 +233,8 @@ def main(argv=None):
         "--accounts", str(args.accounts), "--port", str(args.port),
     ]  # fmt: skip
     log.info("supervisor starts: services %s", ", ".join(services))
-    supervise(command, services, primary, stop_file=stop_file, backend_lock=LOCAL / "backend.lock", console=LOCAL / "backend-console.log")
+    supervise(command, services, primary, stop_file=stop_file, backend_lock=LOCAL / "backend.lock", console=LOCAL / "backend-console.log",
+              ready_url=f"http://127.0.0.1:{args.port}/live")  # fmt: skip
 
 
 if __name__ == "__main__":

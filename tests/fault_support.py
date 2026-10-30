@@ -52,7 +52,7 @@ class Accepting:
 def fault_owner(config=None, sink=None):
     sink = sink if sink is not None else Accepting()
     rec = Recorder()
-    owner = Owner(config or fault_config(), WALL0, MONO0, commit=sink, publish=rec.publish, buckets=FixedBucket(), run_id="run")
+    owner = Owner(config or fault_config(), WALL0, MONO0, commit=sink, buckets=FixedBucket(), run_id="run")
     sink.owner = owner
     owner.begin_generation("ua", 1, WALL0, MONO0)
     return owner, sink, rec

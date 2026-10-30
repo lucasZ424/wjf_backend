@@ -56,3 +56,16 @@ def test_the_name_in_use_and_names_that_are_not_plain_new_ones_are_refused(tmp_p
     with pytest.raises(SystemExit, match="name"):
         bootstrap_db.new_databases(conf, name, tmp_path / "out.json")
     assert not (tmp_path / "out.json").exists()
+
+
+def test_a_database_of_another_generation_is_kept_and_the_way_to_a_new_pair_is_given(tmp_path, archive_db_factory):
+    """Old databases are kept, their deletion is the user's: `build` must point at `new`, never tell anyone to drop one."""
+    old = archive_db_factory(prepare=False)
+    with old.session() as conn:
+        conn.execute("CREATE TABLE htsg_meta (key text PRIMARY KEY, value text NOT NULL)")
+        conn.execute("INSERT INTO htsg_meta VALUES ('schema_generation','5')")
+    (tmp_path / "database.json").write_text(json.dumps({"primary": old.dsn, "emergency": old.dsn}), encoding="utf-8")
+    with pytest.raises(SystemExit) as refused:
+        bootstrap_db.build(tmp_path)
+    said = str(refused.value)
+    assert "new --name htsg_" in said and "Drop" not in said, said

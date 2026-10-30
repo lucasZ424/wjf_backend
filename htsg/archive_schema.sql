@@ -54,7 +54,10 @@ CREATE TABLE IF NOT EXISTS bucket (
     prepared_at timestamptz NOT NULL DEFAULT now(), changed_at timestamptz NOT NULL DEFAULT now(),
     baseline_wall double precision,  -- the earliest retention baseline stored in this bucket here: its retention boundary
     used boolean NOT NULL DEFAULT false,  -- it received a group here; a prepared bucket never used does not count (§13.6)
-    first_wall double precision, last_wall double precision  -- the time its groups covered, taken when it is marked DELETING
+    first_wall double precision, last_wall double precision,  -- the time its groups covered, taken when it is marked DELETING
+    -- the earliest and latest time its rows here are filed under (effective time) and its groups were built at, widened in
+    -- the transaction that writes them: a query names only the buckets this can reach; NULL (not known) is always read
+    data_lo double precision, data_hi double precision
 );
 
 -- The bucket is part of every key: "this group was written already" is asked of the group's own bucket.  The record

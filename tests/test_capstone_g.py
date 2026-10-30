@@ -371,7 +371,10 @@ def test_a_live_archive_gap_is_announced_and_the_live_pages_stay_consistent(page
         opened = lambda: setattr(rig.queue, "capacity", 400)  # noqa: E731
         drive_strain(rig, page, {4: lambda: rig.call(closed), 10: lambda: rig.call(opened)})
         said = page.evaluate("[...window.__banner]")
-        assert any("历史归档中断" in text and "实时值仍在更新" in text for text in said), said
+        # the banner speaks of history only: whether a live value is valid is what the page itself shows (the sources may be
+        # down too), so it never claims the live values are still updating
+        assert any("历史归档中断" in t and "该段历史可能缺失" in t and "以页面当前状态为准" in t for t in said), said
+        assert not any("实时值仍在更新" in t for t in said), said
         page.locator("#archive-banner").wait_for(state="hidden", timeout=30000)  # recovered: the gap is closed
         keep(page, "g07-live-archive-gap")
         complete, _ = check_strain_frames(frames(page), change_may_wait=True)

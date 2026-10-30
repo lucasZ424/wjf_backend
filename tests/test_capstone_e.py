@@ -49,7 +49,7 @@ class Scenario:
             is_void=lambda g: self.owner.is_void(g),
             retry_delay=(0.01, 0.05),
         )  # fmt: skip
-        self.owner = Owner(self.cfg, WALL0, MONO0, commit=self.queue.offer, publish=lambda p: None, buckets=FixedBucket(), run_id="e")
+        self.owner = Owner(self.cfg, WALL0, MONO0, commit=self.queue.offer, buckets=FixedBucket(), run_id="e")
         self.owner.start(WALL0, MONO0)
         for source in ("mb_field", "ua_field"):
             self.owner.begin_generation(source, 1, WALL0, MONO0)

@@ -107,8 +107,8 @@ def build_history_router(router, user_dep, config, *, concurrency: int = 2) -> A
         return result
 
     @api.get("/api/replay/basis/{result_id:path}", dependencies=[Depends(user_dep)])
-    async def basis(result_id: str):
-        found = await blocking(history.input_basis, router.stores, result_id)
+    async def basis(result_id: str, bucket: int | None = None):  # bucket: the one the result's history row names
+        found = await blocking(history.input_basis, router.stores, result_id, bucket)
         if not found["found"]:
             if found["unavailable"]:
                 raise HTTPException(503, "Historical storage unavailable")

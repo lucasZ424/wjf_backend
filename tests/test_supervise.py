@@ -105,3 +105,45 @@ def test_stopped_database_services_are_started_every_round_and_a_change_is_logge
     assert seen == {"HTSG-PostgreSQL-primary": "RUNNING", "HTSG-PostgreSQL-emergency": "RUNNING"}
     emergency = [r.getMessage() for r in caplog.records if "emergency" in r.getMessage()]
     assert emergency == ["service HTSG-PostgreSQL-emergency: STOPPED", "service HTSG-PostgreSQL-emergency: RUNNING"]
+
+
+def free_port():
+    import socket
+
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def test_a_backend_that_never_becomes_ready_is_stopped_after_the_start_up_limit_and_started_again(fast, monkeypatch, caplog):
+    """A start that hangs (the event loop's loopback socket pair never connected, 修复轮10) leaves a process alive with no
+    port: waiting for it to end would wait for ever.  Past the limit it is handled like a backend that ended."""
+    pauses, files = fast
+    monkeypatch.setattr(sup, "STARTUP_READY", 2.0)
+    monkeypatch.setattr(sup, "STOP_GRACE", 2.0)
+    caplog.set_level(logging.WARNING, logger=sup.log.name)
+    began = time.monotonic()
+    assert sup.supervise(LONG, [], None, max_runs=2, ready_url=f"http://127.0.0.1:{free_port()}/live", **files) == 2
+    assert time.monotonic() - began < 30, "each hung start was ended, not waited out"
+    assert sum("not ready after" in r.getMessage() for r in caplog.records) == 2 and pauses, "said so, then the pause"
+
+
+def test_a_backend_that_answers_in_time_is_left_running_however_long_it_runs(fast, monkeypatch, caplog):
+    """Only the start is watched: once it answered, a backend is never stopped for not answering later."""
+    pauses, files = fast
+    monkeypatch.setattr(sup, "STARTUP_READY", 2.0)
+    caplog.set_level(logging.WARNING, logger=sup.log.name)
+    port = free_port()
+    serve = (
+        "import http.server, threading, time, sys\n"
+        "class H(http.server.BaseHTTPRequestHandler):\n"
+        "    def do_GET(self):\n        self.send_response(200); self.end_headers(); self.wfile.write(b'ok')\n"
+        "    def log_message(self, *a): pass\n"
+        f"s = http.server.HTTPServer(('127.0.0.1', {port}), H)\n"
+        "threading.Thread(target=s.serve_forever, daemon=True).start()\n"
+        "time.sleep(4); s.shutdown()\n"  # answers for a while, then goes silent while still alive
+        "time.sleep(3); sys.exit(3)\n"
+    )
+    assert sup.supervise([sys.executable, "-c", serve], [], None, max_runs=1, ready_url=f"http://127.0.0.1:{port}/live", **files) == 1
+    assert not any("not ready after" in r.getMessage() for r in caplog.records)
+    assert any("ended with code 3" in r.getMessage() for r in caplog.records), "it ran to its own end"

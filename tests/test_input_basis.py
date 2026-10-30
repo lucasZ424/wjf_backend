@@ -16,7 +16,7 @@ WALL0, MONO0 = 1000.0, 100.0
 def build(archive_db_factory, config=None, *, groups_hook=None):
     cfg = config or small_config()
     rec = Recorder()
-    owner = Owner(cfg, WALL0, MONO0, commit=rec.commit, publish=rec.publish, buckets=FixedBucket(), run_id="run")
+    owner = Owner(cfg, WALL0, MONO0, commit=rec.commit, buckets=FixedBucket(), run_id="run")
     for source in ("mb", "ua"):
         owner.begin_generation(source, 1, WALL0, MONO0)
     return owner, rec, cfg
@@ -101,8 +101,7 @@ def test_values_derived_inside_an_archive_gap_say_that_their_basis_is_incomplete
 
     sink = Sink()
     cfg = small_config()
-    rec = Recorder()
-    owner = Owner(cfg, WALL0, MONO0, commit=sink, publish=rec.publish, buckets=FixedBucket(), run_id="run")
+    owner = Owner(cfg, WALL0, MONO0, commit=sink, buckets=FixedBucket(), run_id="run")
     sink.owner = owner
     for source in ("mb", "ua"):
         owner.begin_generation(source, 1, WALL0, MONO0)

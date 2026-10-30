@@ -59,6 +59,15 @@ def _json(value):
     return None if value is None else Jsonb(value)
 
 
+def group_span(group: rec.CommitGroup) -> tuple[float, float]:
+    """The earliest and latest time a group is filed under: the effective time of each observation and result (the column a
+    history window filters on: an asserted time first) and the time the group was built (what the deletion marks note)."""
+    walls = [group.built_wall]
+    walls += [o.received_wall if o.asserted_wall is None else o.asserted_wall for o in group.observations]
+    walls += [x.at_wall if x.asserted_wall is None else x.asserted_wall for x in group.results]
+    return min(walls), max(walls)
+
+
 class SchemaError(RuntimeError):
     """The database cannot be used by this generation; nothing was changed."""
 
@@ -129,6 +138,14 @@ class ArchiveStore:
                 row = conn.execute("SELECT value FROM htsg_meta WHERE key='schema_generation'").fetchone()
                 if not row or row["value"] != str(SCHEMA_GENERATION):
                     raise SchemaError(f"unsupported schema generation {row and row['value']}")
+                if not conn.execute(
+                    "SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='bucket' "
+                    "AND column_name='data_hi'"
+                ).fetchone():  # laid down before the bucket range was kept: added once; its buckets stay "not known"
+                    conn.execute(
+                        "ALTER TABLE bucket ADD COLUMN IF NOT EXISTS data_lo double precision, "
+                        "ADD COLUMN IF NOT EXISTS data_hi double precision"
+                    )
             else:
                 legacy = conn.execute(
                     "SELECT to_regclass('public.schema_version') AS v, to_regclass('public.frame') AS f"
@@ -188,6 +205,17 @@ class ArchiveStore:
                 lacks = row["baseline_wall"] is None
                 if first is None:
                     return WriteOutcome("ALREADY", lacks_baseline=lacks)  # an earlier, complete commit of this very group
+                # with the rows, so the range a query trusts can never miss one of them.  `used` is still the value from
+                # before this group: a bucket that held rows with no range kept for them stays "not known" - a range of
+                # this group alone would leave its older rows out of every query - and any bucket written to is used
+                lo, hi = group_span(group)
+                conn.execute(
+                    "UPDATE bucket SET used=true,"
+                    "data_lo=CASE WHEN used AND data_lo IS NULL THEN NULL ELSE least(coalesce(data_lo,%s),%s) END,"
+                    "data_hi=CASE WHEN used AND data_hi IS NULL THEN NULL ELSE greatest(coalesce(data_hi,%s),%s) END "
+                    "WHERE no=%s",
+                    (lo, lo, hi, hi, group.bucket),
+                )
                 if row["state"] == "READY":
                     self._open_bucket(conn, group.bucket)
                 self._write_members(conn, group)
@@ -258,14 +286,24 @@ class ArchiveStore:
             ).fetchone()
         return row["n"]
 
-    def deletion_times(self) -> list[float]:
-        """When the rolling deletion took ranges away here, oldest first (the management log, kept for good)."""
+    def deletion_times(self, action: str = "ROLLING_DELETE") -> list[float]:
+        """When the rolling deletion took ranges away here (or, `ROLLING_DELETE_START`, began a cleanup), oldest first, from
+        the management log, which is kept for good."""
         with self.session() as conn:
             rows = conn.execute(
-                "SELECT time FROM (SELECT time FROM management_log WHERE action='ROLLING_DELETE' "
-                "ORDER BY time DESC LIMIT 200) t ORDER BY time"
+                "SELECT time FROM (SELECT time FROM management_log WHERE action=%s ORDER BY time DESC LIMIT 200) t ORDER BY time",
+                (action,),
             ).fetchall()
         return [x["time"] for x in rows]
+
+    def cleanup_going_on(self) -> bool:
+        """The management log says a cleanup began here and has not ended: its latest start is later than its latest end."""
+        with self.session() as conn:
+            row = conn.execute(
+                "SELECT max(time) FILTER (WHERE action='ROLLING_DELETE_START') AS began,"
+                "max(time) FILTER (WHERE action='ROLLING_DELETE_END') AS ended FROM management_log"
+            ).fetchone()
+        return row["began"] is not None and (row["ended"] is None or row["began"] > row["ended"])
 
     def bucket_rows(self) -> list[dict]:
         """This database's bucket list with what the deletion decides by, oldest first."""

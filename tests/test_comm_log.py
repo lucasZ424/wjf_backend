@@ -246,7 +246,7 @@ def test_aggregate_entries_carry_the_last_communication_known_at_discovery(clock
 
 def owner_and_ingress(batch_capacity=100, diag_capacity=500, config=None):
     rec = Recorder()
-    owner = Owner(config or small_config(), WALL0, MONO0, commit=rec.commit, publish=rec.publish, run_id="run")
+    owner = Owner(config or small_config(), WALL0, MONO0, commit=rec.commit, run_id="run")
     return owner, Ingress(owner, batch_capacity, diag_capacity), rec
 
 
@@ -345,7 +345,7 @@ def test_the_log_never_reaches_the_archive_or_the_realtime_stream(clock):
     owner.commlog.event("ua", None, "NOTE", "N", *clock())
     owner.commlog.round_failed("mb", 1, "POLL_TIMEOUT", "NO_ANSWER", *clock(), scope="0:16")
     ingress.drain()
-    assert rec.commits == [] and rec.pubs == [] and owner.pub_seq == 0 and owner.order == 0
+    assert rec.commits == [] and owner.order == 0
 
 
 def test_a_new_run_starts_with_an_empty_log(clock):

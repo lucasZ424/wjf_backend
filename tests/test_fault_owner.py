@@ -171,7 +171,8 @@ def test_a_timer_generated_fault_travels_the_same_ordered_path_as_its_source():
     group = next(g for g in sink.groups if g.faults)
     assert group.kind == r.GROUP_FAULT and group.source_id == "ua"
     assert group.order > next(g.order for g in sink.groups if g.observations), "after the data it rests on"
-    assert any(p.faults for p in rec.pubs), "and the current state shows it immediately"
+    (fault,) = group.faults
+    assert owner.channel_views()[fault.point_id]["fault_direction"] == fault.direction, "and the live view shows it at once"
 
 
 def test_resubmitting_a_confirmed_fault_keeps_its_id(archive_db_factory):

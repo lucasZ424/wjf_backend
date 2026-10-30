@@ -823,6 +823,22 @@
               "type": "string",
               "title": "Result Id"
             }
+          },
+          {
+            "name": "bucket",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Bucket"
+            }
           }
         ],
         "responses": {

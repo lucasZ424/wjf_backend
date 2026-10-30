@@ -38,7 +38,7 @@ class Sink:
 
 def build(config=None):
     sink, rec = Sink(), Recorder()
-    owner = Owner(config or ua_only(), WALL0, MONO0, commit=sink, publish=rec.publish, buckets=FixedBucket(), run_id="run")
+    owner = Owner(config or ua_only(), WALL0, MONO0, commit=sink, buckets=FixedBucket(), run_id="run")
     sink.owner = owner
     owner.begin_generation("ua", 1, WALL0, MONO0)
     return owner, sink, rec
@@ -60,10 +60,9 @@ def test_a_refused_offer_opens_a_gap_and_nothing_of_that_source_is_queued_across
     assert s.archive == "LOST" and s.lost_reason == "QUEUE_FULL" and s.lost_since_wall == at(102.0)[0]
     sink.accept = True
     offered_before = sink.offered
-    pubs_before = len(rec.pubs)
     data(owner, 103.0, items=(("ti", 502.0),), seq=3)
     assert sink.offered == offered_before, "nothing is queued for this source while the gap is open"
-    assert len(rec.pubs) == pubs_before + 1, "realtime delivery is unaffected by the archive"
+    assert owner.channel_views()["ti"]["value"] == 502.0, "the live view is unaffected by the archive"
     assert len(sink.groups) == queued and owner.health["archive_lost_groups"] == 2
 
 
@@ -72,7 +71,7 @@ def test_recovery_commits_gap_new_segment_baseline_and_first_watermark_as_one_gr
     data(owner, 101.0)
     lose_the_archive(owner, sink)
     data(owner, 103.0, items=(("ti", 502.0),), seq=3)  # more traffic during the gap
-    pubs_before = len(rec.pubs)
+    live = owner.channel_views()
     owner.tick(*at(104.0))
     recovery = sink.groups[-1]
     assert recovery.kind == r.GROUP_RECOVERY and owner.sources["ua"].archive == "RECOVERING"
@@ -87,7 +86,7 @@ def test_recovery_commits_gap_new_segment_baseline_and_first_watermark_as_one_gr
     assert mark.detail["seg"] == 2
     values = {o.point_id: o.value for o in recovery.observations}
     assert values == {"ti": 502.0, "to": 450.0}, "the baseline is the CURRENT retained state, taken now"
-    assert len(rec.pubs) == pubs_before, "an archive-only unit is not republished to clients"
+    assert owner.channel_views()["ti"]["value"] == live["ti"]["value"] == 502.0, "an archive-only unit leaves the live view as it was"
 
 
 def test_recovery_attempts_the_queue_turns_away_do_not_move_the_segment_the_gap_closes():
@@ -157,8 +156,8 @@ def test_an_out_of_sync_intake_is_fixed_by_a_rebuild_first_and_the_stale_cache_i
 
 
 def test_the_restatement_computes_nothing_and_cuts_the_change_chain():
-    sink, rec = Sink(), Recorder()
-    owner = Owner(small_config(), WALL0, MONO0, commit=sink, publish=rec.publish, buckets=FixedBucket(), run_id="run")
+    sink = Sink()
+    owner = Owner(small_config(), WALL0, MONO0, commit=sink, buckets=FixedBucket(), run_id="run")
     sink.owner = owner
     for source in ("mb", "ua"):
         owner.begin_generation(source, 1, WALL0, MONO0)

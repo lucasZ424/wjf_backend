@@ -185,7 +185,7 @@ class Chain:
 
     def __init__(self, config):
         self.config, self.recorder = config, Recorder()
-        self.owner = Owner(config, time.time(), time.monotonic(), commit=self.recorder.commit, publish=self.recorder.publish, run_id="sim")
+        self.owner = Owner(config, time.time(), time.monotonic(), commit=self.recorder.commit, run_id="sim")
         self.ingress = Ingress(self.owner, 4096)
         self.acquirers = [
             (ModbusAcquirer if s.kind == "modbus" else UaAcquirer)(s, [p for p in config.points if p.source == s.id], config.timing, self.ingress)

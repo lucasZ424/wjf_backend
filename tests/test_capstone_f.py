@@ -63,7 +63,7 @@ def script(cfg=None):
         while unconfirmed:
             owner.committed(unconfirmed.pop(0))
 
-    owner = Owner(cfg, wall(100), MONO0, commit=commit, publish=lambda p: None, buckets=FixedBucket(), run_id="f")
+    owner = Owner(cfg, wall(100), MONO0, commit=commit, buckets=FixedBucket(), run_id="f")
     for source in ("mb_field", "ua_field"):
         owner.begin_generation(source, 1, wall(100), MONO0)
     seq = 0

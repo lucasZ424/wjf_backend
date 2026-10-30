@@ -52,6 +52,7 @@ def archive_db_factory():
         for admin, name in created:
             assert name.startswith("htsg_test_") and len(name) == 42
             with psycopg.connect(admin, autocommit=True) as conn:
+                conn.execute("SET statement_timeout=0")  # hundreds of buckets are thousands of files to remove
                 conn.execute(sql.SQL("DROP DATABASE {} WITH (FORCE)").format(sql.Identifier(name)))
         assert not left, f"{len(left)} maintenance thread(s) still running when the test's databases were dropped"
 

@@ -63,6 +63,9 @@ async def test_the_measured_growth_gives_a_year_figure_with_indexes_inside_and_a
     busy, quiet = report["every_input_changes_every_second"], report["no_input_changes"]
     assert busy["database_bytes_per_second"] > 5 * quiet["database_bytes_per_second"] > 0
     for part in (busy, quiet):
+        # the first start prepares its buckets once; inside the window that one-off cost would be taken for a year's growth
+        assert part["valid"] and part["buckets_at_start"] == part["buckets_at_end"], "no bucket was prepared inside the window"
+        assert part["first_preparation"]["database_bytes_at_window_start"] > 0, "the one-off start is reported on its own"
         assert 0 < part["tables_total_bytes"] <= part["database_size_bytes"], "the tables with their indexes are inside the database size: counted once"
         assert all(t["indexes"] > 0 for name, t in part["tables"].items() if name in ("observation", "result")), "the indexes are part of the figure"
         cap = part["capacity"]

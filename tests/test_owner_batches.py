@@ -236,21 +236,15 @@ def test_an_unrelated_input_failing_does_not_clear_this_points_baseline():
     assert owner.results["c2"].current.reason == "BASELINE_ONLY", "b2 itself did fail, so its chain restarts"
 
 
-def test_published_inputs_and_results_come_from_the_same_batch():
+def test_the_live_view_shows_inputs_and_results_of_the_same_batch():
+    """What a page reads is taken whole between two batches: a new input never stands beside an old result."""
     owner, rec = make_owner()
-    pubs = []
-    owner.publish = pubs.append
     for tick, (a, b) in enumerate([(0.6, 0.1), (0.62, 0.2), (0.7, 0.2), (0.7, 0.4)], start=1):
         owner.accept(poll(tick, {"b1": a, "b2": b}))
-    assert pubs, "every accepted round is published"
-    seqs = [p.pub_seq for p in pubs]
-    assert seqs == list(range(seqs[0], seqs[0] + len(seqs))), "publish sequence is consecutive"
-    for pub in pubs:
-        raw = {o.point_id: o.value for o in pub.observations}
-        for result in pub.results:
-            if result.point_id in ("s1", "s2"):
-                source = "b1" if result.point_id == "s1" else "b2"
-                assert result.value == pytest.approx(raw[source] * 1000 / 6), "no old input with a new result"
+        views = owner.channel_views()
+        assert (views["b1"]["value"], views["b2"]["value"]) == (a, b)
+        for strain, source in (("s1", "b1"), ("s2", "b2")):
+            assert views[strain]["value"] == pytest.approx(views[source]["value"] * 1000 / 6), "no old input with a new result"
 
 
 def test_unchanged_results_are_not_rewritten_but_changed_inputs_are_always_stored():

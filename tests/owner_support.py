@@ -41,13 +41,10 @@ def small_config(extra_points=(), extra_derived=(), **over):
 
 class Recorder:
     def __init__(self):
-        self.commits, self.pubs = [], []
+        self.commits = []
 
     def commit(self, group):
         self.commits.append(group)
-
-    def publish(self, group):
-        self.pubs.append(group)
 
     def observations(self, point=None):
         return [o for g in self.commits for o in g.observations if point in (None, o.point_id)]
@@ -73,7 +70,7 @@ class FixedBucket:
 def make_owner(config=None, wall=1000.0, mono=100.0, generations=("mb", "ua")):
     config = config or small_config()
     recorder = Recorder()
-    owner = Owner(config, wall, mono, commit=recorder.commit, publish=recorder.publish, buckets=FixedBucket(), run_id="run")
+    owner = Owner(config, wall, mono, commit=recorder.commit, buckets=FixedBucket(), run_id="run")
     for source in generations:
         owner.begin_generation(source, 1, wall, mono)
     return owner, recorder

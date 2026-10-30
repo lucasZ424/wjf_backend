@@ -21,6 +21,11 @@ from .config import Settings
 
 DEV_RESERVE = 1024**3  # development: every data volume keeps at least 1 GiB free
 PINNED_LIMIT = 256  # groups of unknown commit remembered with their database: the writer settles one at a time, so few are live
+STATE_RETRY = 30.0  # seconds between two tries at an unreadable routing state: no group waits on the emergency database (01-3)
+
+
+class Waiting(RuntimeError):
+    """No database may take the group now; it is tried again later, chosen nowhere yet."""
 
 
 class PolicyRefusal(RuntimeError):
@@ -65,6 +70,10 @@ class ArchiveRouter:
         self.last_budget_check = -1e9
         self.pinned: dict[str, str] = {}  # group id -> the database its first write went to, until the group is settled
         self.buckets: Callable | None = None  # the maintenance thread's last snapshot, set by the runtime (§13.5)
+        # 01-3: the routing state could not be read, and the normal database takes groups for the time being
+        self.provisional = False
+        self.probed = False  # the normal database passed a write probe since it last failed a write
+        self.state_retry_at = -1e9
         self.last_light = self.last_heavy = -1e9
 
     @property
@@ -151,8 +160,15 @@ class ArchiveRouter:
         The emergency route ends below the deletion start line, once the primary has the group's bucket and a write probe
         succeeded (§13.5) - asked in that order, so a missing bucket never switches the route back and forth."""
         policy = self.config.storage
-        if self.mode == "UNKNOWN":
-            self.mode = self._read_mode()
+        if self.mode == "UNKNOWN" or self.provisional:
+            stored = self._try_state()
+            if stored is None:
+                self._provisional(primary_used, bucket)
+                self.health["active_target"] = "PRIMARY_PROVISIONAL"
+                return True
+            recovering, self.mode, self.provisional = True, stored, False  # unknown until now: save it, or stay provisional
+        else:
+            recovering = False
         if primary_used >= policy.emergency_start and self.mode != "EMERGENCY":
             self.emergency.routing_mode("EMERGENCY")
             self.mode = "EMERGENCY"
@@ -167,10 +183,45 @@ class ArchiveRouter:
                     self.health["switchback"] = "OK"
             except psycopg.Error as error:
                 self.health["switchback"] = type(error).__name__
+                if recovering and self.mode == "EMERGENCY":
+                    # the state answered but could not be brought up to date: stay provisional while that stays safe
+                    self._provisional(primary_used, bucket)
+                    self.health["active_target"] = "PRIMARY_PROVISIONAL"
+                    return True
         self.health["active_target"] = self.mode
         return self.mode != "EMERGENCY" or (
             emergency_free is not None and emergency_free > self.reserve() + policy.batch_budget_bytes
         )
+
+    def _try_state(self) -> str | None:
+        """The routing state, read again at most every STATE_RETRY seconds while it cannot be; None while it cannot."""
+        if self.clock() < self.state_retry_at:
+            return None
+        try:
+            stored = self._read_mode()
+        except psycopg.Error as error:
+            self.state_retry_at = self.clock() + STATE_RETRY
+            self.health["routing_state"] = "UNREADABLE:" + type(error).__name__
+            return None
+        self.state_retry_at = -1e9
+        self.health["routing_state"] = "OK"
+        return stored
+
+    def _provisional(self, primary_used: float, bucket: int | None):
+        """The normal database for the time being (01-3, 终版 §13.5): below the deletion start line, with the group's bucket,
+        after a write probe that no failed write has made stale.  Otherwise the group waits.  Nothing is saved: the state
+        cannot be, and the choice is made again once it can be read."""
+        if primary_used >= self.config.storage.cleanup_start:
+            raise Waiting("ROUTING_STATE_UNREADABLE:ABOVE_START_LINE")
+        try:
+            if not self.primary.bucket_takes(bucket):
+                raise Waiting("ROUTING_STATE_UNREADABLE:NO_BUCKET")
+            if not self.probed:
+                self.primary.probe_write()
+                self.probed = True
+        except psycopg.Error as error:
+            raise Waiting("ROUTING_STATE_UNREADABLE:" + type(error).__name__) from None
+        self.mode, self.provisional = "PRIMARY", True
 
     def reserve(self) -> int:
         return DEV_RESERVE if self.config.mode == "development" else self.config.storage.emergency_reserve_bytes
@@ -217,6 +268,12 @@ class ArchiveRouter:
             result = self._write_to(pinned, group)  # no route, no policy: the target was chosen at the first write
             if result.durable:
                 self.bytes_written += group_bytes(group)
+        if result.status in ("UNKNOWN", "FAILED") and result.target == "primary":
+            self.probed = False  # the next new group for the time being probes the normal database again (01-3)
+        waiting = self.health.get("waiting_for_bucket")
+        if (result.status, result.target, result.reason) == ("FAILED", "primary", "NO_BUCKET"):
+            if not waiting or waiting["group"] != group.group_id:  # one wait: since when its group first found no bucket
+                self.health["waiting_for_bucket"] = {"bucket": group.bucket, "group": group.group_id, "since": time.time()}
         if result.status in ("UNKNOWN", "FAILED") and result.target is not None:
             if group.group_id in self.pinned or len(self.pinned) < PINNED_LIMIT:
                 self.pinned[group.group_id] = result.target
@@ -225,11 +282,15 @@ class ArchiveRouter:
                 result = RouteResult("REFUSED", None, "PIN_TABLE_FULL")
         else:  # durable, or refused: settled either way
             self.pinned.pop(group.group_id, None)
+            if waiting and waiting["group"] == group.group_id:
+                self.health.pop("waiting_for_bucket", None)
         return result
 
     def release(self, group_id: str):
         """The queue gave this group up (voided behind a lost group): it is never asked about again, so its place is free."""
         self.pinned.pop(group_id, None)
+        if self.health.get("waiting_for_bucket", {}).get("group") == group_id:
+            self.health.pop("waiting_for_bucket", None)
 
     def _write_routed(self, group: rec.CommitGroup) -> RouteResult:
         policy = self.config.storage
@@ -256,10 +317,12 @@ class ArchiveRouter:
                 raise PolicyRefusal("EMERGENCY_RESERVE")
         except PolicyRefusal as refusal:
             return RouteResult("REFUSED", None, str(refusal))
+        except Waiting as waiting:
+            return RouteResult("FAILED", None, str(waiting))
         except psycopg.Error as error:
             return RouteResult("FAILED", None, type(error).__name__)
         name = self.mode.lower()
-        if name == "primary" and self.buckets is not None and self.buckets().lacks("primary"):
+        if name == "primary" and not self.provisional and self.buckets is not None and self.buckets().lacks("primary"):
             # chosen before the first write (§13.5): the primary has no bucket a group may be put in at all - the whole group
             # goes to the emergency database, its bucket unchanged, the route stays where it is.  A primary that lacks only
             # THIS group's bucket is written to and waits there: the maintenance thread prepares what a database lacks (D2)

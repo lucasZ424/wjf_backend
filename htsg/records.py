@@ -220,16 +220,3 @@ class CommitGroup:
     def as_dict(self) -> dict:
         return asdict(self)
 
-
-@dataclass(frozen=True, slots=True)
-class PublishGroup:
-    """One complete group as pushed to clients: inputs and the results computed from them."""
-
-    pub_seq: int
-    order: int
-    source_id: str
-    wall: float
-    observations: tuple[Observation, ...] = ()
-    results: tuple[Result, ...] = ()
-    states: tuple[StateRecord, ...] = ()
-    faults: tuple[FaultRecord, ...] = ()

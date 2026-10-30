@@ -222,6 +222,7 @@ def test_a_long_series_is_answered_quickly_from_the_point_time_index(archive_db_
             "status_code,received_wall,received_mono,origin) "
             "SELECT 1,'o'||n,'g','run','ua',1,1,n,0,'ti',n::float8,'GOOD',0,n,n,'RECEIVED' FROM generate_series(1,60000) n"
         )
+        conn.execute("UPDATE bucket SET used=true,state='CURRENT' WHERE no=1")  # what writing them would have recorded
         conn.execute("ANALYZE observation")
     started = time.perf_counter()
     result = h.query([("primary", store)], CHANNELS, 30000.0, 30100.0)

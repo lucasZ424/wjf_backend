@@ -143,7 +143,7 @@ def test_against_postgres_the_recovery_unit_lands_in_one_transaction_with_every_
     router.initialize()
     router.bind_run("run", cfg_ua.config_id, WALL0)
     sink = Sink()
-    owner = Owner(cfg_ua, WALL0, 100.0, commit=sink, publish=lambda p: None, buckets=FixedBucket(), run_id="run")
+    owner = Owner(cfg_ua, WALL0, 100.0, commit=sink, buckets=FixedBucket(), run_id="run")
     sink.owner = owner
     owner.begin_generation("ua", 1, WALL0, 100.0)
     data(owner, 101.0)

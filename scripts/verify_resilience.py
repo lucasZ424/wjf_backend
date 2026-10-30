@@ -36,6 +36,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import measure  # noqa: E402
 
 from htsg.auth import Accounts  # noqa: E402
+from htsg.buckets import PREPARED_AHEAD  # noqa: E402
 from htsg.simulation import FieldSimulator  # noqa: E402
 
 GIB = 1024**3
@@ -254,6 +255,30 @@ def year_capacity(bytes_per_second: float, wal_peak: int | None, maintenance_pea
     }  # fmt: skip
 
 
+PREPARE_WAIT = 60.0  # seconds the first start may take to prepare its buckets before the measurement is called invalid
+
+
+def bucket_counts(lab) -> dict:
+    """Buckets each database of the lab has, by state."""
+    out = {}
+    for name, store in lab.router.stores:
+        with psycopg.connect(store.dsn) as conn:
+            out[name] = dict(conn.execute("SELECT state,count(*) FROM bucket GROUP BY state ORDER BY state").fetchall())
+    return out
+
+
+async def first_preparation(lab, deadline: float) -> dict | None:
+    """Wait until the first start has prepared its buckets: every database holds the ready ones it keeps in hand.  That
+    preparation happens once; inside the window it would be taken for growth and multiplied by a year."""
+    while True:
+        counts = await asyncio.to_thread(bucket_counts, lab)
+        if all(c.get("READY", 0) >= PREPARED_AHEAD for c in counts.values()):
+            return counts
+        if time.monotonic() >= deadline:
+            return None
+        await asyncio.sleep(0.5)
+
+
 async def capacity(seconds: float) -> dict:
     report = {}
     config = measure.load_settings(measure.ROOT / "config/research-sim.json")
@@ -262,17 +287,26 @@ async def capacity(seconds: float) -> dict:
     for name, quiet in (("every_input_changes_every_second", False), ("no_input_changes", True)):
         async with measure.Lab(stats_interval=5, quiet=quiet, prefix="htsg_cap_") as lab:
             await measure.initial_burst(lab)
+            waited = time.monotonic()
+            at_start = await first_preparation(lab, waited + PREPARE_WAIT)
+            if at_start is None:
+                report[name] = {"valid": False, "reason": f"the first bucket preparation did not finish in {PREPARE_WAIT:.0f} s"}
+                continue
+            waited = time.monotonic() - waited
             await asyncio.sleep(2)
             before, since = lab.counters(), lab.samples[-1]["t"]
             await asyncio.sleep(seconds)
             await lab.settled()
             part = measure.load_report(lab, before, since)
+            at_end = await asyncio.to_thread(bucket_counts, lab)
             tables = await asyncio.to_thread(lab.table_sizes)
             total = sum(t["data"] + t["indexes"] for t in tables.values())
             size_now = await asyncio.to_thread(lambda: lab.storage_sizes()[0])
             rate = part["database_bytes_per_second"]
             swing = max(0, part["database_bytes_peak"] - size_now)
             report[name] = {
+                "valid": True, "buckets_at_start": at_start, "buckets_at_end": at_end,
+                "first_preparation": {"waited_seconds": round(waited, 1), "database_bytes_at_window_start": before["database_bytes"]},
                 "measured_seconds": part["seconds"], "rows_per_second": part["rows_per_second"], "database_bytes_per_second": rate,
                 "bytes_per_row": round(rate / part["rows_per_second"], 1) if part["rows_per_second"] else None,
                 "tables": tables, "tables_total_bytes": total, "database_size_bytes": size_now,

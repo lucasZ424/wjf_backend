@@ -2,8 +2,8 @@
 
 Everything here is synchronous: no await, no database access, no clock reads.  Callers pass the
 wall (UTC, labels only) and monotonic (durations) time of every event, so the engine is driven
-identically by the live runtime and by tests.  Results leave through two sinks: `commit` receives
-ordered CommitGroups (durable), `publish` receives PublishGroups (realtime).
+identically by the live runtime and by tests.  Results leave through one sink: `commit` receives ordered
+CommitGroups (durable); a page reads the realtime state from `channel_views` (修复轮05).
 """
 
 from __future__ import annotations
@@ -116,7 +116,7 @@ OWED_JUMPS_LIMIT = 16  # clock-jump markers kept per source while its archive is
 
 
 class Owner:
-    def __init__(self, config: Settings, wall: float, mono: float, *, commit=None, publish=None, run_id=None, buckets=None):
+    def __init__(self, config: Settings, wall: float, mono: float, *, commit=None, run_id=None, buckets=None):
         self.config = config
         self.buckets = buckets  # which bucket each group is put in (§13.6); without one a group has none and is a gap
         # retention baselines (§13.6 补基线): (database, bucket) still lacking one -> monotonic time of the next try; bounded,
@@ -126,7 +126,7 @@ class Owner:
         self.baseline_sets = 0
         self.config_id = config.config_id  # a hash of the whole configuration: taken once, not once per result
         self.run_id = run_id or uuid4().hex
-        self.commit, self.publish = commit or _sink_none, publish or _sink_none
+        self.commit = commit or _sink_none
         self.pending_limit = PENDING_LIMIT
         self.confirmed_watermark: dict[str, float] = {}  # per source: the watermark that is really durable
         self.run_events = 0
@@ -180,7 +180,6 @@ class Owner:
         self.fault_rejected_total = 0
         self._multi: set[str] = set()
         self.order = 0
-        self.pub_seq = 0
         self.commlog = CommLog(self.run_id)  # this run's communication log (§15.1): in memory, appended here only
         self.health = {
             "stale_generation_batches": 0,
@@ -227,27 +226,11 @@ class Owner:
             None if self.buckets is None else self.buckets.label(),
         )
 
-    def _publish(self, group: rec.CommitGroup):
-        self.pub_seq += 1
-        self.publish(
-            rec.PublishGroup(
-                self.pub_seq,
-                group.order,
-                group.source_id,
-                group.built_wall,
-                group.observations,
-                group.results,
-                group.states,
-                group.faults,
-            )
-        )
-
     def _emit(self, kind, s: SourceState, wall, observations=(), results=(), states=(), faults=()):
-        """Realtime delivery is immediate and unconditional; durability goes through the archive state."""
+        """Durability goes through the archive state; the realtime view is the owner's own state, whatever the archive does."""
         if not (observations or results or states or faults):
             return None
         group = self._build(kind, s.id, wall, observations, results, states, faults)
-        self._publish(group)
         self._submit(s, group)
         return group
 
@@ -1112,7 +1095,6 @@ class Owner:
         if lost:
             lead.append(self._gap_state(s, batch.wall, batch.mono))
         group = self._segment_group(s, "RECOVERY", batch.wall, batch.mono, lead=lead, batch=batch, unit=lost)
-        self._publish(group)
         if lost:
             self._submit_recovery(s, group)
         else:
@@ -1248,7 +1230,6 @@ class Owner:
                 group = self._segment_group(
                     s, "CLOCK_JUMP", wall, mono, lead=[marker], close_old_at=self.last_tick_wall
                 )
-                self._publish(group)
                 self._submit(s, group)
             else:
                 if s.archive == "LOST":  # nothing is queued across a gap: the unit that ends it, or the final group, carries the marker

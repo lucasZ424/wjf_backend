@@ -302,7 +302,7 @@ class Lab:
         return {
             "groups_committed": queue.stats["committed"], "groups_offered": queue.stats["offered"],
             "rows_committed": getattr(self, "rows_written", 0), "bytes_estimated": self.router.bytes_written,
-            "database_bytes": self.database_bytes(), "published": owner.pub_seq, "order": owner.order,
+            "database_bytes": self.database_bytes(), "order": owner.order,
             "ingress_dropped": self.runtime.ingress.dropped, "queue_rejected": queue.stats["rejected"],
             "refused": queue.stats["refused"], "failures": queue.stats["failures"] + queue.stats["unknown"],
             "resyncs": owner.health["resyncs"], "time": time.monotonic(),
@@ -331,7 +331,7 @@ def load_report(lab: Lab, before: dict, since: float) -> dict:
         "seconds": round(seconds, 1),
         "groups_per_second": round(rate("groups_committed"), 2), "rows_per_second": round(rate("rows_committed"), 1),
         "database_bytes_per_second": round(rate("database_bytes")), "estimated_bytes_per_second": round(rate("bytes_estimated")),
-        "published_groups": after["published"] - before["published"], "committed_groups": after["groups_committed"] - before["groups_committed"],
+        "committed_groups": after["groups_committed"] - before["groups_committed"],
         "unexplained": {k: after[k] - before[k] for k in ("ingress_dropped", "queue_rejected", "refused", "failures")},
         "queue_depth": spread([s["queue"] for s in samples]), "ingress_depth": spread([s["ingress"] for s in samples]),
         "event_loop_lateness_ms": {k: round(v * 1000, 1) for k, v in spread([s["lag"] for s in samples]).items() if k != "count"},

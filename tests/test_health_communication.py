@@ -35,7 +35,7 @@ class Rig:
 
     def __init__(self, tmp_path, failures=None, negotiated=None):
         self.rec = Recorder()
-        self.owner = Owner(small_config(), WALL0, MONO0, commit=self.rec.commit, publish=self.rec.publish, run_id="run")
+        self.owner = Owner(small_config(), WALL0, MONO0, commit=self.rec.commit, run_id="run")
         self.accounts = Accounts(tmp_path / "accounts.json")
         self.tokens = {"viewer": self.accounts.create("viewer", "viewer"), "admin": self.accounts.create("admin", "admin")}
         self.negotiated = negotiated if negotiated is not None else {"ua": {"publish_interval": 1.0, "keepalive_count": 2}}
@@ -204,11 +204,11 @@ async def test_reading_the_health_creates_no_event_group_or_state_change(rig):
     owner = rig.owner
     owner.begin_generation("ua", 1, *at(101.0))
     owner.accept(notify([("ti", 500.0)], gen=1, wall=at(102.0)[0], mono=102.0))
-    before = (len(owner.commlog.entries), owner.order, owner.pub_seq, len(rig.rec.commits), owner.health.copy())
+    before = (len(owner.commlog.entries), owner.order, len(rig.rec.commits), owner.health.copy(), owner.channel_views())
     first = await rig.health()
     for _ in range(5):
         await rig.health("admin")
-    after = (len(owner.commlog.entries), owner.order, owner.pub_seq, len(rig.rec.commits), owner.health.copy())
+    after = (len(owner.commlog.entries), owner.order, len(rig.rec.commits), owner.health.copy(), owner.channel_views())
     assert before == after, "looking is not an event"
     assert (await rig.health())["communication"]["log"]["entries"] == first["communication"]["log"]["entries"]
 

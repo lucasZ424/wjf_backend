@@ -8,6 +8,7 @@ import asyncio
 import threading
 import time
 
+import pytest
 from owner_support import make_owner, poll
 from test_archive_write import make_group
 
@@ -74,8 +75,6 @@ async def test_a_slow_database_does_not_slow_realtime_state_and_is_not_announced
     queue = CommitQueue(router, 500, on_committed=lambda group, result: confirmed.append(group.order))
     owner, rec_ = make_owner()
     owner.commit = queue.offer
-    pubs = []
-    owner.publish = pubs.append
     task = asyncio.create_task(queue.run())
     slowest = 0.0
     for tick in range(1, 60):  # the database is stuck for the whole loop
@@ -83,7 +82,7 @@ async def test_a_slow_database_does_not_slow_realtime_state_and_is_not_announced
         owner.accept(poll(tick, {"b1": 0.5 + tick * 0.01, "b2": 0.6}))
         slowest = max(slowest, time.perf_counter() - started)
         await asyncio.sleep(0)
-    assert len(pubs) >= 59, "every round was still published in real time"
+    assert owner.channel_views()["b1"]["value"] == pytest.approx(0.5 + 59 * 0.01), "the live view kept up with every round"
     assert slowest < 0.05, f"intake never waited for storage ({slowest:.3f}s)"
     assert confirmed == [] and queue.stats["highest_committed_order"] == 0, "nothing is announced as stored"
     assert queue.depth >= 58

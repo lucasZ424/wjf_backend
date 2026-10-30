@@ -18,7 +18,7 @@ CONFIG = ua_only()
 
 def owner_and_groups(config=None, run_id="run", *, confirm=False):
     rec = Recorder()
-    owner = Owner(config or CONFIG, WALL0, MONO0, publish=rec.publish, run_id=run_id, buckets=FixedBucket())
+    owner = Owner(config or CONFIG, WALL0, MONO0, run_id=run_id, buckets=FixedBucket())
 
     def commit(group):
         rec.commit(group)

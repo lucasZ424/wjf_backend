@@ -404,7 +404,7 @@ def test_archive_gaps_clock_jumps_and_watermarks_are_not_communication_log_entri
         recorder.commit(group)
         return False if refuse["on"] else None  # False: the queue is full
 
-    owner = Owner(small_config(), 1000.0, 100.0, commit=commit, publish=recorder.publish, run_id="run")
+    owner = Owner(small_config(), 1000.0, 100.0, commit=commit, run_id="run")
     owner.begin_generation("ua", 1, *at(101.0))
     owner.begin_generation("mb", 1, *at(101.0))
     owner.accept(r.InputBatch("ua", 1, r.KIND_UA_NOTIFY, *at(102.0), (r.Item("ti", 500.0),), publish_seq=1))

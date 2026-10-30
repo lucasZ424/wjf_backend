@@ -47,7 +47,10 @@ def build(local):
         try:
             store.initialize(config)
         except SchemaError as error:
-            raise SystemExit(f"{name}: {error}.  Drop the database and run `start` and `build` again.") from error
+            raise SystemExit(
+                f"{name}: {error}.  It is kept as it is: make a new pair with `new --name htsg_<x>`, check it, and point the "
+                "connection file at it; deleting the old database is up to you."
+            ) from error
         finally:
             store.close()
         print(f"{name}: database htsg is at the current archive generation.")

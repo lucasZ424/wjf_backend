@@ -33,7 +33,7 @@ class Clock(FixedBucket):
 def running_owner(clock=None):
     """A state owner with both sources valid, a few rounds behind it."""
     recorder = Recorder()
-    owner = Owner(small_config(), WALL0, MONO0, commit=recorder.commit, publish=recorder.publish, run_id="run",
+    owner = Owner(small_config(), WALL0, MONO0, commit=recorder.commit, run_id="run",
                   buckets=clock or Clock())  # fmt: skip
     owner.start(WALL0, MONO0)
     for source in ("mb", "ua"):
@@ -60,6 +60,7 @@ def test_a_baseline_restates_the_current_values_as_one_group_and_changes_nothing
     owner, recorder = running_owner()
     emitted = {rule: state.emitted for rule, state in owner.results.items()}
     held = {pid: point.obs for pid, point in owner.points.items()}
+    live = owner.channel_views()
     group = owner.retention_baseline(WALL0 + 10, MONO0 + 10)
     assert group.kind == r.GROUP_BASELINE and group.source_id == BASELINE_SOURCE and group.bucket == 1
     ti = next(o for o in group.observations if o.point_id == "ti")
@@ -70,7 +71,7 @@ def test_a_baseline_restates_the_current_values_as_one_group_and_changes_nothing
     assert state.detail["sources"] == {"mb": "NO_VALID_SEGMENT", "ua": "SEGMENT"}, "a source without values is marked"
     assert {rule: s.emitted for rule, s in owner.results.items()} == emitted, "no change starts from a baseline"
     assert {pid: p.obs for pid, p in owner.points.items()} == held
-    assert group not in recorder.pubs, "never shown as live data"
+    assert owner.channel_views() == live, "never shown as live data"
 
 
 # ------------------------------------------------------------------------------------------- when it is taken

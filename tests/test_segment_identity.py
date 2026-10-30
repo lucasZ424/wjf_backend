@@ -16,7 +16,7 @@ is dropped without a word; the others are confirmed, refused, or held at the hea
 import random
 
 import pytest
-from owner_support import FixedBucket, Recorder
+from owner_support import FixedBucket
 from test_source_validity import MONO0, WALL0, at, data, keepalive, tick, ua_only
 
 from htsg import history as h
@@ -72,8 +72,8 @@ def only(kind):
 
 
 def world():
-    writer, rec = Writer(), Recorder()
-    owner = Owner(CONFIG, WALL0, MONO0, commit=writer, publish=rec.publish, run_id="run", buckets=FixedBucket())
+    writer = Writer()
+    owner = Owner(CONFIG, WALL0, MONO0, commit=writer, run_id="run", buckets=FixedBucket())
     writer.owner = owner
     owner.begin_generation("ua", 1, WALL0, MONO0)
     data(owner, 101.0)

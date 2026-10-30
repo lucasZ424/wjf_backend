@@ -26,7 +26,7 @@ def ua_only():
 
 def ua_owner(config=None):
     rec = Recorder()
-    owner = Owner(config or ua_only(), WALL0, MONO0, commit=rec.commit, publish=rec.publish, run_id="run")
+    owner = Owner(config or ua_only(), WALL0, MONO0, commit=rec.commit, run_id="run")
     rebuilds = []
     owner.on_rebuild = lambda source, reason: rebuilds.append((source, reason))
     owner.begin_generation("ua", 1, WALL0, MONO0)
@@ -198,13 +198,13 @@ def expired_owner():
 
 def test_recovery_inside_three_to_six_seconds_keeps_the_generation_and_commits_one_group():
     owner, rec, rebuilds = expired_owner()
-    groups_before, pubs_before = len(rec.commits), len(rec.pubs)
+    groups_before = len(rec.commits)
     data(owner, 105.5, items=(("ti", 501.0),), seq=2)
     s = owner.sources["ua"]
     assert s.state == "VALID" and s.conn_gen == 1 and s.seg == 2 and rebuilds == [], "no rebuild"
     new = rec.commits[groups_before:]
     assert [g.kind for g in new] == [r.GROUP_RECOVERY], "baseline + recovery batch + results: ONE group"
-    assert len(rec.pubs) == pubs_before + 1, "and published as one unit, never the old cache alone"
+    assert owner.channel_views()["ti"]["value"] == 501.0, "and the live view shows the new batch, never the old cache alone"
     group = new[0]
     assertions = [o for o in group.observations if o.origin == r.ORIGIN_ASSERTION]
     received = [o for o in group.observations if o.origin == r.ORIGIN_RECEIVED]

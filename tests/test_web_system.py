@@ -7,6 +7,7 @@ holds, what was lost - and the permissions must be the ones that are enforced.
 
 import json
 import time
+from types import SimpleNamespace
 
 import psycopg
 import pytest
@@ -260,3 +261,32 @@ def test_a_database_failure_while_changing_an_account_is_reported_as_unconfirmed
         answer = client.post("/api/admin/accounts", json={"username": "operator", "role": "viewer"}, headers={"Authorization": "Bearer " + admin})
     assert answer.status_code == 503 and "change not confirmed" in answer.json()["detail"]
     assert accounts.uncertain, "the account state is flagged as needing reconciliation, not silently trusted"
+
+
+def test_the_self_check_names_a_missing_bucket_and_why_a_bucket_could_not_be_prepared(page, archive_rig):
+    """A group waiting for its bucket holds back every group behind it (an accepted limit, 修复轮10): the page must say so,
+    with since when, and why the maintenance thread could not prepare a bucket - and stop saying it once it is over."""
+    retention = {"databases": {"primary": {"readable": True, "kept_buckets": 3, "kept_from": None, "boundary": None}},
+                 "last_deletion": None, "deletion_period_s": None, "forecast": None, "alarm": {"active": False}}  # fmt: skip
+    archive_rig.acquisition.maintenance = SimpleNamespace(snapshot=SimpleNamespace(health={
+        "retention": retention, "primary": "PREPARE_FAILED:InsufficientPrivilege", "emergency": "OK", "numbering": "PAUSED:FILE_BEHIND",
+    }))  # fmt: skip
+    archive_rig.router.health["waiting_for_bucket"] = {"bucket": 42, "group": "g", "since": time.time() - 60}
+    try:
+        sign_in(page, archive_rig)
+        page.get_by_role("button", name="系统自检").click()
+        card = page.locator("#check-retention")
+        card.get_by_text("桶准备：").wait_for()
+        text = card.inner_text()
+        assert "正常库 准备失败（InsufficientPrivilege）" in text and "应急库 正常" in text and "编号暂停（FILE_BEHIND）" in text, text
+        assert "正常库缺第 42 号桶" in text and "在等待写入" in text, text
+        archive_rig.router.health.pop("waiting_for_bucket")
+        page.get_by_role("button", name="系统总览").click()
+        page.get_by_role("button", name="系统自检").click()
+        card.get_by_text("桶准备：").wait_for()
+        page.wait_for_timeout(1500)
+        assert "缺第 42 号桶" not in card.inner_text(), "written: no longer said to wait"
+        assert page.errors == []
+    finally:
+        archive_rig.router.health.pop("waiting_for_bucket", None)
+        del archive_rig.acquisition.maintenance

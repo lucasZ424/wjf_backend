@@ -611,7 +611,7 @@ function renderBanner() {
     parts.push(`故障归档不完整：未写入的故障缓冲 ${f.buffered}/${f.limit}，已拒绝 ${f.rejected_total} 条新确认的故障${lost ? `（尚未写入摘要：${lost}）` : ""}。实时的“已确认”状态仍然正确，但历史故障列表缺少这些记录。`);
   }
   for (const [id, s] of Object.entries(status?.sources || {})) {
-    if (s.archive !== "OK") parts.push(`历史归档${s.archive === "LOST" ? "中断" : "恢复中"}：${id}。实时值仍在更新，但这一段历史可能缺失。`);
+    if (s.archive !== "OK") parts.push(`历史归档${s.archive === "LOST" ? "中断" : "恢复中"}：${id}。该段历史可能缺失。实时数据是否有效，以页面当前状态为准。`);
   }
   $("archive-banner").textContent = parts.join("　");
   $("archive-banner").hidden = parts.length === 0;
@@ -652,11 +652,11 @@ function selfcheckHtml() {
 // 终版 §13.6 自检与报警: what each database keeps, the deletion's real pace, the next one or why it cannot be foreseen, the alarm.
 const ALARM_REASONS = {
   NO_ELIGIBLE_RANGE: "没有满足条件的删除范围", BOUNDARY_WITHOUT_BASELINE: "保留边界缺基线", POSTPONED_BY_LONG_TRANSACTION: "长事务推迟了删除",
-  DELETION_FAILING: "删除连续失败", OTHER_FILES_GROWING: "其他文件在增长", NO_WRITABLE_BUCKET: "没有可写的桶",
+  DELETION_FAILING: "删除连续失败", OTHER_FILES_GROWING: "疑似数据库之外的占用增长", NO_WRITABLE_BUCKET: "没有可写的桶",
   DELETION_SWITCHED_OFF: "滚动删除未启用", DISK_UNAVAILABLE: "主数据卷无法读取",
 };
 const FORECAST_REASONS = {
-  INSUFFICIENT_DATA: "数据不足7天", NO_GROWTH: "近7天没有增长", EMERGENCY: "处在应急期间", DISK_GROWS_FASTER: "磁盘占用增长明显超过数据库自身增长",
+  INSUFFICIENT_DATA: "数据不足7天", NO_GROWTH: "近7天没有增长", EMERGENCY: "处在应急期间", DISK_GROWS_FASTER: "磁盘占用增长疑似超过数据库自身增长",
   DISK_UNAVAILABLE: "主数据卷无法读取",
 };
 function retentionHtml(archive) {
@@ -666,6 +666,13 @@ function retentionHtml(archive) {
   if (archive.routing === "EMERGENCY") parts.push(`<p class="log-error" role="alert">已转写应急库：主库占用达到应急线，新数据写入应急库。</p>`);
   if (r.alarm?.active) parts.push(`<p class="log-error" role="alert">主库超水位报警：占用持续高于删除启动线 ${fmt((r.alarm.above_seconds || 0) / 60, 0)} 分钟。原因：${(r.alarm.reasons || []).map(x => esc(ALARM_REASONS[x] || x)).join("、") || "未查明"}</p>`);
   const names = {primary: "正常库", emergency: "应急库"};
+  // what the maintenance thread could not do, and a group the normal database keeps waiting for its bucket (修复轮10)
+  const b = archive.buckets || {}, prep = {OK: "正常", UNAVAILABLE: "无法读取"}, numbering = String(b.numbering || "");
+  const prepared = ["primary", "emergency"].filter(db => b[db]).map(db => `${names[db]} ${String(b[db]).startsWith("PREPARE_FAILED:") ? `准备失败（${esc(String(b[db]).slice(15))}）` : esc(prep[b[db]] || b[db])}`);
+  const held = numbering.startsWith("PAUSED:") ? ` · 编号暂停（${esc(numbering.slice(7))}）` : numbering.startsWith("FILE_NOT_WRITTEN:") ? ` · 编号文件写不进去（${esc(numbering.slice(17))}）` : "";
+  if (prepared.length) parts.push(`<p>桶准备：${prepared.join(" · ")}${held}${b.error ? ` · 维护出错：${esc(b.error)}` : ""}</p>`);
+  const w = archive.health?.waiting_for_bucket;
+  if (w) parts.push(`<p class="log-error" role="alert">正常库缺第 ${esc(w.bucket)} 号桶：一组数据自 ${stamp(w.since)} 起在等待写入，其后的数据在队列里积压；补建为什么失败见“桶准备”。</p>`);
   parts.push(table(["数据库", "保留的桶", "保留自", "保留边界"], Object.entries(r.databases || {}).map(([db, k]) => [esc(names[db] || db),
     k.readable === false ? "无法读取" : k.kept_buckets, k.kept_from == null ? "—" : stamp(k.kept_from), k.boundary == null ? "—" : stamp(k.boundary)])));
   const f = r.forecast;
@@ -943,12 +950,12 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 setInterval(() => {
   if (state.stopped || state.stalled || !state.config) return;
   const limit = state.config.timing.ui_stall_notice * 1000;
-  if (performance.now() - (reader.good || reader.began) <= limit) return;
+  if (performance.now() - (reader.good || reader.began) < limit) return;  // 满3秒 (§13.3); checked every 500 ms
   state.stalled = true;
   trendBreak(state.serverWall);
   state.live = newLive();
   setConnection("数据中断", "bad");
-  notice(`已超过 ${Math.round(limit / 1000)} 秒没有取得可用的后端数据${reader.failure ? `（最近一次：${reader.failure}）` : ""}，此前的数值已不再显示；这不代表数据源状态。`);
+  notice(`已超过 ${Math.round(limit / 1000)} 秒没有取得可用的后端数据${reader.failure ? `（最近一次：${reader.failure}）` : ""}。实时读数已停止显示，正在自动重试；这不代表设备通信状态，历史查询不受此提示影响。`);
   renderLive();
 }, 500);
 

@@ -209,7 +209,9 @@ class Maintenance:
         self.policy, self.disk_usage = config.storage, disk_usage
         self.interval, self.monotonic = interval, monotonic
         self.unsettled: frozenset = frozenset()  # buckets of groups still on their way, set by the event loop
-        self._deleting_down = False  # a deletion started at the start line goes on until below the stop line
+        self._deleting_down: bool | None = None  # a cleanup started at the start line goes on until below the stop line;
+        # None: not read yet - one the management log says is going on was begun before a restart and goes on (§13.6)
+        self._open_range: list | None = None  # the range marked and not yet all taken away by this process
         self._above_since = None  # monotonic time the normal disk went above the start line
         self._samples: list = []  # (wall, disk used bytes, database bytes), hourly
         self._spans: dict = {}  # sealed bucket -> (first wall, last wall, bytes): fixed once sealed
@@ -427,8 +429,19 @@ class Maintenance:
         if store is None or mine is None:
             return
         deadline = self.monotonic() + DELETE_BUDGET
+        resumed = []
         for no in sorted(n for n, state in mine.items() if state == "DELETING"):
             if not self._may_go_on(deadline) or not self._retire(store, no):
+                return
+            resumed.append(no)
+        if resumed:  # a range finished by a later round is logged once, whole when this process marked it
+            self._log_range(store, self._open_range or resumed)
+            self._open_range = None
+        if self._deleting_down is None:
+            try:
+                self._deleting_down = store.cleanup_going_on()
+            except psycopg.Error as error:
+                self._health["deletion"] = f"POSTPONED:{type(error).__name__}"
                 return
         if not self.policy.cleanup_enabled:
             self._health["deletion"] = "SWITCHED_OFF"
@@ -439,9 +452,13 @@ class Maintenance:
                 self._health["deletion"] = "DISK_UNAVAILABLE"
                 return
             if usage < (self.policy.cleanup_stop if self._deleting_down else self.policy.cleanup_start):
+                if self._deleting_down and not self._log_cleanup(store, "ROLLING_DELETE_END"):
+                    return  # the end is said once it is in the log: the next round tries again
                 self._deleting_down = False
                 self._health["deletion"] = "IDLE"
                 return
+            if not self._deleting_down and not self._log_cleanup(store, "ROLLING_DELETE_START"):
+                return  # a cleanup that is not in the log has not begun: the period it gives must count it
             self._deleting_down = True
             try:
                 rows = store.bucket_rows()
@@ -457,10 +474,12 @@ class Maintenance:
             except psycopg.Error as error:
                 self._health["deletion"] = f"POSTPONED:{type(error).__name__}"
                 return
+            self._open_range = nos
             for no in nos:
                 if not self._may_go_on(deadline) or not self._retire(store, no):
                     return  # the rest of the range stays DELETING: the next round finishes it first
             self._log_range(store, nos)
+            self._open_range = None
         if not self._stop.is_set():
             self._health["deletion"] = "BUDGET_USED"
 
@@ -511,7 +530,7 @@ class Maintenance:
         if store is not None and "primary" in rows:
             times = store.deletion_times()
             report["last_deletion"] = times[-1] if times else None
-            starts = [t for i, t in enumerate(times) if i == 0 or t - times[i - 1] > SAMPLE_EVERY]  # one start per episode
+            starts = store.deletion_times("ROLLING_DELETE_START")  # one per cleanup, however long it took
             report["deletion_period_s"] = starts[-1] - starts[-2] if len(starts) >= 2 else None
             self._sample(store, usage)
             report["forecast"] = self._forecast(store, rows["primary"], usage)
@@ -595,6 +614,18 @@ class Maintenance:
             self._health["deletion"] = f"POSTPONED:PARTITIONS_LEFT:{no}"
             return False
         self._health["last_deleted"] = {"bucket": no, "at": time.time()}
+        return True
+
+    def _log_cleanup(self, store, action) -> bool:
+        """The start or the end of one cleanup in the management log (§13.6 实测删除周期); False when it cannot be written."""
+        now = time.time()
+        entry = {"id": f"rolling-delete/{action.lower()}/{now:.6f}", "time": now, "actor": "system", "action": action,
+                 "target": "cleanup", "result": "OK"}  # fmt: skip
+        try:
+            store.audit(entry)
+        except psycopg.Error as error:
+            self._health["deletion"] = f"POSTPONED:{type(error).__name__}"
+            return False
         return True
 
     def _log_range(self, store, nos):

@@ -28,7 +28,7 @@ COEFFICIENT = 170000 * 1.35e-5 * 0.5  # E * alpha * restraint, MPa per K
 
 def build():
     recorder = Recorder()
-    owner = Owner(FULL, 1000.0, 100.0, commit=recorder.commit, publish=recorder.publish, buckets=FixedBucket(), run_id="full")
+    owner = Owner(FULL, 1000.0, 100.0, commit=recorder.commit, buckets=FixedBucket(), run_id="full")
     for source in ("mb_field", "ua_field"):
         owner.begin_generation(source, 1, 1000.0, 100.0)
     return owner, recorder
@@ -125,7 +125,7 @@ def test_full_scale_loop_matches_an_independent_oracle_through_every_scenario():
 
 
 def test_output_does_not_depend_on_frame_windows_or_per_point_expiry():
-    for cls in (r.CommitGroup, r.PublishGroup, r.Result, r.Observation):
+    for cls in (r.CommitGroup, r.Result, r.Observation):
         names = {f.name for f in dataclasses.fields(cls)}
         assert not names & {"window_start", "window_end", "stale_after", "frame_id"}, cls.__name__
 

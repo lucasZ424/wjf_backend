@@ -116,7 +116,9 @@ def test_three_seconds_without_a_good_reading_take_the_old_values_off_the_screen
     page.wait_for_function(CUT, timeout=6000)
     assert time.monotonic() - started >= 1.8, "one failed reading alone does not raise it"
     assert "640" not in page.locator("#process-table").inner_text(), "an old value is not shown as a current reading"
-    assert page.locator("#notice").is_visible() and "3 秒" in page.locator("#notice").inner_text()
+    said = page.locator("#notice").inner_text()  # what stopped is the page's reading, not the devices; history is apart
+    assert page.locator("#notice").is_visible() and "3 秒" in said and "实时读数已停止显示，正在自动重试" in said
+    assert "这不代表设备通信状态，历史查询不受此提示影响" in said and "此前的数值" not in said, said
     page.unroute(READING)  # the service is back: no refresh needed
     page.wait_for_function(OK, timeout=5000)
     row.get_by_text("640").wait_for()

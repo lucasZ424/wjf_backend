@@ -41,7 +41,7 @@ class Rig:
         self.use_proxy = use_proxy
         self.mb, self.ua = FieldModbus(), FieldUa(UA_NAMES)
         self.proxy = None
-        self.commits, self.pubs = [], []
+        self.commits = []
 
     async def seed(self):
         """Distinct nominal values, written BEFORE any subscription exists so the first delivery is final."""
@@ -64,8 +64,7 @@ class Rig:
             endpoint = f"opc.tcp://127.0.0.1:{self.proxy.port}/t/"
         self.config = full_config(self.mb.port, endpoint, self.timing)
         self.owner = Owner(
-            self.config, time.time(), time.monotonic(), commit=self.commits.append, publish=self.pubs.append,
-            run_id="live",
+            self.config, time.time(), time.monotonic(), commit=self.commits.append,             run_id="live",
         )  # fmt: skip
         self.ingress = Ingress(self.owner, 4096)
         by_source = {s.id: [p for p in self.config.points if p.source == s.id] for s in self.config.sources}
