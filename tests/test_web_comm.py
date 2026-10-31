@@ -220,7 +220,7 @@ def test_the_two_counters_are_shown_apart_on_the_communication_page_and_on_the_s
         resync, failures = heads.index("重新同步次数"), heads.index("连续建连失败次数")
         assert rows[UA][resync].startswith("5") and "持续失步" in rows[UA][resync] and rows[UA][failures] == "2"
         assert rows[MB][resync] == "0" and rows[MB][failures] == "0"
-        assert "互不替代" in page.locator("main").inner_text()
+        assert "含义不同" in page.locator("main").inner_text(), "the counters are not the counts in the log"
         keep(page, "comm-counters" if place == "#comm-sources" else "selfcheck-counters")
     page.get_by_role("button", name="通信与日志").click()
     page.locator("#comm-inputs tbody tr").first.wait_for()

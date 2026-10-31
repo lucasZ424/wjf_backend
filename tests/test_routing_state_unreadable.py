@@ -76,10 +76,10 @@ def test_with_the_routing_state_out_of_reach_a_sound_normal_database_takes_the_g
     assert router.mode == "UNKNOWN"
     result = router.write_group(group(1))
     assert (result.status, result.target) == ("COMMITTED", "primary"), result
-    assert router.health["active_target"] == "PRIMARY_PROVISIONAL", "said to be for the time being, not checked"
     assert stored(router.primary) == 1
     # 修复轮12: the mode reads PRIMARY now, and the pages showed "正常库"; what they read says it is unchecked
     assert router.mode == "PRIMARY" and router.target == "PRIMARY_PROVISIONAL"
+    assert "active_target" not in router.health, "修复轮13: one field says where groups go, not two that can disagree"
 
 
 def test_the_development_mode_keeps_refusing_when_it_cannot_read_what_the_databases_hold(archive_db_factory):
@@ -141,7 +141,7 @@ def test_once_the_emergency_database_answers_the_route_is_chosen_from_the_disks_
     state.up = True
     clock.now += archive_router.STATE_RETRY + 1
     assert router.write_group(group(2)).target == "primary", "the old mode did not override the choice made now"
-    assert state.real() == "PRIMARY" and router.health["active_target"] == "PRIMARY" and router.target == "PRIMARY"
+    assert state.real() == "PRIMARY" and router.target == "PRIMARY"
 
 
 def test_a_routing_state_that_cannot_be_saved_on_recovery_keeps_the_route_provisional_and_the_writes_going(down):
@@ -152,8 +152,7 @@ def test_a_routing_state_that_cannot_be_saved_on_recovery_keeps_the_route_provis
     clock.now += archive_router.STATE_RETRY + 1
     result = router.write_group(group(1))
     assert (result.status, result.target) == ("COMMITTED", "primary")
-    assert router.health["active_target"] == "PRIMARY_PROVISIONAL", "not checked: still for the time being"
-    assert router.target == "PRIMARY_PROVISIONAL", "the state held EMERGENCY: the pages must not say the emergency database"
+    assert router.target == "PRIMARY_PROVISIONAL", "not checked: still for the time being, and not the EMERGENCY the state held"
 
 
 def test_a_failed_write_keeps_its_group_where_it_went_and_the_next_new_group_probes_again(down):

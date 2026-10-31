@@ -128,7 +128,7 @@ def test_the_overview_counts_pending_and_confirmed_and_separates_validity_from_c
     open_page(page, still, "系统总览")
     page.locator("#fault-summary").get_by_text("越限待确认 1 个通道").wait_for()
     assert "故障已确认 0 个通道" in page.locator("#fault-summary").inner_text()
-    assert "不另设报警、确认或等级" in page.locator("#fault-summary").inner_text()
+    assert page.locator("#fault-summary button").count() == 0, "the state only: nothing to acknowledge or rank"
     cards = page.locator("#source-status .card").all_inner_texts()
     assert any("Modbus" in c for c in cards) and any("OPC UA" in c and "数据有效" in c for c in cards)
     page.locator("#fault-summary").get_by_text("故障已确认 1 个通道").wait_for(timeout=15000)

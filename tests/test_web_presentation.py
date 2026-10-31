@@ -212,10 +212,16 @@ def test_the_trend_axis_marks_whole_minutes(page, rig):
 def test_a_table_whose_content_did_not_change_is_not_written_again(page, rig):
     sign_in(page, rig)
     page.locator("#process-table table").wait_for()
-    page.evaluate("document.querySelector('#process-table table').dataset.kept = 'yes'")
+    # every write of the table is recorded with whether its content differed from what was there: under load a reading
+    # may really change it (data expired, an interruption), which is a write that must happen
+    page.evaluate(
+        """() => { const box = document.querySelector('#process-table'); let last = box.innerHTML; window.__writes = [];
+          new MutationObserver(() => { window.__writes.push(box.innerHTML !== last); last = box.innerHTML; }).observe(box, {childList: true}); }"""
+    )
     before = page.evaluate("Number(document.querySelector('#stream-time').dataset.taken)")
-    page.wait_for_function("t => Number(document.querySelector('#stream-time').dataset.taken) > t + 1.5", arg=before)
-    assert page.evaluate("document.querySelector('#process-table table').dataset.kept") == "yes", "same content: the same table"
+    page.wait_for_function("t => Number(document.querySelector('#stream-time').dataset.taken) > t + 2.5", arg=before)
+    assert all(page.evaluate("window.__writes")), "three readings or more: a write only where the content changed"
+    page.evaluate("document.querySelector('#process-table table').dataset.kept = 'yes'")
     rig.call(rig.ua, [("load_mw", 601.0)])
     try:
         page.locator("#process-table").get_by_text("601.0 MW").wait_for()

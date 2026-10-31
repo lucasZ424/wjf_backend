@@ -173,7 +173,6 @@ class ArchiveRouter:
             stored = self._try_state()
             if stored is None:
                 self._provisional(primary_used, bucket)
-                self.health["active_target"] = "PRIMARY_PROVISIONAL"
                 return True
             recovering, self.mode, self.provisional = True, stored, False  # unknown until now: save it, or stay provisional
         else:
@@ -195,9 +194,7 @@ class ArchiveRouter:
                 if recovering and self.mode == "EMERGENCY":
                     # the state answered but could not be brought up to date: stay provisional while that stays safe
                     self._provisional(primary_used, bucket)
-                    self.health["active_target"] = "PRIMARY_PROVISIONAL"
                     return True
-        self.health["active_target"] = self.mode
         self.waiting = False
         return self.mode != "EMERGENCY" or (
             emergency_free is not None and emergency_free > self.reserve() + policy.batch_budget_bytes
@@ -357,7 +354,6 @@ class ArchiveRouter:
             except psycopg.Error as error:  # the emergency database cannot be reached either: the group waits, the writer stays
                 return RouteResult("FAILED", None, type(error).__name__)
             self.mode = "EMERGENCY"  # only once the switch is recorded
-            self.health["active_target"] = "EMERGENCY"
             if emergency is None:
                 return RouteResult("FAILED", None, "EMERGENCY_DISK_UNAVAILABLE")
             if emergency.free <= self.reserve() + policy.batch_budget_bytes:

@@ -8,6 +8,7 @@ export const REASONS = {
   POLL_MISSING: "本轮未应答", POLL_TIMEOUT: "本轮超时", POLL_EXCEPTION: "本轮协议异常", POLL_CONNECTION: "本轮连接失败",
   SOURCE_INVALID: "来源数据无效", INPUT_UNAVAILABLE: "输入不可用", BASELINE_ONLY: "等待连续两轮",
   NOT_A_PLANNED_ROUND: "非计划轮次", EXTREME_INPUT: "输入超出物理极值", NONFINITE: "结果非有限数",
+  MODEL_NOT_CONFIGURED: "计算模型未配置", UNSUPPORTED_OPERATION: "不支持的计算",
   ITEM_REFUSED: "监控项被服务器拒绝",
 };
 export const reasonText = code => REASONS[code] || code || "无效";
