@@ -71,12 +71,12 @@ def test_the_three_quantities_are_shown_apart_with_their_names_and_units(page, s
     assert any("应变变化" in h and "με" in h for h in head)
     page.locator("#strain-table tbody tr").nth(0).get_by_text("150").wait_for()
     first = cells(page, 0)
-    assert first[1:4] == ["0.9 mV/V", "150 με", "50 με"], "three numbers, three names, none replacing another"
-    assert cells(page, 1)[1:4] == ["0.6 mV/V", "100 με", "0 με"]
+    assert first[1:4] == ["0.9000 mV/V", "150 με", "50 με"], "three numbers, three names, none replacing another"
+    assert cells(page, 1)[1:4] == ["0.6000 mV/V", "100 με", "0 με"]  # 终版 §17.6
     assert "GF=6" in page.locator("#workspace").inner_text() and "不是已验证的机械应变" in page.locator("#workspace").inner_text()
     page.get_by_role("button", name="系统总览").click()  # the overview shows the same three, apart
     page.locator("#strain-table tbody tr").nth(0).get_by_text("150").wait_for()
-    assert cells(page, 0)[1:4] == ["0.9 mV/V", "150 με", "50 με"]
+    assert cells(page, 0)[1:4] == ["0.9000 mV/V", "150 με", "50 με"]
     assert page.errors == []
 
 

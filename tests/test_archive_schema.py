@@ -163,8 +163,7 @@ def test_new_database_gets_accounts_through_the_normal_flow_not_by_migration(arc
     make_legacy(legacy, CONFIG, {"olduser": {"role": "admin", "salt": "s", "digest": "d", "active": True}})
     fresh = archive_db_factory(prepare=False)
     fresh.initialize(CONFIG)
-    assert fresh.read_accounts() == {}, "legacy accounts are not copied into a new database"
-    fresh.sync_accounts({"admin": {"role": "admin", "salt": "s", "digest": "d", "active": True}})
-    assert set(fresh.read_accounts()) == {"admin"}
+    with fresh.session() as conn:
+        assert conn.execute("SELECT count(*) AS n FROM account").fetchone()["n"] == 0, "legacy accounts are not copied"
     fresh.audit({"id": "1", "time": 1.0, "actor": "admin", "action": "X", "target": "t", "result": "OK"})
     assert fresh.audit_history()["items"][0]["actor"] == "admin"

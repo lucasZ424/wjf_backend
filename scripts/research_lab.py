@@ -46,8 +46,6 @@ def prepare(config_path, *, new_lab=False):
     roles = ("primary", "emergency")
     LOCAL.mkdir(parents=True, exist_ok=True)
     destination = LOCAL / "database.json"
-    if new_lab and (LOCAL / "accounts.pending").exists():
-        raise SystemExit("Reconcile pending account changes with the current database before new-lab")
     if new_lab or not destination.exists():
         original = json.loads((ROOT / ".local/database.json").read_text())
         if any(not original.get(role) for role in roles):

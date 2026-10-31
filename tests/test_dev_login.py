@@ -30,9 +30,6 @@ def test_short_admin_credential_is_explicit_and_shared_by_every_request(tmp_path
         if enabled:
             assert response.json() == {"username": "admin", "role": "admin"}
             assert client.get("/api/snapshot", headers=headers).status_code == 200  # the live reading too
-            accounts.uncertain = True
-            assert client.get("/api/me", headers=headers).status_code == 401
-            accounts.uncertain = False
             accounts.users["admin"]["active"] = False
             assert client.get("/api/me", headers=headers).status_code == 401
 

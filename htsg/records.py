@@ -28,6 +28,15 @@ GROUP_WATERMARK = "WATERMARK"
 GROUP_BASELINE = "BASELINE"  # the retention-boundary baseline of all sources, one group (§13.6)
 
 
+STATUS_INFO_DATAVALUE = 0x0400
+STATUS_OVERFLOW = 0x0080
+
+
+def is_overflow(status_value: int) -> bool:
+    """OPC UA DataValue info bits: the server's monitored-item queue discarded changes (Part 4, 7.39)."""
+    return bool(status_value & STATUS_INFO_DATAVALUE) and bool(status_value & STATUS_OVERFLOW)
+
+
 def observation_id(run_id: str, source_id: str, batch_seq: int, item_seq: int) -> str:
     return f"{run_id}/{source_id}/b{batch_seq}/i{item_seq}"
 
@@ -81,7 +90,7 @@ class RequestResult:
 
     scope: str  # which request: register kind, device and address range
     outcome: str  # OK | TIMEOUT | EXCEPTION
-    code: int | None = None  # the protocol exception code of an EXCEPTION answer
+    code: int | None = None  # the protocol exception code of an EXCEPTION answer; None: fewer registers than asked
     detail: str | None = None  # the library's text, if it gave one, cleaned and bounded where the result is made
     truncated: bool = False  # the text was cut - or, as None, left out altogether for its length
 

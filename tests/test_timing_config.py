@@ -76,7 +76,7 @@ def test_a_field_of_the_removed_push_is_refused_by_name_and_not_ignored(path):
 
 def test_alarm_must_be_at_least_three_times_the_keepalive_silence():
     # silence = 2 s -> 3x = 6 s; an alarm of 5.5 s would fire inside the normal quiet period
-    with pytest.raises(ValidationError, match="3x the keepalive silence"):
+    with pytest.raises(ValidationError, match="至少为保活静默的 3 倍"):
         Timing(ua_alarm_seconds=5.5)
 
 

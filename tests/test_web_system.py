@@ -22,7 +22,7 @@ from htsg.config import Settings
 from htsg.owner import Owner
 from htsg.web import create_web_app
 
-NAMES = ["系统总览", "水冷壁应变场", "热应力分析", "历史查询", "系统自检", "通信·日志", "系统管理·权限"]
+NAMES = ["系统总览", "水冷壁应变场", "热应力分析", "历史查询", "系统自检", "通信与日志", "系统管理与权限"]
 
 
 def sign_in_with(page, rig, credential):
@@ -61,7 +61,7 @@ def test_the_self_check_shows_what_the_server_granted_the_coverage_limit_and_the
     archive_rig.diagnostics = {"ua_field": {
         "requested": {"publish_interval": 1.0, "keepalive_count": 2, "lifetime_count": 60, "queue_size": 10, "session_timeout": 60.0},
         "publish_interval": 1.0, "keepalive_count": 3, "lifetime_count": 60, "session_timeout": 60.0,
-        "queue_capability": "OVERWRITE_UNDETECTABLE", "min_queue": 1, "violations": ["keepalive silence plus margin must be below the data validity"],
+        "queue_capability": "OVERWRITE_UNDETECTABLE", "min_queue": 1, "violations": ["保活静默加余量须小于数据有效期"],
     }}  # fmt: skip
     try:
         sign_in(page, archive_rig)
@@ -71,7 +71,7 @@ def test_the_self_check_shows_what_the_server_granted_the_coverage_limit_and_the
         rows = {r.locator("td").nth(0).inner_text(): r.locator("td").all_inner_texts() for r in negotiated.locator("tbody tr").all()}
         assert rows["保活计数"][1:] == ["2", "3 与请求不同"], "requested 2, granted 3: both shown, the difference marked"
         assert rows["测点队列（最小值）"][1].strip() == "10" and rows["测点队列（最小值）"][2].startswith("1")
-        assert "不满足约束：keepalive silence" in negotiated.inner_text()
+        assert "不满足约束：保活静默加余量须小于数据有效期" in negotiated.inner_text()
         assert "发布序号连续不能证明监控项无丢值" in negotiated.inner_text()
         archive = page.locator("#check-archive")
         archive.get_by_text("正常库").wait_for()
@@ -127,7 +127,7 @@ def test_a_full_fault_buffer_is_announced_on_every_page_with_the_counts(page, ti
 
 def test_roles_are_enforced_and_the_development_login_still_works(page, archive_rig):
     sign_in(page, archive_rig, "viewer")
-    page.get_by_role("button", name="系统管理·权限").click()
+    page.get_by_role("button", name="系统管理与权限").click()
     assert "仅管理员可管理账户" in page.locator("#account-area").inner_text()
     assert "仅管理员可查看管理操作记录" in page.locator("#audit-log").inner_text()
     matrix = page.locator("#workspace table").first.inner_text()
@@ -161,14 +161,14 @@ def test_the_login_page_asks_for_the_user_name_and_the_password_apart(page, rig)
 
 def test_an_administrator_creates_and_stops_accounts_and_every_step_is_on_record(page, archive_rig):
     sign_in_with(page, archive_rig, "admin:admin")
-    page.get_by_role("button", name="系统管理·权限").click()
+    page.get_by_role("button", name="系统管理与权限").click()
     page.locator("#account-form").wait_for()
     page.locator('#account-form [name="username"]').fill("operator1")
     page.locator("#account-form button").click()
     try:
         page.locator("#new-credential").wait_for(timeout=8000)
     except Exception as error:  # say what the page and the server looked like, not just that time ran out
-        raise AssertionError(f"no credential shown; page: {page.locator('#account-area').inner_text()!r}; accounts uncertain: {archive_rig.accounts.uncertain}; users: {sorted(archive_rig.accounts.users)}") from error
+        raise AssertionError(f"no credential shown; page: {page.locator('#account-area').inner_text()!r}; users: {sorted(archive_rig.accounts.users)}") from error
     user, secret = page.locator("#new-user").inner_text(), page.locator("#new-secret").inner_text()
     assert user == "operator1", "the user name and the password are shown apart, as the login page asks for them"
     credential = f"{user}:{secret}"
@@ -176,7 +176,7 @@ def test_an_administrator_creates_and_stops_accounts_and_every_step_is_on_record
     row = page.locator("#account-area tbody tr", has_text="operator1")
     assert "有效" in row.inner_text()
     page.get_by_role("button", name="历史查询").click()  # leaving the page: the credential is not shown a second time
-    page.get_by_role("button", name="系统管理·权限").click()
+    page.get_by_role("button", name="系统管理与权限").click()
     page.locator("#account-form").wait_for()
     assert page.locator("#new-credential").count() == 0
     row = page.locator("#account-area tbody tr", has_text="operator1")
@@ -184,13 +184,14 @@ def test_an_administrator_creates_and_stops_accounts_and_every_step_is_on_record
     row.get_by_role("button", name="确认停用 operator1").click()  # two clicks: no pop-up dialog
     page.locator("#account-area tbody tr", has_text="operator1").get_by_text("已停用").wait_for()
     assert api(page, archive_rig, "GET", "/api/me", credential).status == 401, "the stopped credential no longer works"
+    # 修复轮12: the one administrator has no stop button - it could only fail; the server still refuses, in Chinese
     admin_row = page.locator("#account-area tbody tr", has_text="admin").first
-    admin_row.get_by_role("button", name="停用").click()
-    admin_row.get_by_role("button", name="确认停用 admin").click()
-    page.locator("#account-area").get_by_text("cannot revoke last active admin").wait_for()
-    page.locator("#audit-log tbody tr", has_text="REVOKE_ACCOUNT").first.wait_for()
+    assert admin_row.get_by_role("button").count() == 0 and "唯一管理员，不能停用" in admin_row.inner_text()
+    refused = api(page, archive_rig, "DELETE", "/api/admin/accounts/admin", "admin:admin")
+    assert refused.status == 409 and refused.json()["detail"] == "不能停用唯一的管理员"
+    page.locator("#audit-log tbody tr", has_text="停用账户").first.wait_for()  # 终版 §17.5: in words
     log = page.locator("#audit-log").inner_text()
-    assert "CREATE_ACCOUNT" in log and "REVOKE_ACCOUNT" in log and "operator1" in log and "admin" in log
+    assert "新建只读账户" in log and "停用账户" in log and "operator1" in log and "admin" in log
     assert [e for e in page.errors if "409" not in e] == [], "only the refusal this test provoked (409) shows in the console"
 
 
@@ -210,7 +211,7 @@ def test_removing_the_model_page_and_its_config_payload_keeps_live_thermal_resul
             assert got[1]["valid"] and got[2]["valid"], "shared thermal calculation remains valid after removing the page"
             assert got[2]["v"] == pytest.approx(stress), "E 170 GPa x alpha 1.35e-5/K x restraint 0.5, still pushed live"
             assert page.locator("#model-cards").count() == 0
-        assert "研究估算" in page.locator("#trend-latest").inner_text()
+        assert "估算值" in page.locator("#trend-latest").inner_text()
     finally:
         rig.call(rig.ua, [(pid, nominal()[pid]) for pid in chosen.inputs])
     assert page.errors == []
@@ -221,7 +222,7 @@ def test_the_administrator_changes_their_own_password_on_the_page_and_only_read_
     added, and the administrator sets a password of their own whenever they want - the page carries on with it."""
     old, new = archive_rig.credentials["admin"], "a-password-of-my-own"
     sign_in(page, archive_rig, "admin")
-    page.get_by_role("button", name="系统管理·权限").click()
+    page.get_by_role("button", name="系统管理与权限").click()
     form = page.locator("#account-form")
     form.wait_for()
     assert form.locator('[name="role"]').get_attribute("value") == "viewer" and "管理员" not in form.inner_text(), "no second administrator"
@@ -239,8 +240,8 @@ def test_the_administrator_changes_their_own_password_on_the_page_and_only_read_
         assert api(page, archive_rig, "GET", "/api/me", old).status == 401, "the old credential stops working"
         assert api(page, archive_rig, "GET", "/api/me", "admin:" + new).status == 200
         page.get_by_role("button", name="历史查询").click()
-        page.get_by_role("button", name="系统管理·权限").click()  # the page goes on with the new credential: no new sign-in
-        page.locator("#audit-log tbody tr", has_text="SET_PASSWORD").first.wait_for()
+        page.get_by_role("button", name="系统管理与权限").click()  # the page goes on with the new credential: no new sign-in
+        page.locator("#audit-log tbody tr", has_text="修改口令").first.wait_for()
         assert page.locator("#workspace").is_visible()
     finally:  # the rig is shared by the module: what the other tests sign in with works again
         api(page, archive_rig, "POST", "/api/admin/password", "admin:" + new, data=json.dumps({"secret": old.split(":", 1)[1]}))
@@ -256,11 +257,13 @@ def test_a_database_failure_while_changing_an_account_is_reported_as_unconfirmed
     def down(*args):
         raise psycopg.OperationalError("database down")
 
-    accounts.persist = down
+    accounts.record = down
     with TestClient(app, raise_server_exceptions=False) as client:
         answer = client.post("/api/admin/accounts", json={"username": "operator", "role": "viewer"}, headers={"Authorization": "Bearer " + admin})
-    assert answer.status_code == 503 and "change not confirmed" in answer.json()["detail"]
-    assert accounts.uncertain, "the account state is flagged as needing reconciliation, not silently trusted"
+    assert answer.status_code == 503 and "变更未确认" in answer.json()["detail"]
+    assert "operator" not in accounts.users, "no record, no change (2026-10-30)"
+    with TestClient(app) as client:
+        assert client.get("/api/me", headers={"Authorization": "Bearer " + admin}).status_code == 200, "nobody is locked out"
 
 
 def test_the_self_check_names_a_missing_bucket_and_why_a_bucket_could_not_be_prepared(page, archive_rig):

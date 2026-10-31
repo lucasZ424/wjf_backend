@@ -156,11 +156,15 @@ def test_a_sequence_gap_starts_a_rebuild_and_later_old_notifications_are_dropped
     assert owner.health["dropped_while_resync"] == 0, "the channel stops handing batches over after the loss"
 
 
-def test_overflow_is_stored_with_its_data_and_then_treated_as_a_loss():
+def test_overflow_is_stored_with_its_data_and_costs_no_rebuild():
+    """2026-10-30 (user ruling): the server dropped values BETWEEN, the one delivered is the latest and right.  Before, one
+    point's overflow restarted the whole source - in a unit trip, exactly when the data matters."""
     channel, ingress, owner, commits, rebuilds, _ = build()
-    feed(channel, ingress, publish(1, [(1, 500.0, 0x00000480)]))
-    assert [o.value for g in commits for o in g.observations] == [500.0], "the evidence itself is kept"
-    assert rebuilds == ["OVERFLOW"] and owner.sources["ua"].state == "RESYNC"
+    feed(channel, ingress, publish(1, [(1, 500.0, 0x00000480), (2, 450.0)]))
+    assert [o.value for g in commits for o in g.observations] == [500.0, 450.0], "the evidence itself is kept"
+    assert [st.detail["points"] for g in commits for st in g.states if st.kind == "ITEM_OVERFLOW"] == [["ti"]]
+    assert rebuilds == [] and owner.sources["ua"].state == "VALID" and owner.channel_views()["ti"]["valid"]
+    assert channel.stats["overflow"] == 1 and owner.health["item_overflows"] == 1
 
 
 def test_an_exception_inside_the_callback_is_reported_as_loss():

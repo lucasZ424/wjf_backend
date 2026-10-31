@@ -78,6 +78,8 @@ def test_with_the_routing_state_out_of_reach_a_sound_normal_database_takes_the_g
     assert (result.status, result.target) == ("COMMITTED", "primary"), result
     assert router.health["active_target"] == "PRIMARY_PROVISIONAL", "said to be for the time being, not checked"
     assert stored(router.primary) == 1
+    # 修复轮12: the mode reads PRIMARY now, and the pages showed "正常库"; what they read says it is unchecked
+    assert router.mode == "PRIMARY" and router.target == "PRIMARY_PROVISIONAL"
 
 
 def test_the_development_mode_keeps_refusing_when_it_cannot_read_what_the_databases_hold(archive_db_factory):
@@ -103,6 +105,7 @@ def test_without_the_bucket_a_write_probe_or_room_below_the_start_line_the_group
     result = router.write_group(group(1, bucket=bucket))
     assert result.status == "FAILED" and result.target is None, "it waits, chosen nowhere yet"
     assert group(1, bucket=bucket).group_id not in router.pinned and stored(router.primary) == 0
+    assert router.target == "UNKNOWN", "nothing goes anywhere: the pages must not name a database"
 
 
 def test_writing_to_the_normal_database_for_the_time_being_stops_at_the_start_line(down):
@@ -111,6 +114,11 @@ def test_writing_to_the_normal_database_for_the_time_being_stops_at_the_start_li
     disks.used["D:/a"] = 0.91
     result = router.write_group(group(2))
     assert result.status == "FAILED" and result.target is None and stored(router.primary) == 1
+    # 修复轮13: the mode still reads PRIMARY and the route provisional, but nothing is written - the pages must say so
+    assert router.target == "UNKNOWN", "waiting after a provisional stretch is not writing to the normal database"
+    disks.used["D:/a"] = 0.50
+    assert router.write_group(group(3)).target == "primary"
+    assert router.target == "PRIMARY_PROVISIONAL", "writing again: for the time being, as before"
 
 
 def test_the_emergency_database_is_asked_now_and_then_not_before_every_group(down):
@@ -133,7 +141,7 @@ def test_once_the_emergency_database_answers_the_route_is_chosen_from_the_disks_
     state.up = True
     clock.now += archive_router.STATE_RETRY + 1
     assert router.write_group(group(2)).target == "primary", "the old mode did not override the choice made now"
-    assert state.real() == "PRIMARY" and router.health["active_target"] == "PRIMARY"
+    assert state.real() == "PRIMARY" and router.health["active_target"] == "PRIMARY" and router.target == "PRIMARY"
 
 
 def test_a_routing_state_that_cannot_be_saved_on_recovery_keeps_the_route_provisional_and_the_writes_going(down):
@@ -145,6 +153,7 @@ def test_a_routing_state_that_cannot_be_saved_on_recovery_keeps_the_route_provis
     result = router.write_group(group(1))
     assert (result.status, result.target) == ("COMMITTED", "primary")
     assert router.health["active_target"] == "PRIMARY_PROVISIONAL", "not checked: still for the time being"
+    assert router.target == "PRIMARY_PROVISIONAL", "the state held EMERGENCY: the pages must not say the emergency database"
 
 
 def test_a_failed_write_keeps_its_group_where_it_went_and_the_next_new_group_probes_again(down):

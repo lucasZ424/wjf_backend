@@ -11,7 +11,6 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 from owner_support import small_config
-from test_account_persistence import AccountStore
 
 from htsg import cli
 from htsg.auth import Accounts
@@ -24,7 +23,7 @@ NEW = "a-password-of-my-own"
 def test_there_is_only_one_administrator(tmp_path):
     accounts = Accounts(tmp_path / "accounts.json")
     accounts.create("admin", "admin")
-    with pytest.raises(ValueError, match="already an administrator"):
+    with pytest.raises(ValueError, match="已有管理员"):
         accounts.create("second", "admin")
     assert accounts.create("operator", "viewer").startswith("operator:"), "read-only users are added freely"
     assert [name for name, user in accounts.users.items() if user["role"] == "admin"] == ["admin"]
@@ -33,13 +32,12 @@ def test_there_is_only_one_administrator(tmp_path):
 def test_the_administrator_sets_a_password_of_their_own_and_the_old_credential_stops_working(tmp_path):
     accounts = Accounts(tmp_path / "accounts.json")
     old = accounts.create("admin", "admin")
-    store = AccountStore()
-    accounts.persist = store.sync_accounts
-    accounts.reconcile(store)
+    records = []
+    accounts.record = records.append
     accounts.set_secret("admin", NEW, {"action": "SET_PASSWORD"})
     assert accounts.verify(old) is None and accounts.verify("admin:" + NEW)["role"] == "admin"
-    assert store.users == accounts.users and store.audit == [{"action": "SET_PASSWORD"}], "into the database, with its record"
-    assert Accounts(accounts.path).verify("admin:" + NEW), "and into the account file"
+    assert records == [{"action": "SET_PASSWORD"}], "on record"
+    assert Accounts(accounts.path).verify("admin:" + NEW), "and in the account file"
 
 
 @pytest.mark.parametrize("secret", ["short", " padded password ", "x" * 251], ids=["too-short", "padded", "too-long"])
@@ -71,8 +69,9 @@ def test_through_the_api_only_read_only_users_are_added_and_only_the_administrat
         assert call("GET", "/api/me", "admin:" + NEW).json() == {"username": "admin", "role": "admin"}
 
 
-def test_init_accounts_writes_the_only_administrator_into_the_database_and_the_file(archive_db_factory, tmp_path):
-    """What the deployment runs.  Before, it wrote an administrator AND a viewer into the file only."""
+def test_init_accounts_writes_the_only_administrator_into_the_file_with_its_record(archive_db_factory, tmp_path):
+    """What the deployment runs.  Before 修复轮02 it wrote an administrator AND a viewer into the file only; since
+    2026-10-30 the file is the only copy of the accounts and the database keeps the record."""
     store = archive_db_factory("primary")
     store.initialize(small_config())
     path = tmp_path / "accounts.json"
@@ -80,12 +79,12 @@ def test_init_accounts_writes_the_only_administrator_into_the_database_and_the_f
     assert saved == tmp_path / "initial-credentials.json"
     handed = json.loads(saved.read_text(encoding="utf-8"))
     credential = f"{handed['username']}:{handed['password']}"
-    assert set(store.read_accounts()) == {"admin"} and Accounts(path).users == store.read_accounts(), "the same one in both"
+    assert set(Accounts(path).users) == {"admin"}
     assert Accounts(path).verify(credential)["role"] == "admin", "the credential handed over works"
     assert [entry["action"] for entry in store.audit_history()["items"]] == ["CREATE_ACCOUNT"], "and is on record"
     handed_over = {p: p.read_bytes() for p in (saved, tmp_path / "admin-fallback.json")}
     assert cli.init_accounts(path, store.dsn) is None, "a second run makes no second administrator"
     path.unlink()
-    assert cli.init_accounts(path, store.dsn) is None, "the database holds the administrator: still none made"
-    assert Accounts(path).users == store.read_accounts(), "the file is the database copy again"
+    assert cli.init_accounts(path, store.dsn) is None, "the fallback is there: a new administrator would void the password handed over"
+    assert Accounts(path).verify(credential)["role"] == "admin", "the handed-over password still signs in, as the fallback"
     assert {p: p.read_bytes() for p in handed_over} == handed_over, "the initial password and its fallback stay as handed over"

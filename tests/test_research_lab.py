@@ -124,14 +124,6 @@ def test_preflight_checks_both_clusters_before_creating(isolated_lab):
     assert state.created == []
 
 
-def test_unresolved_account_changes_cannot_be_silently_discarded(isolated_lab):
-    local, state, config_path = isolated_lab
-    (local / "accounts.pending").write_text("unresolved")
-    with pytest.raises(SystemExit, match="Reconcile pending"):
-        lab.prepare(config_path, new_lab=True)
-    assert state.created == []
-
-
 @pytest.mark.parametrize("used, expected", [
     (5 * 1024**3, "budget exhausted"),
     (5 * 1024**3 - 8 * 1024**2, "below the estimate"),

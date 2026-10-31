@@ -128,11 +128,12 @@ def test_the_file_holds_exactly_the_rows_on_screen_and_the_settings_that_made_th
     assert len(rows) == len(cells) >= 5
     col = {n: header.index(n) for n in header}
     for file_row, table_row, css in zip(rows, cells, classes, strict=True):
-        assert f"{file_row[col['批次号']]}·{file_row[col['批内序号']]}" == table_row[2]
+        assert f"{file_row[col['批次号']]}-{file_row[col['批内序号']]}" == table_row[2]
         assert file_row[col["来源"]] == table_row[5]
         assert (file_row[col["是否有效"]] == "否") == ("bad" in css.split()), "the red rows are the invalid rows"
         if file_row[col["是否有效"]] == "是":
-            assert round(float(file_row[col["值"]]), 2) == float(table_row[3])
+            digits = len(table_row[3].split(".")[1]) if "." in table_row[3] else 0  # 终版 §17.6: the page rounds by unit, the file keeps the value
+            assert round(float(file_row[col["值"]]), digits) == float(table_row[3])
         else:
             assert file_row[col["值"]] == "" and table_row[3] == "—"
     bad = [r for r in rows if r[col["是否有效"]] == "否"]

@@ -1,0 +1,5343 @@
+{
+  "mode": "production",
+  "time_basis": "received",
+  "project": {
+    "title": "HTSG 660 MW 锅炉高温应变监测",
+    "rated_mw": 660,
+    "notice": "换算应变与热应力为估算值，不是实测",
+    "basis": ""
+  },
+  "sources": [
+    {
+      "id": "mb_field",
+      "kind": "modbus",
+      "enabled": false,
+      "interval": 1
+    },
+    {
+      "id": "ua_field",
+      "kind": "opcua",
+      "enabled": false,
+      "interval": 1
+    }
+  ],
+  "points": [
+    {
+      "id": "bridge_mvv_01",
+      "source": "mb_field",
+      "unit": "mV/V",
+      "extreme_low": -30,
+      "extreme_high": 30,
+      "device_id": 1,
+      "data_type": "float32"
+    },
+    {
+      "id": "temp_outer_01",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_01",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "bridge_mvv_02",
+      "source": "mb_field",
+      "unit": "mV/V",
+      "extreme_low": -30,
+      "extreme_high": 30,
+      "device_id": 1,
+      "data_type": "float32"
+    },
+    {
+      "id": "temp_outer_02",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_02",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "bridge_mvv_03",
+      "source": "mb_field",
+      "unit": "mV/V",
+      "extreme_low": -30,
+      "extreme_high": 30,
+      "device_id": 1,
+      "data_type": "float32"
+    },
+    {
+      "id": "temp_outer_03",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_03",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "bridge_mvv_04",
+      "source": "mb_field",
+      "unit": "mV/V",
+      "extreme_low": -30,
+      "extreme_high": 30,
+      "device_id": 1,
+      "data_type": "float32"
+    },
+    {
+      "id": "temp_outer_04",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_04",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "bridge_mvv_05",
+      "source": "mb_field",
+      "unit": "mV/V",
+      "extreme_low": -30,
+      "extreme_high": 30,
+      "device_id": 1,
+      "data_type": "float32"
+    },
+    {
+      "id": "temp_outer_05",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_05",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "bridge_mvv_06",
+      "source": "mb_field",
+      "unit": "mV/V",
+      "extreme_low": -30,
+      "extreme_high": 30,
+      "device_id": 1,
+      "data_type": "float32"
+    },
+    {
+      "id": "temp_outer_06",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_06",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "bridge_mvv_07",
+      "source": "mb_field",
+      "unit": "mV/V",
+      "extreme_low": -30,
+      "extreme_high": 30,
+      "device_id": 1,
+      "data_type": "float32"
+    },
+    {
+      "id": "temp_outer_07",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_07",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "bridge_mvv_08",
+      "source": "mb_field",
+      "unit": "mV/V",
+      "extreme_low": -30,
+      "extreme_high": 30,
+      "device_id": 1,
+      "data_type": "float32"
+    },
+    {
+      "id": "temp_outer_08",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_08",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_09",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_09",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_10",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_10",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_11",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_11",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_12",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_12",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_13",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_13",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_14",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_14",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_15",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_15",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_16",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_16",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_17",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_17",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_18",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_18",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_19",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_19",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_20",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_20",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_21",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_21",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_22",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_22",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_23",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_23",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_24",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_24",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_25",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_25",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_26",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_26",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_27",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_27",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_28",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_28",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_29",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_29",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_30",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_30",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_31",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_31",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_32",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_32",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_33",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_33",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_34",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_34",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_35",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_35",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_36",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_36",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_37",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_37",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_38",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_38",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_39",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_39",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_40",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_40",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_41",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_41",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_42",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_42",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_43",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_43",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_44",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_44",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_45",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_45",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_46",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_46",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_47",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_47",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_48",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_48",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_49",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_49",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_50",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_50",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_51",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_51",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_52",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_52",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_53",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_53",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_54",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_54",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_55",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_55",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_56",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_56",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_57",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_57",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_58",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_58",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_59",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_59",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_60",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_60",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_61",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_61",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_62",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_62",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_63",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_63",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_64",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_64",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_65",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_65",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_66",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_66",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_67",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_67",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_68",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_68",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_69",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_69",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_70",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_70",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_71",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_71",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_72",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_72",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_73",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_73",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_74",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_74",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_75",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_75",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_76",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_76",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_77",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_77",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_78",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_78",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_79",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_79",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_80",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_80",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_81",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_81",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_82",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_82",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_83",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_83",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_84",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_84",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_85",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_85",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_86",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_86",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_87",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_87",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_88",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_88",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_89",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_89",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_90",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_90",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_91",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_91",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_92",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_92",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_93",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_93",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_94",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_94",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_95",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_95",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_outer_96",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "temp_inner_96",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 490,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "load_mw",
+      "source": "ua_field",
+      "unit": "MW",
+      "high": 693,
+      "hysteresis_high": 10,
+      "extreme_low": -20,
+      "extreme_high": 800
+    },
+    {
+      "id": "waterwall_flow",
+      "source": "ua_field",
+      "unit": "t/h",
+      "low": 925,
+      "hysteresis_low": 90,
+      "extreme_low": -50,
+      "extreme_high": 3000
+    },
+    {
+      "id": "main_steam_flow",
+      "source": "ua_field",
+      "unit": "t/h",
+      "high": 2223,
+      "hysteresis_high": 10,
+      "extreme_low": -50,
+      "extreme_high": 3000
+    },
+    {
+      "id": "main_steam_pressure",
+      "source": "ua_field",
+      "unit": "MPa",
+      "high": 30.0,
+      "hysteresis_high": 0.15,
+      "extreme_low": -0.1,
+      "extreme_high": 40
+    },
+    {
+      "id": "feedwater_temperature",
+      "source": "ua_field",
+      "unit": "degC",
+      "low": 250,
+      "hysteresis_low": 6,
+      "high": 320,
+      "hysteresis_high": 1,
+      "extreme_low": -20,
+      "extreme_high": 400
+    },
+    {
+      "id": "reheat_temperature",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 630,
+      "hysteresis_high": 1,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "working_fluid_temperature",
+      "source": "ua_field",
+      "unit": "degC",
+      "high": 460,
+      "hysteresis_high": 3,
+      "extreme_low": -50,
+      "extreme_high": 800
+    },
+    {
+      "id": "furnace_pressure",
+      "source": "ua_field",
+      "unit": "kPa",
+      "low": -0.5,
+      "hysteresis_low": 0.05,
+      "high": 0.5,
+      "hysteresis_high": 0.05,
+      "extreme_low": -5,
+      "extreme_high": 5
+    }
+  ],
+  "derived": [
+    {
+      "id": "strain_01",
+      "inputs": [
+        "bridge_mvv_01"
+      ],
+      "operation": "bridge_strain",
+      "unit": "με",
+      "low": -690,
+      "hysteresis_low": 55,
+      "high": 690,
+      "hysteresis_high": 55,
+      "extreme_low": -5000,
+      "extreme_high": 5000
+    },
+    {
+      "id": "strain_02",
+      "inputs": [
+        "bridge_mvv_02"
+      ],
+      "operation": "bridge_strain",
+      "unit": "με",
+      "low": -690,
+      "hysteresis_low": 55,
+      "high": 690,
+      "hysteresis_high": 55,
+      "extreme_low": -5000,
+      "extreme_high": 5000
+    },
+    {
+      "id": "strain_03",
+      "inputs": [
+        "bridge_mvv_03"
+      ],
+      "operation": "bridge_strain",
+      "unit": "με",
+      "low": -690,
+      "hysteresis_low": 55,
+      "high": 690,
+      "hysteresis_high": 55,
+      "extreme_low": -5000,
+      "extreme_high": 5000
+    },
+    {
+      "id": "strain_04",
+      "inputs": [
+        "bridge_mvv_04"
+      ],
+      "operation": "bridge_strain",
+      "unit": "με",
+      "low": -690,
+      "hysteresis_low": 55,
+      "high": 690,
+      "hysteresis_high": 55,
+      "extreme_low": -5000,
+      "extreme_high": 5000
+    },
+    {
+      "id": "strain_05",
+      "inputs": [
+        "bridge_mvv_05"
+      ],
+      "operation": "bridge_strain",
+      "unit": "με",
+      "low": -690,
+      "hysteresis_low": 55,
+      "high": 690,
+      "hysteresis_high": 55,
+      "extreme_low": -5000,
+      "extreme_high": 5000
+    },
+    {
+      "id": "strain_06",
+      "inputs": [
+        "bridge_mvv_06"
+      ],
+      "operation": "bridge_strain",
+      "unit": "με",
+      "low": -690,
+      "hysteresis_low": 55,
+      "high": 690,
+      "hysteresis_high": 55,
+      "extreme_low": -5000,
+      "extreme_high": 5000
+    },
+    {
+      "id": "strain_07",
+      "inputs": [
+        "bridge_mvv_07"
+      ],
+      "operation": "bridge_strain",
+      "unit": "με",
+      "low": -690,
+      "hysteresis_low": 55,
+      "high": 690,
+      "hysteresis_high": 55,
+      "extreme_low": -5000,
+      "extreme_high": 5000
+    },
+    {
+      "id": "strain_08",
+      "inputs": [
+        "bridge_mvv_08"
+      ],
+      "operation": "bridge_strain",
+      "unit": "με",
+      "low": -690,
+      "hysteresis_low": 55,
+      "high": 690,
+      "hysteresis_high": 55,
+      "extreme_low": -5000,
+      "extreme_high": 5000
+    },
+    {
+      "id": "strain_change_01",
+      "inputs": [
+        "strain_01"
+      ],
+      "operation": "change",
+      "unit": "με",
+      "extreme_low": -10000,
+      "extreme_high": 10000
+    },
+    {
+      "id": "strain_change_02",
+      "inputs": [
+        "strain_02"
+      ],
+      "operation": "change",
+      "unit": "με",
+      "extreme_low": -10000,
+      "extreme_high": 10000
+    },
+    {
+      "id": "strain_change_03",
+      "inputs": [
+        "strain_03"
+      ],
+      "operation": "change",
+      "unit": "με",
+      "extreme_low": -10000,
+      "extreme_high": 10000
+    },
+    {
+      "id": "strain_change_04",
+      "inputs": [
+        "strain_04"
+      ],
+      "operation": "change",
+      "unit": "με",
+      "extreme_low": -10000,
+      "extreme_high": 10000
+    },
+    {
+      "id": "strain_change_05",
+      "inputs": [
+        "strain_05"
+      ],
+      "operation": "change",
+      "unit": "με",
+      "extreme_low": -10000,
+      "extreme_high": 10000
+    },
+    {
+      "id": "strain_change_06",
+      "inputs": [
+        "strain_06"
+      ],
+      "operation": "change",
+      "unit": "με",
+      "extreme_low": -10000,
+      "extreme_high": 10000
+    },
+    {
+      "id": "strain_change_07",
+      "inputs": [
+        "strain_07"
+      ],
+      "operation": "change",
+      "unit": "με",
+      "extreme_low": -10000,
+      "extreme_high": 10000
+    },
+    {
+      "id": "strain_change_08",
+      "inputs": [
+        "strain_08"
+      ],
+      "operation": "change",
+      "unit": "με",
+      "extreme_low": -10000,
+      "extreme_high": 10000
+    },
+    {
+      "id": "delta_t_01",
+      "inputs": [
+        "temp_inner_01",
+        "temp_outer_01"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_01",
+      "inputs": [
+        "temp_inner_01",
+        "temp_outer_01"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_02",
+      "inputs": [
+        "temp_inner_02",
+        "temp_outer_02"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_02",
+      "inputs": [
+        "temp_inner_02",
+        "temp_outer_02"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_03",
+      "inputs": [
+        "temp_inner_03",
+        "temp_outer_03"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_03",
+      "inputs": [
+        "temp_inner_03",
+        "temp_outer_03"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_04",
+      "inputs": [
+        "temp_inner_04",
+        "temp_outer_04"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_04",
+      "inputs": [
+        "temp_inner_04",
+        "temp_outer_04"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_05",
+      "inputs": [
+        "temp_inner_05",
+        "temp_outer_05"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_05",
+      "inputs": [
+        "temp_inner_05",
+        "temp_outer_05"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_06",
+      "inputs": [
+        "temp_inner_06",
+        "temp_outer_06"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_06",
+      "inputs": [
+        "temp_inner_06",
+        "temp_outer_06"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_07",
+      "inputs": [
+        "temp_inner_07",
+        "temp_outer_07"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_07",
+      "inputs": [
+        "temp_inner_07",
+        "temp_outer_07"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_08",
+      "inputs": [
+        "temp_inner_08",
+        "temp_outer_08"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_08",
+      "inputs": [
+        "temp_inner_08",
+        "temp_outer_08"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_09",
+      "inputs": [
+        "temp_inner_09",
+        "temp_outer_09"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_09",
+      "inputs": [
+        "temp_inner_09",
+        "temp_outer_09"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_10",
+      "inputs": [
+        "temp_inner_10",
+        "temp_outer_10"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_10",
+      "inputs": [
+        "temp_inner_10",
+        "temp_outer_10"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_11",
+      "inputs": [
+        "temp_inner_11",
+        "temp_outer_11"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_11",
+      "inputs": [
+        "temp_inner_11",
+        "temp_outer_11"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_12",
+      "inputs": [
+        "temp_inner_12",
+        "temp_outer_12"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_12",
+      "inputs": [
+        "temp_inner_12",
+        "temp_outer_12"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_13",
+      "inputs": [
+        "temp_inner_13",
+        "temp_outer_13"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_13",
+      "inputs": [
+        "temp_inner_13",
+        "temp_outer_13"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_14",
+      "inputs": [
+        "temp_inner_14",
+        "temp_outer_14"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_14",
+      "inputs": [
+        "temp_inner_14",
+        "temp_outer_14"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_15",
+      "inputs": [
+        "temp_inner_15",
+        "temp_outer_15"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_15",
+      "inputs": [
+        "temp_inner_15",
+        "temp_outer_15"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_16",
+      "inputs": [
+        "temp_inner_16",
+        "temp_outer_16"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_16",
+      "inputs": [
+        "temp_inner_16",
+        "temp_outer_16"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_17",
+      "inputs": [
+        "temp_inner_17",
+        "temp_outer_17"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_17",
+      "inputs": [
+        "temp_inner_17",
+        "temp_outer_17"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_18",
+      "inputs": [
+        "temp_inner_18",
+        "temp_outer_18"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_18",
+      "inputs": [
+        "temp_inner_18",
+        "temp_outer_18"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_19",
+      "inputs": [
+        "temp_inner_19",
+        "temp_outer_19"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_19",
+      "inputs": [
+        "temp_inner_19",
+        "temp_outer_19"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_20",
+      "inputs": [
+        "temp_inner_20",
+        "temp_outer_20"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_20",
+      "inputs": [
+        "temp_inner_20",
+        "temp_outer_20"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_21",
+      "inputs": [
+        "temp_inner_21",
+        "temp_outer_21"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_21",
+      "inputs": [
+        "temp_inner_21",
+        "temp_outer_21"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_22",
+      "inputs": [
+        "temp_inner_22",
+        "temp_outer_22"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_22",
+      "inputs": [
+        "temp_inner_22",
+        "temp_outer_22"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_23",
+      "inputs": [
+        "temp_inner_23",
+        "temp_outer_23"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_23",
+      "inputs": [
+        "temp_inner_23",
+        "temp_outer_23"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_24",
+      "inputs": [
+        "temp_inner_24",
+        "temp_outer_24"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_24",
+      "inputs": [
+        "temp_inner_24",
+        "temp_outer_24"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_25",
+      "inputs": [
+        "temp_inner_25",
+        "temp_outer_25"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_25",
+      "inputs": [
+        "temp_inner_25",
+        "temp_outer_25"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_26",
+      "inputs": [
+        "temp_inner_26",
+        "temp_outer_26"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_26",
+      "inputs": [
+        "temp_inner_26",
+        "temp_outer_26"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_27",
+      "inputs": [
+        "temp_inner_27",
+        "temp_outer_27"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_27",
+      "inputs": [
+        "temp_inner_27",
+        "temp_outer_27"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_28",
+      "inputs": [
+        "temp_inner_28",
+        "temp_outer_28"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_28",
+      "inputs": [
+        "temp_inner_28",
+        "temp_outer_28"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_29",
+      "inputs": [
+        "temp_inner_29",
+        "temp_outer_29"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_29",
+      "inputs": [
+        "temp_inner_29",
+        "temp_outer_29"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_30",
+      "inputs": [
+        "temp_inner_30",
+        "temp_outer_30"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_30",
+      "inputs": [
+        "temp_inner_30",
+        "temp_outer_30"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_31",
+      "inputs": [
+        "temp_inner_31",
+        "temp_outer_31"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_31",
+      "inputs": [
+        "temp_inner_31",
+        "temp_outer_31"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_32",
+      "inputs": [
+        "temp_inner_32",
+        "temp_outer_32"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_32",
+      "inputs": [
+        "temp_inner_32",
+        "temp_outer_32"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_33",
+      "inputs": [
+        "temp_inner_33",
+        "temp_outer_33"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_33",
+      "inputs": [
+        "temp_inner_33",
+        "temp_outer_33"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_34",
+      "inputs": [
+        "temp_inner_34",
+        "temp_outer_34"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_34",
+      "inputs": [
+        "temp_inner_34",
+        "temp_outer_34"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_35",
+      "inputs": [
+        "temp_inner_35",
+        "temp_outer_35"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_35",
+      "inputs": [
+        "temp_inner_35",
+        "temp_outer_35"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_36",
+      "inputs": [
+        "temp_inner_36",
+        "temp_outer_36"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_36",
+      "inputs": [
+        "temp_inner_36",
+        "temp_outer_36"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_37",
+      "inputs": [
+        "temp_inner_37",
+        "temp_outer_37"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_37",
+      "inputs": [
+        "temp_inner_37",
+        "temp_outer_37"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_38",
+      "inputs": [
+        "temp_inner_38",
+        "temp_outer_38"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_38",
+      "inputs": [
+        "temp_inner_38",
+        "temp_outer_38"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_39",
+      "inputs": [
+        "temp_inner_39",
+        "temp_outer_39"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_39",
+      "inputs": [
+        "temp_inner_39",
+        "temp_outer_39"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_40",
+      "inputs": [
+        "temp_inner_40",
+        "temp_outer_40"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_40",
+      "inputs": [
+        "temp_inner_40",
+        "temp_outer_40"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_41",
+      "inputs": [
+        "temp_inner_41",
+        "temp_outer_41"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_41",
+      "inputs": [
+        "temp_inner_41",
+        "temp_outer_41"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_42",
+      "inputs": [
+        "temp_inner_42",
+        "temp_outer_42"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_42",
+      "inputs": [
+        "temp_inner_42",
+        "temp_outer_42"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_43",
+      "inputs": [
+        "temp_inner_43",
+        "temp_outer_43"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_43",
+      "inputs": [
+        "temp_inner_43",
+        "temp_outer_43"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_44",
+      "inputs": [
+        "temp_inner_44",
+        "temp_outer_44"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_44",
+      "inputs": [
+        "temp_inner_44",
+        "temp_outer_44"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_45",
+      "inputs": [
+        "temp_inner_45",
+        "temp_outer_45"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_45",
+      "inputs": [
+        "temp_inner_45",
+        "temp_outer_45"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_46",
+      "inputs": [
+        "temp_inner_46",
+        "temp_outer_46"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_46",
+      "inputs": [
+        "temp_inner_46",
+        "temp_outer_46"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_47",
+      "inputs": [
+        "temp_inner_47",
+        "temp_outer_47"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_47",
+      "inputs": [
+        "temp_inner_47",
+        "temp_outer_47"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_48",
+      "inputs": [
+        "temp_inner_48",
+        "temp_outer_48"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_48",
+      "inputs": [
+        "temp_inner_48",
+        "temp_outer_48"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_49",
+      "inputs": [
+        "temp_inner_49",
+        "temp_outer_49"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_49",
+      "inputs": [
+        "temp_inner_49",
+        "temp_outer_49"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_50",
+      "inputs": [
+        "temp_inner_50",
+        "temp_outer_50"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_50",
+      "inputs": [
+        "temp_inner_50",
+        "temp_outer_50"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_51",
+      "inputs": [
+        "temp_inner_51",
+        "temp_outer_51"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_51",
+      "inputs": [
+        "temp_inner_51",
+        "temp_outer_51"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_52",
+      "inputs": [
+        "temp_inner_52",
+        "temp_outer_52"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_52",
+      "inputs": [
+        "temp_inner_52",
+        "temp_outer_52"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_53",
+      "inputs": [
+        "temp_inner_53",
+        "temp_outer_53"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_53",
+      "inputs": [
+        "temp_inner_53",
+        "temp_outer_53"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_54",
+      "inputs": [
+        "temp_inner_54",
+        "temp_outer_54"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_54",
+      "inputs": [
+        "temp_inner_54",
+        "temp_outer_54"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_55",
+      "inputs": [
+        "temp_inner_55",
+        "temp_outer_55"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_55",
+      "inputs": [
+        "temp_inner_55",
+        "temp_outer_55"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_56",
+      "inputs": [
+        "temp_inner_56",
+        "temp_outer_56"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_56",
+      "inputs": [
+        "temp_inner_56",
+        "temp_outer_56"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_57",
+      "inputs": [
+        "temp_inner_57",
+        "temp_outer_57"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_57",
+      "inputs": [
+        "temp_inner_57",
+        "temp_outer_57"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_58",
+      "inputs": [
+        "temp_inner_58",
+        "temp_outer_58"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_58",
+      "inputs": [
+        "temp_inner_58",
+        "temp_outer_58"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_59",
+      "inputs": [
+        "temp_inner_59",
+        "temp_outer_59"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_59",
+      "inputs": [
+        "temp_inner_59",
+        "temp_outer_59"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_60",
+      "inputs": [
+        "temp_inner_60",
+        "temp_outer_60"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_60",
+      "inputs": [
+        "temp_inner_60",
+        "temp_outer_60"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_61",
+      "inputs": [
+        "temp_inner_61",
+        "temp_outer_61"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_61",
+      "inputs": [
+        "temp_inner_61",
+        "temp_outer_61"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_62",
+      "inputs": [
+        "temp_inner_62",
+        "temp_outer_62"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_62",
+      "inputs": [
+        "temp_inner_62",
+        "temp_outer_62"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_63",
+      "inputs": [
+        "temp_inner_63",
+        "temp_outer_63"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_63",
+      "inputs": [
+        "temp_inner_63",
+        "temp_outer_63"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_64",
+      "inputs": [
+        "temp_inner_64",
+        "temp_outer_64"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_64",
+      "inputs": [
+        "temp_inner_64",
+        "temp_outer_64"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_65",
+      "inputs": [
+        "temp_inner_65",
+        "temp_outer_65"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_65",
+      "inputs": [
+        "temp_inner_65",
+        "temp_outer_65"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_66",
+      "inputs": [
+        "temp_inner_66",
+        "temp_outer_66"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_66",
+      "inputs": [
+        "temp_inner_66",
+        "temp_outer_66"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_67",
+      "inputs": [
+        "temp_inner_67",
+        "temp_outer_67"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_67",
+      "inputs": [
+        "temp_inner_67",
+        "temp_outer_67"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_68",
+      "inputs": [
+        "temp_inner_68",
+        "temp_outer_68"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_68",
+      "inputs": [
+        "temp_inner_68",
+        "temp_outer_68"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_69",
+      "inputs": [
+        "temp_inner_69",
+        "temp_outer_69"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_69",
+      "inputs": [
+        "temp_inner_69",
+        "temp_outer_69"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_70",
+      "inputs": [
+        "temp_inner_70",
+        "temp_outer_70"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_70",
+      "inputs": [
+        "temp_inner_70",
+        "temp_outer_70"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_71",
+      "inputs": [
+        "temp_inner_71",
+        "temp_outer_71"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_71",
+      "inputs": [
+        "temp_inner_71",
+        "temp_outer_71"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_72",
+      "inputs": [
+        "temp_inner_72",
+        "temp_outer_72"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_72",
+      "inputs": [
+        "temp_inner_72",
+        "temp_outer_72"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_73",
+      "inputs": [
+        "temp_inner_73",
+        "temp_outer_73"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_73",
+      "inputs": [
+        "temp_inner_73",
+        "temp_outer_73"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_74",
+      "inputs": [
+        "temp_inner_74",
+        "temp_outer_74"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_74",
+      "inputs": [
+        "temp_inner_74",
+        "temp_outer_74"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_75",
+      "inputs": [
+        "temp_inner_75",
+        "temp_outer_75"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_75",
+      "inputs": [
+        "temp_inner_75",
+        "temp_outer_75"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_76",
+      "inputs": [
+        "temp_inner_76",
+        "temp_outer_76"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_76",
+      "inputs": [
+        "temp_inner_76",
+        "temp_outer_76"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_77",
+      "inputs": [
+        "temp_inner_77",
+        "temp_outer_77"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_77",
+      "inputs": [
+        "temp_inner_77",
+        "temp_outer_77"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_78",
+      "inputs": [
+        "temp_inner_78",
+        "temp_outer_78"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_78",
+      "inputs": [
+        "temp_inner_78",
+        "temp_outer_78"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_79",
+      "inputs": [
+        "temp_inner_79",
+        "temp_outer_79"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_79",
+      "inputs": [
+        "temp_inner_79",
+        "temp_outer_79"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_80",
+      "inputs": [
+        "temp_inner_80",
+        "temp_outer_80"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_80",
+      "inputs": [
+        "temp_inner_80",
+        "temp_outer_80"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_81",
+      "inputs": [
+        "temp_inner_81",
+        "temp_outer_81"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_81",
+      "inputs": [
+        "temp_inner_81",
+        "temp_outer_81"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_82",
+      "inputs": [
+        "temp_inner_82",
+        "temp_outer_82"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_82",
+      "inputs": [
+        "temp_inner_82",
+        "temp_outer_82"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_83",
+      "inputs": [
+        "temp_inner_83",
+        "temp_outer_83"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_83",
+      "inputs": [
+        "temp_inner_83",
+        "temp_outer_83"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_84",
+      "inputs": [
+        "temp_inner_84",
+        "temp_outer_84"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_84",
+      "inputs": [
+        "temp_inner_84",
+        "temp_outer_84"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_85",
+      "inputs": [
+        "temp_inner_85",
+        "temp_outer_85"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_85",
+      "inputs": [
+        "temp_inner_85",
+        "temp_outer_85"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_86",
+      "inputs": [
+        "temp_inner_86",
+        "temp_outer_86"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_86",
+      "inputs": [
+        "temp_inner_86",
+        "temp_outer_86"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_87",
+      "inputs": [
+        "temp_inner_87",
+        "temp_outer_87"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_87",
+      "inputs": [
+        "temp_inner_87",
+        "temp_outer_87"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_88",
+      "inputs": [
+        "temp_inner_88",
+        "temp_outer_88"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_88",
+      "inputs": [
+        "temp_inner_88",
+        "temp_outer_88"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_89",
+      "inputs": [
+        "temp_inner_89",
+        "temp_outer_89"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_89",
+      "inputs": [
+        "temp_inner_89",
+        "temp_outer_89"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_90",
+      "inputs": [
+        "temp_inner_90",
+        "temp_outer_90"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_90",
+      "inputs": [
+        "temp_inner_90",
+        "temp_outer_90"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_91",
+      "inputs": [
+        "temp_inner_91",
+        "temp_outer_91"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_91",
+      "inputs": [
+        "temp_inner_91",
+        "temp_outer_91"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_92",
+      "inputs": [
+        "temp_inner_92",
+        "temp_outer_92"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_92",
+      "inputs": [
+        "temp_inner_92",
+        "temp_outer_92"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_93",
+      "inputs": [
+        "temp_inner_93",
+        "temp_outer_93"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_93",
+      "inputs": [
+        "temp_inner_93",
+        "temp_outer_93"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_94",
+      "inputs": [
+        "temp_inner_94",
+        "temp_outer_94"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_94",
+      "inputs": [
+        "temp_inner_94",
+        "temp_outer_94"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_95",
+      "inputs": [
+        "temp_inner_95",
+        "temp_outer_95"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_95",
+      "inputs": [
+        "temp_inner_95",
+        "temp_outer_95"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "delta_t_96",
+      "inputs": [
+        "temp_inner_96",
+        "temp_outer_96"
+      ],
+      "operation": "difference",
+      "unit": "degC",
+      "low": -55,
+      "hysteresis_low": 4,
+      "high": 55,
+      "hysteresis_high": 4,
+      "extreme_low": -300,
+      "extreme_high": 300
+    },
+    {
+      "id": "stress_96",
+      "inputs": [
+        "temp_inner_96",
+        "temp_outer_96"
+      ],
+      "operation": "thermal_stress",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500,
+      "model_id": "thermal_assumed"
+    },
+    {
+      "id": "thermal_stress_peak",
+      "inputs": [
+        "stress_01",
+        "stress_02",
+        "stress_03",
+        "stress_04",
+        "stress_05",
+        "stress_06",
+        "stress_07",
+        "stress_08",
+        "stress_09",
+        "stress_10",
+        "stress_11",
+        "stress_12",
+        "stress_13",
+        "stress_14",
+        "stress_15",
+        "stress_16",
+        "stress_17",
+        "stress_18",
+        "stress_19",
+        "stress_20",
+        "stress_21",
+        "stress_22",
+        "stress_23",
+        "stress_24",
+        "stress_25",
+        "stress_26",
+        "stress_27",
+        "stress_28",
+        "stress_29",
+        "stress_30",
+        "stress_31",
+        "stress_32",
+        "stress_33",
+        "stress_34",
+        "stress_35",
+        "stress_36",
+        "stress_37",
+        "stress_38",
+        "stress_39",
+        "stress_40",
+        "stress_41",
+        "stress_42",
+        "stress_43",
+        "stress_44",
+        "stress_45",
+        "stress_46",
+        "stress_47",
+        "stress_48",
+        "stress_49",
+        "stress_50",
+        "stress_51",
+        "stress_52",
+        "stress_53",
+        "stress_54",
+        "stress_55",
+        "stress_56",
+        "stress_57",
+        "stress_58",
+        "stress_59",
+        "stress_60",
+        "stress_61",
+        "stress_62",
+        "stress_63",
+        "stress_64",
+        "stress_65",
+        "stress_66",
+        "stress_67",
+        "stress_68",
+        "stress_69",
+        "stress_70",
+        "stress_71",
+        "stress_72",
+        "stress_73",
+        "stress_74",
+        "stress_75",
+        "stress_76",
+        "stress_77",
+        "stress_78",
+        "stress_79",
+        "stress_80",
+        "stress_81",
+        "stress_82",
+        "stress_83",
+        "stress_84",
+        "stress_85",
+        "stress_86",
+        "stress_87",
+        "stress_88",
+        "stress_89",
+        "stress_90",
+        "stress_91",
+        "stress_92",
+        "stress_93",
+        "stress_94",
+        "stress_95",
+        "stress_96"
+      ],
+      "operation": "maximum",
+      "unit": "MPa",
+      "extreme_low": -500,
+      "extreme_high": 500
+    }
+  ],
+  "models": [
+    {
+      "id": "thermal_assumed",
+      "young_mpa": 170000,
+      "expansion_per_k": 1.35e-05,
+      "restraint": 0.5,
+      "young_relative_uncertainty": 0.1,
+      "expansion_relative_uncertainty": 0.1,
+      "restraint_uncertainty": 0.2,
+      "version": "research-1",
+      "basis": "合成科研假设：E=170 GPa, alpha=13.5e-6/K, 约束系数0.5；区间为敏感性边界，非统计置信区间。",
+      "reference_urls": []
+    }
+  ],
+  "storage": {
+    "primary_path": "D:/HTSG/primary",
+    "emergency_path": "C:/HTSG/emergency",
+    "cleanup_enabled": true,
+    "cleanup_stop": 0.8
+  },
+  "ui": {
+    "stations": [
+      {
+        "id": "S01",
+        "label": "H1 应变测点",
+        "x": 25,
+        "y": 15,
+        "strain": "strain_01",
+        "temperature": "temp_outer_01",
+        "inner_temperature": "temp_inner_01",
+        "stress": "stress_01",
+        "delta_temperature": "delta_t_01",
+        "strain_change": "strain_change_01"
+      },
+      {
+        "id": "S02",
+        "label": "H2 应变测点",
+        "x": 75,
+        "y": 15,
+        "strain": "strain_02",
+        "temperature": "temp_outer_02",
+        "inner_temperature": "temp_inner_02",
+        "stress": "stress_02",
+        "delta_temperature": "delta_t_02",
+        "strain_change": "strain_change_02"
+      },
+      {
+        "id": "S03",
+        "label": "H3 应变测点",
+        "x": 25,
+        "y": 35,
+        "strain": "strain_03",
+        "temperature": "temp_outer_03",
+        "inner_temperature": "temp_inner_03",
+        "stress": "stress_03",
+        "delta_temperature": "delta_t_03",
+        "strain_change": "strain_change_03"
+      },
+      {
+        "id": "S04",
+        "label": "H4 应变测点",
+        "x": 75,
+        "y": 35,
+        "strain": "strain_04",
+        "temperature": "temp_outer_04",
+        "inner_temperature": "temp_inner_04",
+        "stress": "stress_04",
+        "delta_temperature": "delta_t_04",
+        "strain_change": "strain_change_04"
+      },
+      {
+        "id": "S05",
+        "label": "H5 应变测点",
+        "x": 25,
+        "y": 55,
+        "strain": "strain_05",
+        "temperature": "temp_outer_05",
+        "inner_temperature": "temp_inner_05",
+        "stress": "stress_05",
+        "delta_temperature": "delta_t_05",
+        "strain_change": "strain_change_05"
+      },
+      {
+        "id": "S06",
+        "label": "H6 应变测点",
+        "x": 75,
+        "y": 55,
+        "strain": "strain_06",
+        "temperature": "temp_outer_06",
+        "inner_temperature": "temp_inner_06",
+        "stress": "stress_06",
+        "delta_temperature": "delta_t_06",
+        "strain_change": "strain_change_06"
+      },
+      {
+        "id": "S07",
+        "label": "H7 应变测点",
+        "x": 25,
+        "y": 75,
+        "strain": "strain_07",
+        "temperature": "temp_outer_07",
+        "inner_temperature": "temp_inner_07",
+        "stress": "stress_07",
+        "delta_temperature": "delta_t_07",
+        "strain_change": "strain_change_07"
+      },
+      {
+        "id": "S08",
+        "label": "H8 应变测点",
+        "x": 75,
+        "y": 75,
+        "strain": "strain_08",
+        "temperature": "temp_outer_08",
+        "inner_temperature": "temp_inner_08",
+        "stress": "stress_08",
+        "delta_temperature": "delta_t_08",
+        "strain_change": "strain_change_08"
+      }
+    ],
+    "process_points": [
+      "load_mw",
+      "waterwall_flow",
+      "main_steam_flow",
+      "main_steam_pressure",
+      "feedwater_temperature",
+      "reheat_temperature",
+      "working_fluid_temperature",
+      "furnace_pressure"
+    ],
+    "precision": 2,
+    "point_labels": {
+      "temp_inner_01": "H1 温度组01 内壁温度",
+      "temp_outer_01": "H1 温度组01 外壁温度",
+      "delta_t_01": "H1 温度组01 内外壁温差",
+      "stress_01": "H1 温度组01 热应力估算",
+      "bridge_mvv_01": "H1 电桥原始信号",
+      "strain_01": "H1 换算应变",
+      "strain_change_01": "H1 应变变化量",
+      "temp_inner_02": "H2 温度组01 内壁温度",
+      "temp_outer_02": "H2 温度组01 外壁温度",
+      "delta_t_02": "H2 温度组01 内外壁温差",
+      "stress_02": "H2 温度组01 热应力估算",
+      "bridge_mvv_02": "H2 电桥原始信号",
+      "strain_02": "H2 换算应变",
+      "strain_change_02": "H2 应变变化量",
+      "temp_inner_03": "H3 温度组01 内壁温度",
+      "temp_outer_03": "H3 温度组01 外壁温度",
+      "delta_t_03": "H3 温度组01 内外壁温差",
+      "stress_03": "H3 温度组01 热应力估算",
+      "bridge_mvv_03": "H3 电桥原始信号",
+      "strain_03": "H3 换算应变",
+      "strain_change_03": "H3 应变变化量",
+      "temp_inner_04": "H4 温度组01 内壁温度",
+      "temp_outer_04": "H4 温度组01 外壁温度",
+      "delta_t_04": "H4 温度组01 内外壁温差",
+      "stress_04": "H4 温度组01 热应力估算",
+      "bridge_mvv_04": "H4 电桥原始信号",
+      "strain_04": "H4 换算应变",
+      "strain_change_04": "H4 应变变化量",
+      "temp_inner_05": "H5 温度组01 内壁温度",
+      "temp_outer_05": "H5 温度组01 外壁温度",
+      "delta_t_05": "H5 温度组01 内外壁温差",
+      "stress_05": "H5 温度组01 热应力估算",
+      "bridge_mvv_05": "H5 电桥原始信号",
+      "strain_05": "H5 换算应变",
+      "strain_change_05": "H5 应变变化量",
+      "temp_inner_06": "H6 温度组01 内壁温度",
+      "temp_outer_06": "H6 温度组01 外壁温度",
+      "delta_t_06": "H6 温度组01 内外壁温差",
+      "stress_06": "H6 温度组01 热应力估算",
+      "bridge_mvv_06": "H6 电桥原始信号",
+      "strain_06": "H6 换算应变",
+      "strain_change_06": "H6 应变变化量",
+      "temp_inner_07": "H7 温度组01 内壁温度",
+      "temp_outer_07": "H7 温度组01 外壁温度",
+      "delta_t_07": "H7 温度组01 内外壁温差",
+      "stress_07": "H7 温度组01 热应力估算",
+      "bridge_mvv_07": "H7 电桥原始信号",
+      "strain_07": "H7 换算应变",
+      "strain_change_07": "H7 应变变化量",
+      "temp_inner_08": "H8 温度组01 内壁温度",
+      "temp_outer_08": "H8 温度组01 外壁温度",
+      "delta_t_08": "H8 温度组01 内外壁温差",
+      "stress_08": "H8 温度组01 热应力估算",
+      "bridge_mvv_08": "H8 电桥原始信号",
+      "strain_08": "H8 换算应变",
+      "strain_change_08": "H8 应变变化量",
+      "temp_inner_09": "H1 温度组02 内壁温度",
+      "temp_outer_09": "H1 温度组02 外壁温度",
+      "delta_t_09": "H1 温度组02 内外壁温差",
+      "stress_09": "H1 温度组02 热应力估算",
+      "temp_inner_10": "H2 温度组02 内壁温度",
+      "temp_outer_10": "H2 温度组02 外壁温度",
+      "delta_t_10": "H2 温度组02 内外壁温差",
+      "stress_10": "H2 温度组02 热应力估算",
+      "temp_inner_11": "H3 温度组02 内壁温度",
+      "temp_outer_11": "H3 温度组02 外壁温度",
+      "delta_t_11": "H3 温度组02 内外壁温差",
+      "stress_11": "H3 温度组02 热应力估算",
+      "temp_inner_12": "H4 温度组02 内壁温度",
+      "temp_outer_12": "H4 温度组02 外壁温度",
+      "delta_t_12": "H4 温度组02 内外壁温差",
+      "stress_12": "H4 温度组02 热应力估算",
+      "temp_inner_13": "H5 温度组02 内壁温度",
+      "temp_outer_13": "H5 温度组02 外壁温度",
+      "delta_t_13": "H5 温度组02 内外壁温差",
+      "stress_13": "H5 温度组02 热应力估算",
+      "temp_inner_14": "H6 温度组02 内壁温度",
+      "temp_outer_14": "H6 温度组02 外壁温度",
+      "delta_t_14": "H6 温度组02 内外壁温差",
+      "stress_14": "H6 温度组02 热应力估算",
+      "temp_inner_15": "H7 温度组02 内壁温度",
+      "temp_outer_15": "H7 温度组02 外壁温度",
+      "delta_t_15": "H7 温度组02 内外壁温差",
+      "stress_15": "H7 温度组02 热应力估算",
+      "temp_inner_16": "H8 温度组02 内壁温度",
+      "temp_outer_16": "H8 温度组02 外壁温度",
+      "delta_t_16": "H8 温度组02 内外壁温差",
+      "stress_16": "H8 温度组02 热应力估算",
+      "temp_inner_17": "H1 温度组03 内壁温度",
+      "temp_outer_17": "H1 温度组03 外壁温度",
+      "delta_t_17": "H1 温度组03 内外壁温差",
+      "stress_17": "H1 温度组03 热应力估算",
+      "temp_inner_18": "H2 温度组03 内壁温度",
+      "temp_outer_18": "H2 温度组03 外壁温度",
+      "delta_t_18": "H2 温度组03 内外壁温差",
+      "stress_18": "H2 温度组03 热应力估算",
+      "temp_inner_19": "H3 温度组03 内壁温度",
+      "temp_outer_19": "H3 温度组03 外壁温度",
+      "delta_t_19": "H3 温度组03 内外壁温差",
+      "stress_19": "H3 温度组03 热应力估算",
+      "temp_inner_20": "H4 温度组03 内壁温度",
+      "temp_outer_20": "H4 温度组03 外壁温度",
+      "delta_t_20": "H4 温度组03 内外壁温差",
+      "stress_20": "H4 温度组03 热应力估算",
+      "temp_inner_21": "H5 温度组03 内壁温度",
+      "temp_outer_21": "H5 温度组03 外壁温度",
+      "delta_t_21": "H5 温度组03 内外壁温差",
+      "stress_21": "H5 温度组03 热应力估算",
+      "temp_inner_22": "H6 温度组03 内壁温度",
+      "temp_outer_22": "H6 温度组03 外壁温度",
+      "delta_t_22": "H6 温度组03 内外壁温差",
+      "stress_22": "H6 温度组03 热应力估算",
+      "temp_inner_23": "H7 温度组03 内壁温度",
+      "temp_outer_23": "H7 温度组03 外壁温度",
+      "delta_t_23": "H7 温度组03 内外壁温差",
+      "stress_23": "H7 温度组03 热应力估算",
+      "temp_inner_24": "H8 温度组03 内壁温度",
+      "temp_outer_24": "H8 温度组03 外壁温度",
+      "delta_t_24": "H8 温度组03 内外壁温差",
+      "stress_24": "H8 温度组03 热应力估算",
+      "temp_inner_25": "H1 温度组04 内壁温度",
+      "temp_outer_25": "H1 温度组04 外壁温度",
+      "delta_t_25": "H1 温度组04 内外壁温差",
+      "stress_25": "H1 温度组04 热应力估算",
+      "temp_inner_26": "H2 温度组04 内壁温度",
+      "temp_outer_26": "H2 温度组04 外壁温度",
+      "delta_t_26": "H2 温度组04 内外壁温差",
+      "stress_26": "H2 温度组04 热应力估算",
+      "temp_inner_27": "H3 温度组04 内壁温度",
+      "temp_outer_27": "H3 温度组04 外壁温度",
+      "delta_t_27": "H3 温度组04 内外壁温差",
+      "stress_27": "H3 温度组04 热应力估算",
+      "temp_inner_28": "H4 温度组04 内壁温度",
+      "temp_outer_28": "H4 温度组04 外壁温度",
+      "delta_t_28": "H4 温度组04 内外壁温差",
+      "stress_28": "H4 温度组04 热应力估算",
+      "temp_inner_29": "H5 温度组04 内壁温度",
+      "temp_outer_29": "H5 温度组04 外壁温度",
+      "delta_t_29": "H5 温度组04 内外壁温差",
+      "stress_29": "H5 温度组04 热应力估算",
+      "temp_inner_30": "H6 温度组04 内壁温度",
+      "temp_outer_30": "H6 温度组04 外壁温度",
+      "delta_t_30": "H6 温度组04 内外壁温差",
+      "stress_30": "H6 温度组04 热应力估算",
+      "temp_inner_31": "H7 温度组04 内壁温度",
+      "temp_outer_31": "H7 温度组04 外壁温度",
+      "delta_t_31": "H7 温度组04 内外壁温差",
+      "stress_31": "H7 温度组04 热应力估算",
+      "temp_inner_32": "H8 温度组04 内壁温度",
+      "temp_outer_32": "H8 温度组04 外壁温度",
+      "delta_t_32": "H8 温度组04 内外壁温差",
+      "stress_32": "H8 温度组04 热应力估算",
+      "temp_inner_33": "H1 温度组05 内壁温度",
+      "temp_outer_33": "H1 温度组05 外壁温度",
+      "delta_t_33": "H1 温度组05 内外壁温差",
+      "stress_33": "H1 温度组05 热应力估算",
+      "temp_inner_34": "H2 温度组05 内壁温度",
+      "temp_outer_34": "H2 温度组05 外壁温度",
+      "delta_t_34": "H2 温度组05 内外壁温差",
+      "stress_34": "H2 温度组05 热应力估算",
+      "temp_inner_35": "H3 温度组05 内壁温度",
+      "temp_outer_35": "H3 温度组05 外壁温度",
+      "delta_t_35": "H3 温度组05 内外壁温差",
+      "stress_35": "H3 温度组05 热应力估算",
+      "temp_inner_36": "H4 温度组05 内壁温度",
+      "temp_outer_36": "H4 温度组05 外壁温度",
+      "delta_t_36": "H4 温度组05 内外壁温差",
+      "stress_36": "H4 温度组05 热应力估算",
+      "temp_inner_37": "H5 温度组05 内壁温度",
+      "temp_outer_37": "H5 温度组05 外壁温度",
+      "delta_t_37": "H5 温度组05 内外壁温差",
+      "stress_37": "H5 温度组05 热应力估算",
+      "temp_inner_38": "H6 温度组05 内壁温度",
+      "temp_outer_38": "H6 温度组05 外壁温度",
+      "delta_t_38": "H6 温度组05 内外壁温差",
+      "stress_38": "H6 温度组05 热应力估算",
+      "temp_inner_39": "H7 温度组05 内壁温度",
+      "temp_outer_39": "H7 温度组05 外壁温度",
+      "delta_t_39": "H7 温度组05 内外壁温差",
+      "stress_39": "H7 温度组05 热应力估算",
+      "temp_inner_40": "H8 温度组05 内壁温度",
+      "temp_outer_40": "H8 温度组05 外壁温度",
+      "delta_t_40": "H8 温度组05 内外壁温差",
+      "stress_40": "H8 温度组05 热应力估算",
+      "temp_inner_41": "H1 温度组06 内壁温度",
+      "temp_outer_41": "H1 温度组06 外壁温度",
+      "delta_t_41": "H1 温度组06 内外壁温差",
+      "stress_41": "H1 温度组06 热应力估算",
+      "temp_inner_42": "H2 温度组06 内壁温度",
+      "temp_outer_42": "H2 温度组06 外壁温度",
+      "delta_t_42": "H2 温度组06 内外壁温差",
+      "stress_42": "H2 温度组06 热应力估算",
+      "temp_inner_43": "H3 温度组06 内壁温度",
+      "temp_outer_43": "H3 温度组06 外壁温度",
+      "delta_t_43": "H3 温度组06 内外壁温差",
+      "stress_43": "H3 温度组06 热应力估算",
+      "temp_inner_44": "H4 温度组06 内壁温度",
+      "temp_outer_44": "H4 温度组06 外壁温度",
+      "delta_t_44": "H4 温度组06 内外壁温差",
+      "stress_44": "H4 温度组06 热应力估算",
+      "temp_inner_45": "H5 温度组06 内壁温度",
+      "temp_outer_45": "H5 温度组06 外壁温度",
+      "delta_t_45": "H5 温度组06 内外壁温差",
+      "stress_45": "H5 温度组06 热应力估算",
+      "temp_inner_46": "H6 温度组06 内壁温度",
+      "temp_outer_46": "H6 温度组06 外壁温度",
+      "delta_t_46": "H6 温度组06 内外壁温差",
+      "stress_46": "H6 温度组06 热应力估算",
+      "temp_inner_47": "H7 温度组06 内壁温度",
+      "temp_outer_47": "H7 温度组06 外壁温度",
+      "delta_t_47": "H7 温度组06 内外壁温差",
+      "stress_47": "H7 温度组06 热应力估算",
+      "temp_inner_48": "H8 温度组06 内壁温度",
+      "temp_outer_48": "H8 温度组06 外壁温度",
+      "delta_t_48": "H8 温度组06 内外壁温差",
+      "stress_48": "H8 温度组06 热应力估算",
+      "temp_inner_49": "H1 温度组07 内壁温度",
+      "temp_outer_49": "H1 温度组07 外壁温度",
+      "delta_t_49": "H1 温度组07 内外壁温差",
+      "stress_49": "H1 温度组07 热应力估算",
+      "temp_inner_50": "H2 温度组07 内壁温度",
+      "temp_outer_50": "H2 温度组07 外壁温度",
+      "delta_t_50": "H2 温度组07 内外壁温差",
+      "stress_50": "H2 温度组07 热应力估算",
+      "temp_inner_51": "H3 温度组07 内壁温度",
+      "temp_outer_51": "H3 温度组07 外壁温度",
+      "delta_t_51": "H3 温度组07 内外壁温差",
+      "stress_51": "H3 温度组07 热应力估算",
+      "temp_inner_52": "H4 温度组07 内壁温度",
+      "temp_outer_52": "H4 温度组07 外壁温度",
+      "delta_t_52": "H4 温度组07 内外壁温差",
+      "stress_52": "H4 温度组07 热应力估算",
+      "temp_inner_53": "H5 温度组07 内壁温度",
+      "temp_outer_53": "H5 温度组07 外壁温度",
+      "delta_t_53": "H5 温度组07 内外壁温差",
+      "stress_53": "H5 温度组07 热应力估算",
+      "temp_inner_54": "H6 温度组07 内壁温度",
+      "temp_outer_54": "H6 温度组07 外壁温度",
+      "delta_t_54": "H6 温度组07 内外壁温差",
+      "stress_54": "H6 温度组07 热应力估算",
+      "temp_inner_55": "H7 温度组07 内壁温度",
+      "temp_outer_55": "H7 温度组07 外壁温度",
+      "delta_t_55": "H7 温度组07 内外壁温差",
+      "stress_55": "H7 温度组07 热应力估算",
+      "temp_inner_56": "H8 温度组07 内壁温度",
+      "temp_outer_56": "H8 温度组07 外壁温度",
+      "delta_t_56": "H8 温度组07 内外壁温差",
+      "stress_56": "H8 温度组07 热应力估算",
+      "temp_inner_57": "H1 温度组08 内壁温度",
+      "temp_outer_57": "H1 温度组08 外壁温度",
+      "delta_t_57": "H1 温度组08 内外壁温差",
+      "stress_57": "H1 温度组08 热应力估算",
+      "temp_inner_58": "H2 温度组08 内壁温度",
+      "temp_outer_58": "H2 温度组08 外壁温度",
+      "delta_t_58": "H2 温度组08 内外壁温差",
+      "stress_58": "H2 温度组08 热应力估算",
+      "temp_inner_59": "H3 温度组08 内壁温度",
+      "temp_outer_59": "H3 温度组08 外壁温度",
+      "delta_t_59": "H3 温度组08 内外壁温差",
+      "stress_59": "H3 温度组08 热应力估算",
+      "temp_inner_60": "H4 温度组08 内壁温度",
+      "temp_outer_60": "H4 温度组08 外壁温度",
+      "delta_t_60": "H4 温度组08 内外壁温差",
+      "stress_60": "H4 温度组08 热应力估算",
+      "temp_inner_61": "H5 温度组08 内壁温度",
+      "temp_outer_61": "H5 温度组08 外壁温度",
+      "delta_t_61": "H5 温度组08 内外壁温差",
+      "stress_61": "H5 温度组08 热应力估算",
+      "temp_inner_62": "H6 温度组08 内壁温度",
+      "temp_outer_62": "H6 温度组08 外壁温度",
+      "delta_t_62": "H6 温度组08 内外壁温差",
+      "stress_62": "H6 温度组08 热应力估算",
+      "temp_inner_63": "H7 温度组08 内壁温度",
+      "temp_outer_63": "H7 温度组08 外壁温度",
+      "delta_t_63": "H7 温度组08 内外壁温差",
+      "stress_63": "H7 温度组08 热应力估算",
+      "temp_inner_64": "H8 温度组08 内壁温度",
+      "temp_outer_64": "H8 温度组08 外壁温度",
+      "delta_t_64": "H8 温度组08 内外壁温差",
+      "stress_64": "H8 温度组08 热应力估算",
+      "temp_inner_65": "H1 温度组09 内壁温度",
+      "temp_outer_65": "H1 温度组09 外壁温度",
+      "delta_t_65": "H1 温度组09 内外壁温差",
+      "stress_65": "H1 温度组09 热应力估算",
+      "temp_inner_66": "H2 温度组09 内壁温度",
+      "temp_outer_66": "H2 温度组09 外壁温度",
+      "delta_t_66": "H2 温度组09 内外壁温差",
+      "stress_66": "H2 温度组09 热应力估算",
+      "temp_inner_67": "H3 温度组09 内壁温度",
+      "temp_outer_67": "H3 温度组09 外壁温度",
+      "delta_t_67": "H3 温度组09 内外壁温差",
+      "stress_67": "H3 温度组09 热应力估算",
+      "temp_inner_68": "H4 温度组09 内壁温度",
+      "temp_outer_68": "H4 温度组09 外壁温度",
+      "delta_t_68": "H4 温度组09 内外壁温差",
+      "stress_68": "H4 温度组09 热应力估算",
+      "temp_inner_69": "H5 温度组09 内壁温度",
+      "temp_outer_69": "H5 温度组09 外壁温度",
+      "delta_t_69": "H5 温度组09 内外壁温差",
+      "stress_69": "H5 温度组09 热应力估算",
+      "temp_inner_70": "H6 温度组09 内壁温度",
+      "temp_outer_70": "H6 温度组09 外壁温度",
+      "delta_t_70": "H6 温度组09 内外壁温差",
+      "stress_70": "H6 温度组09 热应力估算",
+      "temp_inner_71": "H7 温度组09 内壁温度",
+      "temp_outer_71": "H7 温度组09 外壁温度",
+      "delta_t_71": "H7 温度组09 内外壁温差",
+      "stress_71": "H7 温度组09 热应力估算",
+      "temp_inner_72": "H8 温度组09 内壁温度",
+      "temp_outer_72": "H8 温度组09 外壁温度",
+      "delta_t_72": "H8 温度组09 内外壁温差",
+      "stress_72": "H8 温度组09 热应力估算",
+      "temp_inner_73": "H1 温度组10 内壁温度",
+      "temp_outer_73": "H1 温度组10 外壁温度",
+      "delta_t_73": "H1 温度组10 内外壁温差",
+      "stress_73": "H1 温度组10 热应力估算",
+      "temp_inner_74": "H2 温度组10 内壁温度",
+      "temp_outer_74": "H2 温度组10 外壁温度",
+      "delta_t_74": "H2 温度组10 内外壁温差",
+      "stress_74": "H2 温度组10 热应力估算",
+      "temp_inner_75": "H3 温度组10 内壁温度",
+      "temp_outer_75": "H3 温度组10 外壁温度",
+      "delta_t_75": "H3 温度组10 内外壁温差",
+      "stress_75": "H3 温度组10 热应力估算",
+      "temp_inner_76": "H4 温度组10 内壁温度",
+      "temp_outer_76": "H4 温度组10 外壁温度",
+      "delta_t_76": "H4 温度组10 内外壁温差",
+      "stress_76": "H4 温度组10 热应力估算",
+      "temp_inner_77": "H5 温度组10 内壁温度",
+      "temp_outer_77": "H5 温度组10 外壁温度",
+      "delta_t_77": "H5 温度组10 内外壁温差",
+      "stress_77": "H5 温度组10 热应力估算",
+      "temp_inner_78": "H6 温度组10 内壁温度",
+      "temp_outer_78": "H6 温度组10 外壁温度",
+      "delta_t_78": "H6 温度组10 内外壁温差",
+      "stress_78": "H6 温度组10 热应力估算",
+      "temp_inner_79": "H7 温度组10 内壁温度",
+      "temp_outer_79": "H7 温度组10 外壁温度",
+      "delta_t_79": "H7 温度组10 内外壁温差",
+      "stress_79": "H7 温度组10 热应力估算",
+      "temp_inner_80": "H8 温度组10 内壁温度",
+      "temp_outer_80": "H8 温度组10 外壁温度",
+      "delta_t_80": "H8 温度组10 内外壁温差",
+      "stress_80": "H8 温度组10 热应力估算",
+      "temp_inner_81": "H1 温度组11 内壁温度",
+      "temp_outer_81": "H1 温度组11 外壁温度",
+      "delta_t_81": "H1 温度组11 内外壁温差",
+      "stress_81": "H1 温度组11 热应力估算",
+      "temp_inner_82": "H2 温度组11 内壁温度",
+      "temp_outer_82": "H2 温度组11 外壁温度",
+      "delta_t_82": "H2 温度组11 内外壁温差",
+      "stress_82": "H2 温度组11 热应力估算",
+      "temp_inner_83": "H3 温度组11 内壁温度",
+      "temp_outer_83": "H3 温度组11 外壁温度",
+      "delta_t_83": "H3 温度组11 内外壁温差",
+      "stress_83": "H3 温度组11 热应力估算",
+      "temp_inner_84": "H4 温度组11 内壁温度",
+      "temp_outer_84": "H4 温度组11 外壁温度",
+      "delta_t_84": "H4 温度组11 内外壁温差",
+      "stress_84": "H4 温度组11 热应力估算",
+      "temp_inner_85": "H5 温度组11 内壁温度",
+      "temp_outer_85": "H5 温度组11 外壁温度",
+      "delta_t_85": "H5 温度组11 内外壁温差",
+      "stress_85": "H5 温度组11 热应力估算",
+      "temp_inner_86": "H6 温度组11 内壁温度",
+      "temp_outer_86": "H6 温度组11 外壁温度",
+      "delta_t_86": "H6 温度组11 内外壁温差",
+      "stress_86": "H6 温度组11 热应力估算",
+      "temp_inner_87": "H7 温度组11 内壁温度",
+      "temp_outer_87": "H7 温度组11 外壁温度",
+      "delta_t_87": "H7 温度组11 内外壁温差",
+      "stress_87": "H7 温度组11 热应力估算",
+      "temp_inner_88": "H8 温度组11 内壁温度",
+      "temp_outer_88": "H8 温度组11 外壁温度",
+      "delta_t_88": "H8 温度组11 内外壁温差",
+      "stress_88": "H8 温度组11 热应力估算",
+      "temp_inner_89": "H1 温度组12 内壁温度",
+      "temp_outer_89": "H1 温度组12 外壁温度",
+      "delta_t_89": "H1 温度组12 内外壁温差",
+      "stress_89": "H1 温度组12 热应力估算",
+      "temp_inner_90": "H2 温度组12 内壁温度",
+      "temp_outer_90": "H2 温度组12 外壁温度",
+      "delta_t_90": "H2 温度组12 内外壁温差",
+      "stress_90": "H2 温度组12 热应力估算",
+      "temp_inner_91": "H3 温度组12 内壁温度",
+      "temp_outer_91": "H3 温度组12 外壁温度",
+      "delta_t_91": "H3 温度组12 内外壁温差",
+      "stress_91": "H3 温度组12 热应力估算",
+      "temp_inner_92": "H4 温度组12 内壁温度",
+      "temp_outer_92": "H4 温度组12 外壁温度",
+      "delta_t_92": "H4 温度组12 内外壁温差",
+      "stress_92": "H4 温度组12 热应力估算",
+      "temp_inner_93": "H5 温度组12 内壁温度",
+      "temp_outer_93": "H5 温度组12 外壁温度",
+      "delta_t_93": "H5 温度组12 内外壁温差",
+      "stress_93": "H5 温度组12 热应力估算",
+      "temp_inner_94": "H6 温度组12 内壁温度",
+      "temp_outer_94": "H6 温度组12 外壁温度",
+      "delta_t_94": "H6 温度组12 内外壁温差",
+      "stress_94": "H6 温度组12 热应力估算",
+      "temp_inner_95": "H7 温度组12 内壁温度",
+      "temp_outer_95": "H7 温度组12 外壁温度",
+      "delta_t_95": "H7 温度组12 内外壁温差",
+      "stress_95": "H7 温度组12 热应力估算",
+      "temp_inner_96": "H8 温度组12 内壁温度",
+      "temp_outer_96": "H8 温度组12 外壁温度",
+      "delta_t_96": "H8 温度组12 内外壁温差",
+      "stress_96": "H8 温度组12 热应力估算",
+      "load_mw": "机组负荷",
+      "waterwall_flow": "水冷壁工质流量",
+      "main_steam_flow": "过热蒸汽流量",
+      "main_steam_pressure": "主蒸汽压力",
+      "feedwater_temperature": "给水温度",
+      "reheat_temperature": "再热蒸汽温度",
+      "working_fluid_temperature": "工质温度",
+      "furnace_pressure": "炉膛负压",
+      "thermal_stress_peak": "热应力估算峰值"
+    }
+  }
+}

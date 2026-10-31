@@ -13,7 +13,7 @@ from dataclasses import dataclass, field, replace
 from uuid import uuid4
 
 from . import records as rec
-from .commlog import CommLog, clean_detail
+from .commlog import DETAIL_LIMIT, CommLog, clean_detail
 from .config import Settings, fault_rule
 from .derive import Input, Outcome, Topology, evaluate, unavailable
 from .extremes import is_extreme
@@ -179,6 +179,7 @@ class Owner:
         self.fault_loss: dict[str, dict] = {}  # per source: faults the full buffer refused
         self.fault_rejected_total = 0
         self._multi: set[str] = set()
+        self._overflowed: list[str] = []  # points of the batch just taken whose server queue overflowed
         self.order = 0
         self.commlog = CommLog(self.run_id)  # this run's communication log (§15.1): in memory, appended here only
         self.health = {
@@ -192,6 +193,7 @@ class Owner:
             "archive_lost_groups": 0,
             "archive_recoveries": 0,
             "pending_overflows": 0,
+            "item_overflows": 0,  # OPC UA notifications whose monitored-item queue had discarded values (2026-10-30)
             "clock_jumps": 0,
             "clock_markers_dropped": 0,
         }
@@ -552,6 +554,7 @@ class Owner:
             if batch.items:
                 s.batch_seq += 1
                 observations, _ = self._ingest(s, batch)
+                states.extend(self._overflow_states(s, batch))
             results = self._recompute(s, batch, list(s.point_ids))  # validity returned: revisit dependents
             self._fault_restart(s, mono)  # §11: timing restarts from the processed final state
         mark = self._watermark_state(s, wall, mono)
@@ -809,6 +812,20 @@ class Owner:
         self.commlog.end_rounds(source_id, "NEW_GENERATION", wall, mono)  # round failures never outlive their generation
         self._log(s, "NEW_GENERATION", reason, wall, mono)  # connected: not the same thing as communicating again
 
+    def items_refused(self, source_id: str, gen: int, point_ids, wall: float, mono: float):
+        """The server refused these monitored items of `gen`, and took the others (2026-10-30): only these points are
+        unavailable - and every derived value that needs one of them - until the next subscription asks again.  Stored, so
+        that history says "not collected" for them in this segment, not "unchanged"."""
+        s = self.sources[source_id]
+        if gen != s.conn_gen:
+            return
+        points = [pid for pid in point_ids if pid in s.point_ids]
+        for pid in points:
+            self.points[pid] = PointState(reason="ITEM_REFUSED")
+            self.tracker.cancel(pid)
+        self._log(s, "ITEMS_REFUSED", "SERVER_REFUSED", wall, mono, failure=True, detail=", ".join(points)[:DETAIL_LIMIT])
+        self._emit(rec.GROUP_STATE, s, wall, states=[self._state(s, "ITEMS_REFUSED", wall, mono, points=points)])
+
     def begin_waiting(self, source_id: str, gen: int, mono: float):
         """CreateSubscription has returned: from now the 3 s / 6 s checks of this generation run (§11).
 
@@ -915,8 +932,22 @@ class Owner:
             versions.setdefault(obs.point_id, set()).add((obs.value, obs.quality))
             if obs.point_id in self.rules:  # each version in batch order: a valid normal one clears the clock
                 self.tracker.observe(obs.point_id, self._valid_value(obs.point_id), obs.received_mono)
-        self._multi = {pid for pid, seen in versions.items() if len(seen) > 1}
+        # an OPC UA queue overflow (2026-10-30): the value delivered is the latest and right, the ones between were dropped;
+        # like a second version (§8.2) the fault clock of that point - and of what is derived from it - starts again here
+        self._overflowed = [o.point_id for o in observations if o.status_code is not None and rec.is_overflow(o.status_code)]
+        for pid in self._overflowed:
+            if pid in self.rules:
+                self.tracker.cancel(pid)
+                self.tracker.observe(pid, self._valid_value(pid), batch.mono)
+        self.health["item_overflows"] += len(self._overflowed)
+        self._multi = {pid for pid, seen in versions.items() if len(seen) > 1} | set(self._overflowed)
         return observations, touched
+
+    def _overflow_states(self, s: SourceState, batch) -> list[rec.StateRecord]:
+        """The points of the batch just taken whose server queue had dropped values: on record, nothing rebuilt."""
+        if not self._overflowed:
+            return []
+        return [self._state(s, "ITEM_OVERFLOW", batch.wall, batch.mono, points=list(dict.fromkeys(self._overflowed)))]
 
     def _accept_notification(self, s: SourceState, batch) -> bool:
         states = self._comm(s, batch.wall, batch.mono)
@@ -930,7 +961,7 @@ class Owner:
         s.batch_seq += 1
         observations, touched = self._ingest(s, batch)
         results = self._recompute(s, batch, touched)
-        self._emit(rec.GROUP_BATCH, s, batch.wall, observations, results, states)
+        self._emit(rec.GROUP_BATCH, s, batch.wall, observations, results, [*states, *self._overflow_states(s, batch)])
         return True
 
     def _accept_poll(self, s: SourceState, batch) -> bool:
@@ -994,7 +1025,10 @@ class Owner:
             if q.outcome == "OK":
                 self.commlog.round_ok(s.id, q.scope, batch.wall, batch.mono)
                 continue
-            event, reason = ("POLL_TIMEOUT", "NO_ANSWER") if q.outcome == "TIMEOUT" else ("POLL_EXCEPTION", f"EXCEPTION_CODE_{q.code}")
+            if q.outcome == "TIMEOUT":
+                event, reason = "POLL_TIMEOUT", "NO_ANSWER"
+            else:  # no code: the device answered fewer registers than asked
+                event, reason = "POLL_EXCEPTION", "INCOMPLETE_RESPONSE" if q.code is None else f"EXCEPTION_CODE_{q.code}"
             text, truncated = clean_detail(q.detail)
             self.commlog.round_failed(
                 s.id, s.conn_gen, event, reason, batch.wall, batch.mono,

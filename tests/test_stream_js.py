@@ -68,6 +68,8 @@ def test_a_reading_is_taken_whole_with_every_state_in_it_and_anything_else_is_re
         "no status": without("status"),
     }  # fmt: skip
     out = run_node(tmp_path, {"good": good, "damaged": variants})
-    assert out["taken"] == {"channels": views, "status": good["status"], "run": good["run_id"], "taken": good["taken_time"]}
+    # 修复轮13: where new groups go is taken with the rest; without an archive there is none
+    assert good["archive_target"] is None
+    assert out["taken"] == {"channels": views, "status": good["status"], "run": good["run_id"], "taken": good["taken_time"], "target": None}
     for name, verdict in out["damaged"].items():
         assert verdict == {"rejected": True, "unchanged": True}, name

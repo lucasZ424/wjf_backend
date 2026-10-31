@@ -97,3 +97,28 @@ def test_the_next_deletion_is_foreseen_from_the_buckets_of_the_last_seven_days(t
     per_day = forecast["bytes_per_day"]
     room = (cfg.storage.cleanup_start - 0.5) * 1000 * GIB
     assert abs(forecast["next_deletion"] - (now + room / per_day * DAY)) < 2 * DAY, "room to the start line / growth per day"
+
+
+def test_the_page_gets_both_volumes_and_the_lines_they_are_judged_by_and_an_unreadable_one_ends_nothing(tmp_path, pair):
+    """修复轮12 (终版 第15节 自检页“磁盘占用”): the self-check page had the database sizes but no volume - the one figure the
+    deletion and the emergency route are decided by.  A volume that cannot be read is said to be so; the round goes on."""
+    m, cfg = rig(tmp_path, pair, keep=10, full=0.5)
+    m.disk_usage.below, m.disk_usage.used["D:/b"] = 0.5, 0.25  # no bucket left: the "below" reading
+    m.cycle()
+    disk = m.snapshot.health["retention"]["disk"]
+    assert disk["primary"]["used_fraction"] == pytest.approx(0.5) and disk["primary"]["total"] == 1000 * GIB
+    assert disk["emergency"]["free"] == int(1000 * GIB * 0.75)
+    s = cfg.storage
+    assert (disk["cleanup_start"], disk["cleanup_stop"], disk["emergency_start"], disk["emergency_reserve_bytes"]) == (
+        s.cleanup_start, s.cleanup_stop, s.emergency_start, s.emergency_reserve_bytes)  # fmt: skip
+    reading = m.disk_usage
+
+    def gone(path):
+        if path == "D:/b":
+            raise OSError("the emergency volume is gone")
+        return reading(path)
+
+    m.disk_usage = gone
+    m.cycle()
+    disk = m.snapshot.health["retention"]["disk"]
+    assert disk["emergency"] is None and disk["primary"]["used_fraction"] == pytest.approx(0.5)

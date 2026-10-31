@@ -146,9 +146,11 @@ def test_install_builds_one_cluster_per_disk_writes_the_same_folders_into_the_co
             with psycopg.connect(connections[role], connect_timeout=10) as conn:
                 generation = conn.execute("SELECT value FROM htsg_meta WHERE key='schema_generation'").fetchone()[0]
                 data_dir = conn.execute("SHOW data_directory").fetchone()[0]
-                accounts = conn.execute("SELECT username, role FROM account").fetchall()
+                accounts = conn.execute("SELECT count(*) FROM account").fetchone()[0]
+                records = conn.execute("SELECT action, target FROM management_log").fetchall()
             assert generation == str(SCHEMA_GENERATION) and Path(data_dir) == folder / "pgdata"
-            assert accounts == ([("admin", "admin")] if role == "primary" else []), "the administrator is in the primary database too"
+            assert accounts == 0, "the account file is the only copy of the accounts (2026-10-30)"
+            assert records == ([("CREATE_ACCOUNT", "admin")] if role == "primary" else []), "the administrator's creation is on record"
         before = {p: p.read_bytes() for p in (tmp_path / "database.json", tmp_path / "production.json", tmp_path / "accounts.json", tmp_path / "initial-credentials.json", tmp_path / "admin-fallback.json")}
         deploy.install(inp, distinct_volumes)  # clusters running, files in place: nothing to do
         assert {p: p.read_bytes() for p in before} == before, "a second run rewrites nothing"

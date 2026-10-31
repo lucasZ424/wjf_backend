@@ -8,7 +8,7 @@
 
 ## 是什么
 
-**页面纠偏（2026-10-13，按用户最新指示）：** 目标仍为系统总览、水冷壁应变场、热应力分析、历史查询、系统自检、通信·日志、系统管理·权限七页。此前已移除数字孪生页及其专属接口；2026-10-14 起通信·日志页已实现并验收（执行记录 D44a–D44f），现为七页。本轮按用户授权完成通信页审核处置：采纳审核建议并补充语义限定，回写终版并拟定实施方案；具体选择由助手在授权范围内作出，见[审核处置](dev-docs/HTSG_V1_通信日志页设计审核_v0.1.md#review-disposition)、[终版第15节](dev-docs/HTSG_V1_终版设计_v1.0.md#15-前端页面)及[实施方案状态说明](dev-docs/HTSG_V1_开发实施方案_v1.0.md#page-contract-correction)。当日（10-13）只改文档、未实现通信页、未运行测试。既有错误页面集合的通过记录保留为历史事实；整套**连续**运行仍没有通过记录（分段运行 631 项全过，连续运行会随机挂住，见执行记录 H0、D44f 条目），最终 Capstone H 仍未关闭。
+**页面纠偏（2026-10-13，按用户最新指示）：** 目标仍为系统总览、水冷壁应变场、热应力分析、历史查询、系统自检、通信与日志、系统管理与权限七页。此前已移除数字孪生页及其专属接口；2026-10-14 起通信与日志页已实现并验收（执行记录 D44a–D44f），现为七页。本轮按用户授权完成通信页审核处置：采纳审核建议并补充语义限定，回写终版并拟定实施方案；具体选择由助手在授权范围内作出，见[审核处置](dev-docs/HTSG_V1_通信日志页设计审核_v0.1.md#review-disposition)、[终版第15节](dev-docs/HTSG_V1_终版设计_v1.0.md#15-前端页面)及[实施方案状态说明](dev-docs/HTSG_V1_开发实施方案_v1.0.md#page-contract-correction)。当日（10-13）只改文档、未实现通信页、未运行测试。既有错误页面集合的通过记录保留为历史事实；整套**连续**运行仍没有通过记录（分段运行 631 项全过，连续运行会随机挂住，见执行记录 H0、D44f 条目），最终 Capstone H 仍未关闭。
 
 Windows 单机监测后端和科研前端（七页）。后端主动读取一路 Modbus TCP（8 路 Bridge）和一路 OPC UA 订阅（200 个监控项），在 417 个可查询量（208 路输入、209 路派生量）上运行；浏览器不产生业务数值。热应力是温差—应力的研究代理量，不是实测应力。
 
@@ -44,7 +44,7 @@ py -3.13 -m venv .venv
 .\.venv\Scripts\python.exe scripts\bootstrap_db.py start      # 开发实例默认不启动；不启动则数据库用例超时；只建空库 htsg
 .\.venv\Scripts\python.exe scripts\bootstrap_db.py build      # 把两实例的 htsg 建到当前归档代（建表）；旧的帧式库或旧代的库会被拒绝
 .\.venv\Scripts\python.exe scripts\bootstrap_db.py new --name htsg_v6   # 另建一对当前代的新库，连接写入 .local\database-htsg_v6.json；原库与 .local\database.json 不动，核对后再手动切换
-.\.venv\Scripts\python.exe -m htsg.cli init-accounts         # 唯一管理员，写进主库和账户文件；现场由 deploy_databases.py install 完成
+.\.venv\Scripts\python.exe -m htsg.cli init-accounts         # 唯一管理员，写进账户文件，建立记录写进主库；现场由 deploy_databases.py install 完成
 .\scripts\run.ps1                                              # 默认 config/development.json，127.0.0.1:8000
 ```
 
@@ -58,6 +58,8 @@ py -3.13 -m venv .venv
 | `config/development.json` | 最小开发配置：一个 Modbus 源（127.0.0.1:15020）、两个演示点；进程内模拟源已取消 |
 | `config/production.template.json` | 空点表、禁用的真实源；填入现场资料后用 `htsg check --config ...` 校验 |
 | `config/production.example.json` | 填写示例：两个禁用的源、五个通道和一个派生量，演示寄存器与 NodeId 映射、上下限、回差、极值、比例偏移和无效值；地址与数值都是虚构的，照抄时须换成现场资料 |
+
+现场点表可以用 Excel 填写，再由[点表工具](tools/pointsheet/README.md)生成配置：未接入的点留空即可，依赖它们的派生量与界面测站自动去掉并列出。
 
 阈值字段：越过 `low`/`high`（严格小于/大于）开始计时，同方向持续 `timing.fault_confirm_seconds`（默认5秒）确认故障；确认后回到 `low + hysteresis_low` / `high − hysteresis_high` 以内才复归。`extreme_low`/`extreme_high` 以外的值标为极值、不参与计算。`invalid_values` 是设备约定的无效值，按换算前的原始值比较，读到即判为坏值。
 
@@ -74,12 +76,12 @@ HTTP 传 `Authorization: Bearer <username:token>`（凭据不放 URL），每个
 | `GET /live` | 存活检查，无敏感信息 |
 | `GET /`、`/static/*` | 科研前端（七页） |
 | `GET /api/me`、`/api/ui-config` | 当前身份；点表、派生量、模型、界面与时限配置 |
-| `GET /api/health` | 数据源与通信、每源重新同步次数与连续建连失败次数、归档路由与队列计数、实际协商的订阅参数、运行时状态；另含本次运行的通信日志与通信输入读数整表（通信·日志页使用，只读内存，不查数据库、不向设备发请求） |
+| `GET /api/health` | 数据源与通信、每源重新同步次数与连续建连失败次数、归档路由与队列计数、实际协商的订阅参数、运行时状态；另含本次运行的通信日志与通信输入读数整表（通信与日志页使用，只读内存，不查数据库、不向设备发请求） |
 | `GET /api/channels` | 可查询的 417 个量 |
 | `GET /api/replay` | 窗口内的全部实收与变化记录（含批次号、批内序号、来源、缺口、窗口起点保持值），跨库合并，单库不可读则标注部分可用；单次最多12个通道，超出返回 422（点故障时带出的固定模板见 `/api/ui-config` 的 `replay`） |
 | `GET /api/replay/basis/{result_id}` | 一个结果的输入依据 |
 | `GET /api/faults` | 已归档的故障记录，按确认时间倒序分页 |
-| `GET/POST /api/admin/accounts`、`DELETE /api/admin/accounts/{username}`、`POST /api/admin/password`、`GET /api/admin/audit` | 账户、管理员自己的口令与管理操作记录（仅管理员；只能建只读账户；变更先写主库，结果未确认时返回 503） |
+| `GET/POST /api/admin/accounts`、`DELETE /api/admin/accounts/{username}`、`POST /api/admin/password`、`GET /api/admin/audit` | 账户、管理员自己的口令与管理操作记录（仅管理员；只能建只读账户；管理操作记录写不进主库时变更不生效，返回 503） |
 | `GET /api/snapshot` | 当前完整状态：在状态所有者处一次同步读取 417 个通道（值、质量、有效性、观测时间与观测 ID、故障）及数据源状态，不查库、不缓存；页面每秒读取一次，距最后一次成功满 3 秒即标明中断 |
 
 这是全部的写入口：只读账户的创建与停用，以及管理员改自己的口令。只读用户看不到管理页的数据，对 `/api/admin/*` 得 403。
@@ -94,11 +96,13 @@ HTTP 传 `Authorization: Bearer <username:token>`（凭据不放 URL），每个
 
 ## 运行管理
 
+现场不装开发目录，装的是发布包：由 `tools\release\build_release.py` 从已提交的版本构建，只含运行所需文件与离线依赖，附 SHA-256 清单与[安装与运维说明](tools/release/安装与运维说明.md)。生产配置以 `config\production.base.json`（与模拟配置相同的派生量、测站与模型，地址留空）为基础，由点表工具生成。
+
 现场部署与无人值守用 `scripts\deploy_databases.py` 与 `scripts\supervise.py`，用法见各脚本开头的说明，过程记录见[修复轮01](dev-docs/HTSG_V1_修复轮01_存储路径失效与无人值守_v0.1.md)。被取代的旧脚本在 `scripts\history\`，只用于回滚。
 
 **停止与崩溃：** Ctrl+C／Ctrl+Break 是正常停止，进程先停采集、处理完已收批次、登记运行结束并写完提交队列（结束原因 `NORMAL`）。任务计划的“结束任务”或强行终止是硬杀，没有这一步：下次启动时，未结束的运行按各段已持久化的水位收尾（`ABNORMAL_EXIT`；没有水位的段取段起点），不猜测崩溃时刻；收尾只读小表，耗时不随崩溃运行的大小增长。
 
-**账户：** 每套部署只有一个管理员，由部署（`deploy_databases.py install` 或 `init-accounts`）写进主库和账户文件，初始凭据在 `.local/initial-credentials.json`（用户名、口令各占一行），交给业主离线保管，不留在现场电脑上；登录页分用户名、口令两栏。初始口令是永久有效的兜底凭据：它的哈希在账户文件旁的 `admin-fallback.json`，只由部署写；账户没核对上、改过或忘了口令时都可用它以管理员登录，文件读不了时只是没有兜底，日志提示。管理员在“系统管理·权限”页添加、停用只读用户，并可随时修改自己的口令。`.local/accounts.json` 只是主库账户表的本机副本，读不了或丢了都不阻止启动和采集，启动后按主库副本重写。没和主库核对上（主库读不了，或改账户的结果未确认）时除兜底凭据外谁也登录不了，维护周期每 `stats_interval`（默认60秒）重试，核对上即恢复，不用重启。主库和文件都没有账户时照常采集，日志提示运行 `init-accounts` 后重启。
+**账户：** 每套部署只有一个管理员，由部署（`deploy_databases.py install` 或 `init-accounts`）写进账户文件，建立记录写进主库，初始凭据在 `.local/initial-credentials.json`（用户名、口令各占一行），交给业主离线保管，不留在现场电脑上；登录页分用户名、口令两栏。初始口令是永久有效的兜底凭据：它的哈希在账户文件旁的 `admin-fallback.json`，只由部署写；账户文件读不了、改过或忘了口令时都可用它以管理员登录，兜底文件读不了时只是没有兜底，日志提示；已有兜底文件时部署不再新建管理员。管理员在“系统管理与权限”页添加、停用只读用户，并可随时修改自己的口令。`.local/accounts.json` 是账户的唯一存放处（只存哈希，主库不存账户）：账户变动先写好新文件，管理操作记录写入主库后才替换旧文件，记录写不进则不生效。文件读不了或丢了不阻止启动和采集，此时只有兜底凭据能登录，管理员改一次口令即重建自己的账户，只读用户重新添加。文件里没有账户时照常采集，日志提示运行 `init-accounts` 后重启。每个请求都鉴权，凭据第一次校验通过后记在内存，任何账户变动都使其失效。
 
 ## 验证
 

@@ -363,7 +363,7 @@ def ua_bench(field, names=NAMES, tap=None):
 
 
 async def test_an_opcua_server_that_connects_but_refuses_the_items_reaches_persistent_resync_after_five_cycles(field):
-    owner, ingress, acquirer = ua_bench(field, ["a", "missing"])  # "missing" is not a node of the server
+    owner, ingress, acquirer = ua_bench(field, ["missing"])  # not a node of the server: every item refused (2026-10-30)
     task = asyncio.create_task(acquirer.run())
     try:
         await drain_until(ingress, lambda: owner.sources["ua"].resync_count >= 5, why="five connect-then-fail cycles")

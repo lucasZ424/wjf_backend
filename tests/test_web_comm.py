@@ -15,7 +15,7 @@ from web_rig import MB, UA, WebRig, nominal
 
 from htsg import records as r
 
-NAMES = ["系统总览", "水冷壁应变场", "热应力分析", "历史查询", "系统自检", "通信·日志", "系统管理·权限"]
+NAMES = ["系统总览", "水冷壁应变场", "热应力分析", "历史查询", "系统自检", "通信与日志", "系统管理与权限"]
 HEALTH = "**/api/health"
 
 
@@ -28,7 +28,7 @@ def fresh(tmp_path):
 
 def open_page(page, rig, who="viewer"):
     sign_in(page, rig, who)
-    page.get_by_role("button", name="通信·日志").click()
+    page.get_by_role("button", name="通信与日志").click()
     page.locator("#comm-inputs tbody tr").first.wait_for()
 
 
@@ -58,8 +58,8 @@ def test_the_page_is_the_sixth_after_self_check_has_no_page_number_and_both_role
     sign_in(page, rig, who)
     shown_names = [t.replace(" ", "").replace("\n", "") for t in page.locator("#navigation button").all_inner_texts()]
     assert shown_names == NAMES and not any(c.isdigit() for t in shown_names for c in t), "known by its title only"
-    page.get_by_role("button", name="通信·日志").click()
-    assert page.locator(".page-heading h2").inner_text() == "通信·日志"
+    page.get_by_role("button", name="通信与日志").click()
+    assert page.locator(".page-heading h2").inner_text() == "通信与日志"
     page.locator("#comm-inputs tbody tr").first.wait_for()
     inputs = [p for p in rig.config.points]
     assert page.locator("#comm-inputs tbody tr").count() == len(inputs), "every input has its row"
@@ -77,7 +77,7 @@ def test_it_reads_at_once_then_every_five_seconds_and_only_while_it_is_in_front(
 
     def enter():
         before = len(requests)
-        page.get_by_role("button", name="通信·日志").click()
+        page.get_by_role("button", name="通信与日志").click()
         page.wait_for_timeout(1000)  # not "by the next poll": the 5 s clock has its own phase, the reading is taken on entering
         assert len(requests) >= before + 1, "read at once on entering"
 
@@ -106,7 +106,7 @@ def test_each_row_shows_its_mapping_value_quality_validity_and_its_two_times(pag
     row = cells(row_of(page, pid))
     point = next(p for p in fresh.config.points if p.id == pid)
     assert point.node_id in row[2] and row[1] == UA
-    assert row[3].startswith("481.25") and row[4] == "GOOD" and row[5] == "有效"
+    assert row[3] == "481.3 ℃" and row[4] == "良好" and row[5] == "有效"  # 终版 §17.5, §17.6: ℃ to one decimal, quality in words
     assert row[6].startswith(shown(page, obs.received_wall)), "the time the backend received it"
     assert row[7].startswith(shown(page, stamp)) and row[7] != row[6], "the server's own timestamp is a separate column"
     bridge = next(p for p in fresh.config.points if p.source == MB)
@@ -117,10 +117,10 @@ def test_each_row_shows_its_mapping_value_quality_validity_and_its_two_times(pag
     # a Bad value stays visible with its full status code, marked unusable
     fresh.call(fresh.ua, [(pid, 470.0, r.BAD, 0x80000000)])
     page.get_by_role("button", name="系统总览").click()
-    page.get_by_role("button", name="通信·日志").click()
+    page.get_by_role("button", name="通信与日志").click()
     page.locator("#comm-inputs tbody tr").first.wait_for()
     bad = cells(row_of(page, pid))
-    assert bad[4] == "BAD 0x80000000" and bad[3].startswith("470") and bad[5] != "有效"
+    assert bad[4] == "不良 0x80000000" and bad[3].startswith("470") and bad[5] != "有效"
     assert page.errors == []
 
 
@@ -187,7 +187,7 @@ def test_every_row_state_the_page_ever_shows_belongs_to_one_observation(page, fr
     assert len(states) >= 2, "the page did take readings while the values changed"
     for cell in states:
         k = round(float(cell[3].split()[0].replace(",", "")) - 500.0)
-        assert cell[4].split()[0] == (r.GOOD if k % 2 == 0 else r.UNCERTAIN), f"its own quality (observation {k}): {cell}"
+        assert cell[4].split()[0] == ("良好" if k % 2 == 0 else "不确定"), f"its own quality (observation {k}): {cell}"
         assert cell[6].startswith(shown(page, received[k])), f"its own receive time (observation {k}): {cell}"
         assert cell[7].startswith(shown(page, base + k)), f"its own source timestamp (observation {k}): {cell}"
     assert page.errors == []
@@ -222,7 +222,7 @@ def test_the_two_counters_are_shown_apart_on_the_communication_page_and_on_the_s
         assert rows[MB][resync] == "0" and rows[MB][failures] == "0"
         assert "互不替代" in page.locator("main").inner_text()
         keep(page, "comm-counters" if place == "#comm-sources" else "selfcheck-counters")
-    page.get_by_role("button", name="通信·日志").click()
+    page.get_by_role("button", name="通信与日志").click()
     page.locator("#comm-inputs tbody tr").first.wait_for()
     fresh.acquisition.failures = {MB: 7, UA: 0}  # while the page stays in front, the next poll shows the new counts
     page.wait_for_function(
@@ -296,7 +296,7 @@ def test_an_empty_log_says_so_without_claiming_that_nothing_ever_happened(page, 
     payload["communication"]["log"].update(entries=[], evicted=0, diag_lost=0, incomplete=False, oldest_time=None)
     page.route(HEALTH, lambda route: route.fulfill(status=200, content_type="application/json", body=json.dumps(payload)))
     page.get_by_role("button", name="系统总览").click()
-    page.get_by_role("button", name="通信·日志").click()
+    page.get_by_role("button", name="通信与日志").click()
     page.locator("#comm-log").get_by_text("暂无记录").wait_for()
     assert "不表示从未发生通信故障" in page.locator("#comm-log").inner_text()
     keep(page, "comm-log-empty")
@@ -321,10 +321,10 @@ def test_an_older_answer_never_replaces_a_newer_one_and_a_page_that_was_left_is_
             assert time.monotonic() < deadline, "the page did not ask"
             page.wait_for_timeout(50)
 
-    page.get_by_role("button", name="通信·日志").click()
+    page.get_by_role("button", name="通信与日志").click()
     wait_for_requests(1)
     page.get_by_role("button", name="系统总览").click()  # leave with that request still unanswered
-    page.get_by_role("button", name="通信·日志").click()  # ... and come back: a newer request
+    page.get_by_role("button", name="通信与日志").click()  # ... and come back: a newer request
     wait_for_requests(2)
     answer(held[-1], new)  # the newest request answers first
     page.locator("#comm-inputs tbody tr").first.wait_for()
@@ -336,7 +336,7 @@ def test_an_older_answer_never_replaces_a_newer_one_and_a_page_that_was_left_is_
     assert shown_new in taken and shown_old not in taken, "the older answer did not win"
     # leave while a request is outstanding: its answer must not be drawn anywhere, nor flash when the page is entered again
     page.get_by_role("button", name="系统总览").click()
-    page.get_by_role("button", name="通信·日志").click()
+    page.get_by_role("button", name="通信与日志").click()
     n = len(held)
     wait_for_requests(n)
     page.get_by_role("button", name="系统总览").click()
@@ -345,7 +345,7 @@ def test_an_older_answer_never_replaces_a_newer_one_and_a_page_that_was_left_is_
     page.wait_for_timeout(300)
     assert page.locator("#comm-taken").count() == 0, "the overview page has no communication content"
     page.unroute(HEALTH)
-    page.get_by_role("button", name="通信·日志").click()
+    page.get_by_role("button", name="通信与日志").click()
     assert shown_old not in page.locator("main").inner_text(), "no leftovers from an old visit"
     page.locator("#comm-inputs tbody tr").first.wait_for()
     assert shown_old not in page.locator("main").inner_text()
@@ -356,7 +356,7 @@ def test_a_failed_reading_is_said_so_and_the_last_good_content_stays(page, rig):
     open_page(page, rig)
     page.route(HEALTH, lambda route: route.fulfill(status=500, content_type="application/json", body=json.dumps({"detail": "boom"})))
     page.get_by_role("button", name="系统自检").click()
-    page.get_by_role("button", name="通信·日志").click()  # a new visit starts empty: the failure is the whole story
+    page.get_by_role("button", name="通信与日志").click()  # a new visit starts empty: the failure is the whole story
     page.locator("#comm-sources").get_by_text("读取失败").wait_for()
     assert "boom" in page.locator("#comm-sources").inner_text()
     page.unroute(HEALTH)
@@ -370,7 +370,7 @@ def test_a_failed_reading_is_said_so_and_the_last_good_content_stays(page, rig):
 def test_the_live_pages_still_update_while_the_communication_page_exists(page, rig):
     sign_in(page, rig)
     point = next(d.inputs[0] for d in rig.config.derived if d.operation == "difference")
-    page.get_by_role("button", name="通信·日志").click()
+    page.get_by_role("button", name="通信与日志").click()
     page.get_by_role("button", name="系统总览").click()
     try:
         rig.call(rig.ua, [(point, 471.0)])

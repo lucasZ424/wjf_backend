@@ -8,6 +8,7 @@ reported as a failed round, never filled from the previous one.
 from __future__ import annotations
 
 import asyncio
+import logging
 import math
 import struct
 import time
@@ -20,6 +21,7 @@ from .config import Point, Source, Timing
 from .recovery import Backoff
 from .timing import every_second
 
+log = logging.getLogger(__name__)
 WIDTH = {"uint16": 1, "int16": 1, "uint32": 2, "int32": 2, "float32": 2, "float64": 4}
 MAX_REGISTERS = 125  # Modbus limit for one read request
 
@@ -27,6 +29,8 @@ MAX_REGISTERS = 125  # Modbus limit for one read request
 def decode_registers(registers: list[int], point: Point):
     """The engineering value of one point from its registers, or (None, "BAD") for an undecodable one."""
     words = list(registers)
+    if len(words) != WIDTH[point.data_type]:  # a short answer is a bad value, never an exception out of the round
+        return None, "BAD"
     if point.word_order == "little":
         words.reverse()
     raw = b"".join(x.to_bytes(2, point.byte_order) for x in words)
@@ -165,6 +169,11 @@ class ModbusAcquirer:
                 excepted += 1
                 requests.append(rec.RequestResult(scope, "EXCEPTION", getattr(response, "exception_code", None)))
                 continue
+            if len(response.registers) < span.count:  # the library checks only the frame: fewer registers than asked
+                excepted += 1  # the device answered, but nothing of this request can be placed: no value is guessed
+                detail = f"应答{len(response.registers)}个寄存器，请求{span.count}个"
+                requests.append(rec.RequestResult(scope, "EXCEPTION", None, detail))
+                continue
             answered += 1
             requests.append(rec.RequestResult(scope, "OK"))
             for point, value, quality in decode_span(span, response.registers):
@@ -229,9 +238,11 @@ class ModbusAcquirer:
     async def run(self):
         down_reported = False
         while True:
-            client = self.client_factory()
+            client, connecting = None, True
             try:
+                client = self.client_factory()
                 connected, reason, detail = await self._connect(client)
+                connecting = False
                 if connected:
                     self.connect_failures = 0
                     self.hub.attempt_ok(self.source.id, "CONNECT", time.time(), time.monotonic())
@@ -250,6 +261,16 @@ class ModbusAcquirer:
                     if not down_reported and self.gen:
                         self.hub.source_down(self.source.id, self.gen, "CONNECT_FAILED", *now)
                         down_reported = True
+            except Exception as error:  # nothing unforeseen ends acquisition: drop the connection, back off, connect again
+                log.exception("Modbus source %s: unexpected error, reconnecting", self.source.id)
+                reason, now = "ERROR:" + type(error).__name__, (time.time(), time.monotonic())
+                if connecting:
+                    self.connect_failures += 1
+                    self.hub.attempt_failed(self.source.id, "CONNECT", reason, repr(error), *now)
+                if not down_reported and self.gen:
+                    self.hub.source_down(self.source.id, self.gen, reason, *now)
+                    down_reported = True
             finally:
-                client.close()
+                if client is not None:
+                    client.close()
             await self.sleep(self.backoff.next_delay())

@@ -621,36 +621,13 @@ class ArchiveStore:
                 "ON CONFLICT(id) DO UPDATE SET touched_at=excluded.touched_at"
             )
 
-    def read_accounts(self):
-        with self.session() as conn:
-            rows = conn.execute("SELECT username,role,salt,digest,active FROM account").fetchall()
-            return {
-                row["username"]: {key: value for key, value in row.items() if key != "username"}
-                for row in rows
-            }
-
-    def sync_accounts(self, users, audit=None):
-        with self.session() as conn:
-            for name, user in users.items():
-                conn.execute(
-                    "INSERT INTO account(username,role,salt,digest,active) VALUES(%s,%s,%s,%s,%s) "
-                    "ON CONFLICT(username) DO UPDATE SET role=excluded.role,salt=excluded.salt,"
-                    "digest=excluded.digest,active=excluded.active",
-                    (name, user["role"], user["salt"], user["digest"], user["active"]),
-                )
-            if audit is not None:
-                self._audit(conn, audit)
-
-    @staticmethod
-    def _audit(conn, entry):
-        conn.execute(
-            "INSERT INTO management_log(id,time,actor,action,target,result) VALUES(%s,%s,%s,%s,%s,%s)",
-            tuple(entry[key] for key in ("id", "time", "actor", "action", "target", "result")),
-        )
-
     def audit(self, entry):
+        """One management record (an account change is made only once this has committed: 2026-10-30)."""
         with self.session() as conn:
-            self._audit(conn, entry)
+            conn.execute(
+                "INSERT INTO management_log(id,time,actor,action,target,result) VALUES(%s,%s,%s,%s,%s,%s)",
+                tuple(entry[key] for key in ("id", "time", "actor", "action", "target", "result")),
+            )
 
     def audit_history(self):
         with self.session() as conn:

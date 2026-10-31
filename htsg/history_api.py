@@ -26,12 +26,12 @@ def parse_instant(value: str) -> float:
         try:
             moment = datetime.fromisoformat(value)
         except ValueError:
-            raise HTTPException(422, "center must be UTC epoch seconds or ISO-8601 with an offset") from None
+            raise HTTPException(422, "中心时间须为 UTC 秒数或带时区的 ISO-8601 时间") from None
         if moment.tzinfo is None:
-            raise HTTPException(422, "an ISO-8601 center needs an explicit UTC offset")
+            raise HTTPException(422, "中心时间须写明时区")
         seconds = moment.timestamp()
     if not math.isfinite(seconds):
-        raise HTTPException(422, "center must be finite")
+        raise HTTPException(422, "中心时间不是有效数值")
     return seconds
 
 
@@ -76,7 +76,7 @@ def build_history_router(router, user_dep, config, *, concurrency: int = 2) -> A
         except ValueError as error:
             raise HTTPException(422, str(error)) from error
         if all_unreadable({"unavailable": result["unavailable"]}):
-            raise HTTPException(503, "Historical storage unavailable")
+            raise HTTPException(503, "历史库无法读取")
         return result
 
     @api.get("/api/replay", dependencies=[Depends(user_dep)])
@@ -89,16 +89,16 @@ def build_history_router(router, user_dep, config, *, concurrency: int = 2) -> A
         chosen = list(dict.fromkeys(x for x in points.split(",") if x))
         unknown = [x for x in chosen if x not in sources]
         if not chosen or unknown:
-            raise HTTPException(422, f"unknown channels: {unknown[:5]}" if unknown else "no channels given")
+            raise HTTPException(422, f"没有这些通道：{'、'.join(unknown[:5])}" if unknown else "没有选择通道")
         if len(chosen) > history.CHANNEL_LIMIT:  # 修复轮03: a replay is bounded by construction, whatever is sent
-            raise HTTPException(422, f"at most {history.CHANNEL_LIMIT} channels per replay")
+            raise HTTPException(422, f"一次最多查询 {history.CHANNEL_LIMIT} 个通道")
         middle = parse_instant(center)
         start, end = middle - seconds / 2, middle + seconds / 2  # half a window either side of the centre
         result = await blocking(
             history.query, router.stores, {c: sources[c] for c in chosen}, start, end, limit=limit
         )
         if all_unreadable(result):
-            raise HTTPException(503, "Historical storage unavailable")
+            raise HTTPException(503, "历史库无法读取")
         known = [v for v in result["coverage_end"].values()]
         result["coverage_complete_until"] = None if (not known or any(v is None for v in known)) else min(known)
         result["center"], result["seconds"] = middle, seconds
@@ -111,8 +111,8 @@ def build_history_router(router, user_dep, config, *, concurrency: int = 2) -> A
         found = await blocking(history.input_basis, router.stores, result_id, bucket)
         if not found["found"]:
             if found["unavailable"]:
-                raise HTTPException(503, "Historical storage unavailable")
-            raise HTTPException(404, "Result not found")
+                raise HTTPException(503, "历史库无法读取")
+            raise HTTPException(404, "没有找到该结果")
         return found
 
     return api

@@ -442,7 +442,7 @@ def ua_points(field, *names):
 
 async def test_five_refused_subscriptions_are_one_entry_counted_five_beside_five_resyncs(field):
     """P1/P2: the attempts are one line spanning five generations; the resyncs and generations are their own lines."""
-    owner, ingress, build = ua_bench(field.endpoint, ua_points(field, "a", "missing"))
+    owner, ingress, build = ua_bench(field.endpoint, ua_points(field, "missing"))  # every item refused: nothing to subscribe
     acquirer, gate = build(5)
     task = asyncio.create_task(acquirer.run())
     try:
@@ -465,8 +465,9 @@ async def test_a_subscription_that_finally_opens_ends_its_failure_entry_and_writ
     points = ua_points(field, "a", "missing")
     owner, ingress, build = ua_bench(field.endpoint, points)
     acquirer, gate = build(10_000)
-    gate.on_call = lambda n: points.pop() if n == 2 and len(points) == 2 else None  # the bad item is fixed after two failures
-    acquirer.points = points
+    # only the unknown node at first: nothing to subscribe to; the item list is fixed after two failures
+    gate.on_call = lambda n: setattr(acquirer, "points", points[:1]) if n == 2 else None
+    acquirer.points = points[1:]
     task = asyncio.create_task(acquirer.run())
     try:
         # (a failed cycle may already have heard from the server: only the third generation is the working one)

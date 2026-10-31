@@ -35,6 +35,19 @@ def check_fault_band(item):
             raise ValueError("low-side reset line lies above extreme_high and is unreachable")
 
 
+def check_node_id(point):
+    """A NodeId the client library cannot read is a configuration error, found by `htsg check` and at start - not a
+    subscription that is refused again and again on site."""
+    from asyncua import ua
+
+    try:
+        node = ua.NodeId.from_string(point.node_id)
+    except ua.UaStringParsingError:
+        raise ValueError(f"{point.id}: node_id {point.node_id!r} is not a valid NodeId") from None
+    if point.node_id != point.node_id.strip() or node.Identifier in ("", None):
+        raise ValueError(f"{point.id}: node_id {point.node_id!r} has blanks at an end or no identifier")
+
+
 def fault_rule(item):
     """普通故障规则（与极值界限无关）；没有任何阈值则为 None。"""
     if item.low is None and item.high is None:
@@ -172,13 +185,13 @@ class Timing(StrictModel):
         silence = publish_interval * keepalive_count
         found = []
         if silence + self.ua_silence_margin >= self.ua_data_validity:
-            found.append("keepalive silence plus margin must be below the data validity")
+            found.append("保活静默加余量须小于数据有效期")
         if self.ua_alarm_seconds <= self.ua_data_validity:
-            found.append("alarm threshold must exceed the data validity")
+            found.append("断连告警时限须大于数据有效期")
         if self.ua_alarm_seconds < 3 * silence:
-            found.append("alarm threshold must be at least 3x the keepalive silence")
+            found.append("断连告警时限须至少为保活静默的 3 倍")
         if lifetime_count < 3 * keepalive_count:
-            found.append("lifetime count must be at least 3x the keepalive count")
+            found.append("寿命计数须至少为保活计数的 3 倍")
         return found
 
     def check_negotiated(self, publish_interval, keepalive_count, lifetime_count):
@@ -263,6 +276,8 @@ class Settings(StrictModel):
                 raise ValueError("enabled Modbus needs host and register mapping")
             if source.enabled and source.kind == "opcua" and (not source.endpoint or not point.node_id):
                 raise ValueError("enabled OPC UA needs endpoint and node mapping")
+            if source.kind == "opcua" and point.node_id:
+                check_node_id(point)
         if sum(sources[x.source].kind == "modbus" for x in self.points) > 8:
             raise ValueError("Modbus Bridge channel capacity is 8")
         if sum(sources[x.source].kind == "opcua" for x in self.points) > 200:

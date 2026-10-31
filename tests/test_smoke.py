@@ -22,7 +22,7 @@ async def test_the_start_path_serves_this_tree_stops_as_normal_and_restarts_with
         part = report[label]
         assert part["page_served_is_this_tree"] and part["config_id_is_the_one_on_disk"], "what runs is what is on disk"
         assert part["archive_sources"] == {"mb_field": "OK", "ua_field": "OK"} and part["queue_failures"] == 0
-        assert part["accounts"] == "DATABASE_AUTHORITATIVE" and part["negotiated_ua"]["violations"] == []
+        assert part["accounts"] == "FILE" and part["negotiated_ua"]["violations"] == []
         assert part["stop"] == "STOPPED", f"a normal stop ends the process: {part['stop']}"
     runs = [(ended, reason) for _, ended, reason in report[RESTART]["runs_in_database"]]
     assert runs == [(True, "NORMAL"), (True, "NORMAL")], "each start is one run and each normal stop ends it as NORMAL"

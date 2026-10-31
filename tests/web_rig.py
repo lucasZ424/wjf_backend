@@ -124,7 +124,7 @@ class WebRig:
                 for _, store in self.router.stores:  # the fixed bucket its hand-built owner puts every group in
                     store.prepare_bucket(1)
                 self.router.bind_run(self.run_id, self.config.config_id, now)
-                self.accounts.persist = self.router.primary.sync_accounts  # account changes and their audit go to the archive
+                self.accounts.record = self.router.primary.audit  # an account change is made only with its record in the archive
             if self.archive and self.feed_archive:
                 self.queue = CommitQueue(
                     self.router, 400,

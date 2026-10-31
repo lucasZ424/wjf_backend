@@ -43,7 +43,7 @@ def test_one_reading_is_the_whole_current_state_and_names_each_sample(tmp_path):
     assert response.status_code == 200
     assert "no-store" in response.headers["cache-control"], "a cached reading would pass for a new state"
     body = response.json()
-    assert set(body) == {"taken_time", "run_id", "channels", "status"}, "no publish sequence: nothing to keep continuous"
+    assert set(body) == {"taken_time", "run_id", "channels", "status", "archive_target"}, "no publish sequence: nothing to keep continuous"
     assert body["run_id"] == "snap" and before <= body["taken_time"] <= after
     assert set(body["channels"]) == {p.id for p in t.config.points} | {d.id for d in t.config.derived}
     assert set(body["status"]) == {"sources", "faults"} and set(body["status"]["sources"]) == {"mb", "ua"}
@@ -73,10 +73,7 @@ def test_every_reading_is_authenticated_and_an_unsettled_or_stopped_account_is_r
         assert client.get("/api/snapshot").status_code == 401
         assert client.get("/api/snapshot", headers={"Authorization": "Bearer viewer:wrong"}).status_code == 401
         assert client.get("/api/snapshot", headers=t.headers).status_code == 200
-        t.accounts.uncertain = True  # not settled with the database: nobody is let in
-        assert client.get("/api/snapshot", headers=t.headers).status_code == 401
-        t.accounts.uncertain = False
-        t.accounts.users["viewer"]["active"] = False  # stopped: the very next reading is refused, no cache keeps it alive
+        t.accounts.revoke("viewer")  # stopped: the very next reading is refused, the remembered credential with it
         assert client.get("/api/snapshot", headers=t.headers).status_code == 401
 
 
@@ -111,3 +108,31 @@ def test_the_page_gets_its_three_time_limits_from_the_configuration_only(tmp_pat
         timing = client.get("/api/ui-config", headers=t.headers).json()["timing"]
     assert (timing["ui_poll_interval"], timing["ui_poll_timeout"], timing["ui_stall_notice"]) == (1, 5, 3)
     assert not [name for name in timing if name.startswith("push_")], "nothing of the removed push is handed out"
+
+
+def test_every_page_learns_where_new_data_goes_and_an_unchecked_route_is_never_called_the_normal_database(tmp_path):
+    """修复轮12 (终版 §13.5 “临时、未核对”, §13.6 “进入应急立即提示”): the snapshot every page reads names the target, so the
+    emergency route can be shown on any page; the self-check reads the same value, not the routing mode - which says PRIMARY
+    while the normal database takes groups unchecked."""
+    t = rig(tmp_path)
+    router = SimpleNamespace(mode="PRIMARY", provisional=True, health={}, target="PRIMARY_PROVISIONAL")
+    app = create_web_app(config=t.config, accounts=t.accounts, owner=t.owner, archive_router=router)
+    with TestClient(app) as client:
+        assert client.get("/api/snapshot", headers=t.headers).json()["archive_target"] == "PRIMARY_PROVISIONAL"
+        archive = client.get("/api/health", headers=t.headers).json()["archive"]
+    assert (archive["routing"], archive["target"]) == ("PRIMARY", "PRIMARY_PROVISIONAL")
+    with TestClient(t.app) as client:
+        assert client.get("/api/snapshot", headers=t.headers).json()["archive_target"] is None, "no archive: nothing to name"
+
+
+def test_the_scripts_are_asked_for_again_after_an_upgrade_and_a_refusal_is_said_in_chinese(tmp_path):
+    """修复轮12: without a cache header the browser kept an old app.js after an upgrade; 终版 §17.5: the backend's
+    explanation reaches the page in Chinese."""
+    t = rig(tmp_path)
+    with TestClient(t.app) as client:
+        script = client.get("/static/app.js")
+        again = client.get("/static/app.js", headers={"If-None-Match": script.headers["etag"]})
+        refused = client.get("/api/snapshot", headers={"Authorization": "Bearer nobody:nothing"})
+    assert script.status_code == 200 and script.headers["cache-control"] == "no-cache"
+    assert again.status_code == 304, "unchanged: a short answer, not the file again"
+    assert refused.status_code == 401 and refused.json()["detail"] == "用户名或口令不对，或账户已停用"

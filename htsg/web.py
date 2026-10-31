@@ -26,6 +26,16 @@ from .history_api import build_history_router
 STATIC = Path(__file__).with_name("static")
 
 
+class Revalidated(StaticFiles):
+    """The page's scripts and styles are asked for again on every load (修复轮12): without it the browser keeps an old app.js
+    for a while after an upgrade.  The answer is a short 304 while the file is unchanged."""
+
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 class NewAccount(BaseModel):
     model_config = ConfigDict(extra="forbid")
     username: str
@@ -66,7 +76,13 @@ HEALTH_SCHEMA = _object(
                 )
             },
         ),
-        "archive": _object("Archive routing, writer queue and per-source archive state."),
+        "archive": _object(
+            "Archive routing, writer queue and per-source archive state.",
+            {
+                "routing": {**_TEXT_N, "description": "The routing mode (PRIMARY / EMERGENCY / UNKNOWN), not where groups go"},
+                "target": {**_TEXT_N, "description": "Where new groups go, the same as the snapshot's `archive_target`"},
+            },
+        ),
         "negotiated": _object("What the OPC UA server really granted, per source (unchanged shape)."),
         "runtime": _object("Runtime flags."),
         "communication": _object(
@@ -136,6 +152,11 @@ SNAPSHOT_SCHEMA = _object(
             ),
         ),
         "status": _object("The owner's source and fault state."),
+        "archive_target": {
+            **_TEXT_N, "enum": ["PRIMARY", "EMERGENCY", "PRIMARY_PROVISIONAL", "UNKNOWN", None],
+            "description": "Where new groups go (§13.5, §13.6): PRIMARY_PROVISIONAL while the routing state cannot be read, UNKNOWN "
+                           "while it cannot and the groups wait; null without an archive",
+        },
     },
 )
 
@@ -158,7 +179,7 @@ def create_web_app(*, config, accounts, owner, archive_router=None, queue=None, 
 
     @app.exception_handler(psycopg.Error)
     async def database_failure(request, error):
-        return JSONResponse(status_code=503, content={"detail": "Database operation failed; change not confirmed"})
+        return JSONResponse(status_code=503, content={"detail": "变更未确认：数据库操作失败"})
 
     bearer = HTTPBearer(auto_error=False)
     auth_slots = asyncio.Semaphore(4)
@@ -168,7 +189,7 @@ def create_web_app(*, config, accounts, owner, archive_router=None, queue=None, 
             return None
         if config.mode == "development" and config.dev_admin_login and token == "admin:admin":
             account = accounts.users.get("admin", {})
-            if not accounts.uncertain and account.get("active") and account.get("role") == "admin":
+            if account.get("active") and account.get("role") == "admin":
                 return {"username": "admin", "role": "admin"}
             return None
         async with auth_slots:  # scrypt is slow on purpose: a few at a time, off the event loop
@@ -177,12 +198,12 @@ def create_web_app(*, config, accounts, owner, archive_router=None, queue=None, 
     async def user(credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):
         result = await verify(credentials.credentials if credentials else "")
         if result is None:
-            raise HTTPException(401, "Invalid credentials", headers={"WWW-Authenticate": "Bearer"})
+            raise HTTPException(401, "用户名或口令不对，或账户已停用", headers={"WWW-Authenticate": "Bearer"})
         return result
 
     async def admin(identity=Depends(user)):
         if identity["role"] != "admin":
-            raise HTTPException(403, "Administrator required")
+            raise HTTPException(403, "需要管理员权限")
         return identity
 
     limited = [x.id for x in [*config.points, *config.derived] if x.high is not None or x.low is not None]
@@ -200,7 +221,7 @@ def create_web_app(*, config, accounts, owner, archive_router=None, queue=None, 
     async def index():
         return FileResponse(STATIC / "index.html", headers={"Cache-Control": "no-cache"})
 
-    app.mount("/static", StaticFiles(directory=STATIC, check_dir=False), name="static")
+    app.mount("/static", Revalidated(directory=STATIC, check_dir=False), name="static")
 
     @app.get("/api/me")
     async def me(identity=Depends(user)):
@@ -233,7 +254,7 @@ def create_web_app(*, config, accounts, owner, archive_router=None, queue=None, 
     async def snapshot():
         """What the live pages show (修复轮05): the owner's whole current state, read at once on the event loop - no
         await between its parts, no database, no waiting for new data.  Never cached: every reading is a new one."""
-        body = {"taken_time": time.time(), **owner.snapshot()}
+        body = {"taken_time": time.time(), **owner.snapshot(), "archive_target": archive_router.target if archive_router is not None else None}
         return JSONResponse(body, headers={"Cache-Control": "no-store"})  # serialized as it is, not walked field by field
 
     @app.get(
@@ -243,9 +264,9 @@ def create_web_app(*, config, accounts, owner, archive_router=None, queue=None, 
     async def health():
         """What the self-check and communication pages show besides the live state: archive, writer queue, negotiated
         parameters, each source's resync and connect-failure counts, the run's communication log and the input table."""
-        archive = {"sources": {sid: owner.history_status(sid) for sid in owner.sources}, "routing": None, "health": {}}
+        archive = {"sources": {sid: owner.history_status(sid) for sid in owner.sources}, "routing": None, "target": None, "health": {}}
         if archive_router is not None:
-            archive["routing"], archive["health"] = archive_router.mode, dict(archive_router.health)
+            archive["routing"], archive["target"], archive["health"] = archive_router.mode, archive_router.target, dict(archive_router.health)
         maintenance = getattr(lifecycle, "maintenance", None)
         if maintenance is not None:  # the bucket thread's last snapshot: memory only, nothing here asks the database
             buckets = dict(maintenance.snapshot.health)
@@ -270,7 +291,7 @@ def create_web_app(*, config, accounts, owner, archive_router=None, queue=None, 
     @app.post("/api/admin/accounts", status_code=201)
     async def add_account(body: NewAccount, identity=Depends(admin)):
         if body.role != "viewer":  # 修复轮07: the deployment has its one administrator, whatever the account table holds
-            raise HTTPException(409, "only read-only users are added: the deployment has its one administrator")
+            raise HTTPException(409, "只能添加只读用户：本系统只有一个管理员")
         try:
             token = await asyncio.to_thread(accounts.create, body.username, body.role, audit_entry(identity, "CREATE_ACCOUNT", body.username))
         except ValueError as error:
@@ -297,7 +318,7 @@ def create_web_app(*, config, accounts, owner, archive_router=None, queue=None, 
     @app.get("/api/admin/audit", dependencies=[Depends(admin)])
     async def audit_history():
         if archive_router is None:
-            raise HTTPException(503, "No archive: management records are not kept")
+            raise HTTPException(503, "没有归档库：不保存管理操作记录")
         return await asyncio.to_thread(archive_router.primary.audit_history)
 
     if archive_router is not None:

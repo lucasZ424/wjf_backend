@@ -79,7 +79,7 @@ def test_three_panels_share_one_time_axis_and_keep_their_own_units_axes_and_sign
     assert [v > 0 for v in stress[-3:]] == [True, True, False] and stress[-1] < 0, "the sign of the proxy is kept"
     latest = page.locator("#trend-latest").inner_text()
     assert "-20" in latest and "℃" in latest and "MPa" in latest and "MW" in latest
-    assert "研究估算" in latest and "研究估算" in page.locator("#workspace").inner_text()
+    assert "估算值" in latest and "不是实测" in page.locator("#workspace").inner_text()
     assert page.errors == []
 
 
@@ -157,7 +157,7 @@ def test_the_cursor_reads_the_value_in_effect_in_every_panel_at_one_instant(page
     t = after["t0"] + (offset - after["left"]) / (after["right"] - after["left"]) * 300
     in_effect = [p for p in after["panels"][1]["points"] if p["t"] <= t][-1]
     assert in_effect["v"] == 10.0 and "内外壁温差 +10" in text, (text, in_effect)
-    assert "不代表同步采样" in text and "负荷" in text and "内外壁温差" in text and "热应力代理" in text
+    assert "不代表同步采样" in text and "负荷" in text and "内外壁温差" in text and "热应力（估算）" in text
     page.mouse.move(box["x"] + 5, box["y"] + 5)  # outside the plot area: no cursor
     page.wait_for_function("!document.querySelector('#trend-readout').textContent.includes('游标')")
 

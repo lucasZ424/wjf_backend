@@ -72,6 +72,7 @@ class ArchiveRouter:
         self.buckets: Callable | None = None  # the maintenance thread's last snapshot, set by the runtime (§13.5)
         # 01-3: the routing state could not be read, and the normal database takes groups for the time being
         self.provisional = False
+        self.waiting = False  # 修复轮13: the last group found no database while the routing state could not be read
         self.probed = False  # the normal database passed a write probe since it last failed a write
         self.state_retry_at = -1e9
         self.last_light = self.last_heavy = -1e9
@@ -79,6 +80,14 @@ class ArchiveRouter:
     @property
     def stores(self):
         return [("primary", self.primary), ("emergency", self.emergency)]
+
+    @property
+    def target(self) -> str:
+        """Where new groups go, as the pages must say it (修复轮12): the normal database for the time being and unchecked
+        while the routing state cannot be read (§13.5), UNKNOWN while it cannot and the groups wait - also after a stretch
+        for the time being (修复轮13) - else the mode.  Reads from the writer's thread: a switch in between shows for one
+        reading.  Only what the pages say: the route itself never reads it."""
+        return "UNKNOWN" if self.waiting else "PRIMARY_PROVISIONAL" if self.provisional else self.mode
 
     def bind_run(self, run_id, config_id, started_wall):
         for _, store in self.stores:
@@ -189,6 +198,7 @@ class ArchiveRouter:
                     self.health["active_target"] = "PRIMARY_PROVISIONAL"
                     return True
         self.health["active_target"] = self.mode
+        self.waiting = False
         return self.mode != "EMERGENCY" or (
             emergency_free is not None and emergency_free > self.reserve() + policy.batch_budget_bytes
         )
@@ -211,17 +221,21 @@ class ArchiveRouter:
         """The normal database for the time being (01-3, 终版 §13.5): below the deletion start line, with the group's bucket,
         after a write probe that no failed write has made stale.  Otherwise the group waits.  Nothing is saved: the state
         cannot be, and the choice is made again once it can be read."""
-        if primary_used >= self.config.storage.cleanup_start:
-            raise Waiting("ROUTING_STATE_UNREADABLE:ABOVE_START_LINE")
         try:
-            if not self.primary.bucket_takes(bucket):
-                raise Waiting("ROUTING_STATE_UNREADABLE:NO_BUCKET")
-            if not self.probed:
-                self.primary.probe_write()
-                self.probed = True
-        except psycopg.Error as error:
-            raise Waiting("ROUTING_STATE_UNREADABLE:" + type(error).__name__) from None
-        self.mode, self.provisional = "PRIMARY", True
+            if primary_used >= self.config.storage.cleanup_start:
+                raise Waiting("ROUTING_STATE_UNREADABLE:ABOVE_START_LINE")
+            try:
+                if not self.primary.bucket_takes(bucket):
+                    raise Waiting("ROUTING_STATE_UNREADABLE:NO_BUCKET")
+                if not self.probed:
+                    self.primary.probe_write()
+                    self.probed = True
+            except psycopg.Error as error:
+                raise Waiting("ROUTING_STATE_UNREADABLE:" + type(error).__name__) from None
+        except Waiting:
+            self.waiting = True  # 修复轮13: said as such, whatever mode a stretch for the time being left behind
+            raise
+        self.mode, self.provisional, self.waiting = "PRIMARY", True, False
 
     def reserve(self) -> int:
         return DEV_RESERVE if self.config.mode == "development" else self.config.storage.emergency_reserve_bytes

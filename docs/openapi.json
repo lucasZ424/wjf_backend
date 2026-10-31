@@ -127,6 +127,20 @@
                     "status": {
                       "type": "object",
                       "description": "The owner's source and fault state."
+                    },
+                    "archive_target": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "enum": [
+                        "PRIMARY",
+                        "EMERGENCY",
+                        "PRIMARY_PROVISIONAL",
+                        "UNKNOWN",
+                        null
+                      ],
+                      "description": "Where new groups go (§13.5, §13.6): PRIMARY_PROVISIONAL while the routing state cannot be read, UNKNOWN while it cannot and the groups wait; null without an archive"
                     }
                   },
                   "type": "object",
@@ -184,6 +198,22 @@
                       "description": "The owner's source and fault state; each source also carries the acquirer's `connect_failures`."
                     },
                     "archive": {
+                      "properties": {
+                        "routing": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "The routing mode (PRIMARY / EMERGENCY / UNKNOWN), not where groups go"
+                        },
+                        "target": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "Where new groups go, the same as the snapshot's `archive_target`"
+                        }
+                      },
                       "type": "object",
                       "description": "Archive routing, writer queue and per-source archive state."
                     },

@@ -263,7 +263,7 @@ async def test_five_failed_connects_after_a_real_disconnect_count_five_while_the
 
 
 async def test_a_connect_that_succeeds_clears_the_count_and_a_refused_subscription_after_it_does_not_bring_it_back(field):
-    points = ua_points(field, "a", "missing")
+    points = ua_points(field, "missing")  # every item refused: the subscription fails
     owner, ingress, build = ua_bench(field.endpoint, points)
     acquirer, gate = build(3)
     acquirer.connect_failures = 4  # as if four connects had failed before
@@ -300,8 +300,8 @@ async def test_waiting_starts_when_create_subscription_returns_and_the_failure_e
     points = ua_points(field, "a", "missing")
     owner, ingress, build = ua_bench(field.endpoint, points)
     acquirer, gate = build(10_000)
-    acquirer.points = points
-    gate.on_call = lambda n: points.pop() if n == 1 and len(points) == 2 else None  # fixed after the first failure
+    acquirer.points = points[1:]  # only the unknown node: nothing to subscribe to, the subscription fails
+    gate.on_call = lambda n: setattr(acquirer, "points", points) if n == 1 else None  # fixed after the first failure
     hold, calls, original = asyncio.Event(), [], ManagedSubscription.create_items
 
     async def controlled(self, *args, **kwargs):

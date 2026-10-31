@@ -3,8 +3,8 @@
 
     python scripts/deploy_databases.py plan      what would be done, and what stands in the way; changes nothing (the default)
     python scripts/deploy_databases.py install   folders, clusters, databases with their schema, then the connection file, the
-                                                 only administrator (in the primary database and in accounts.json beside the
-                                                 connection file; its credential in initial-credentials.json, for the owner, and
+                                                 only administrator (in accounts.json beside the connection file, with its record
+                                                 in the primary database; its credential in initial-credentials.json, for the owner, and
                                                  the hash of that initial password, the fallback, in admin-fallback.json) and
                                                  the storage paths of the deployment configuration
     python scripts/deploy_databases.py register  (elevated PowerShell) every cluster becomes an automatic Windows service that is

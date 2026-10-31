@@ -178,7 +178,7 @@ def test_revised_values_replace_the_request_and_are_rechecked():
     assert granted.publish_interval == 2.0 and granted.requested["publish_interval"] == 1
     assert granted.violations, "a 2 s publish interval makes the normal silence 4 s, beyond the 3 s validity"
     short = negotiate(Timing(), fake_created(1000, 4, 2), items, 60.0)
-    assert any("lifetime" in v for v in short.violations)
+    assert any("寿命计数" in v for v in short.violations)
     assert negotiate(Timing(), fake_created(1000, 60, 2), items, 60.0).violations == []
 
 
@@ -194,8 +194,8 @@ def test_a_queue_revised_to_one_is_marked_but_not_rejected():
 
 async def test_a_failed_creation_leaves_no_subscription_on_server_or_client(field):
     client = ManagedClient(field.endpoint, timeout=2)
-    missing = [Point(id="x", source="ua", unit="u", node_id=field.node_id("a")),
-               Point(id="y", source="ua", unit="u", node_id="ns=2;s=does_not_exist")]  # fmt: skip
+    missing = [Point(id="x", source="ua", unit="u", node_id="ns=2;s=gone"),
+               Point(id="y", source="ua", unit="u", node_id="ns=2;s=does_not_exist")]  # fmt: skip  # every item refused
     try:
         await client.connect()
         with pytest.raises(SubscriptionError):

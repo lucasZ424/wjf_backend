@@ -56,6 +56,10 @@ class Ingress:
     def lost(self, source_id, gen, reason, wall, mono):
         self._push(_Event("lost", source_id, gen, reason, wall, mono))
 
+    def items_refused(self, source_id, gen, point_ids, wall, mono):
+        """Monitored items the server refused while it took the others: in order with the generation's batches."""
+        self._push(_Event("items_refused", source_id, gen, tuple(point_ids), wall, mono))
+
     # -- facts for the communication log -------------------------------------------------------------------------
 
     def attempt_failed(self, source_id, phase, reason, detail, wall, mono) -> bool:

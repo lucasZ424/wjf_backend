@@ -6,14 +6,14 @@
 export class Rejected extends Error {}
 
 export function newLive() {
-  return {channels: null, status: null, run: null, taken: null};
+  return {channels: null, status: null, run: null, taken: null, target: null};
 }
 
 const isObject = x => x !== null && typeof x === "object" && !Array.isArray(x);
 
 function checkView(id, view) {
   if (!isObject(view) || !["input", "derived"].includes(view.kind) || typeof view.valid !== "boolean") {
-    throw new Rejected(`channel ${id} is not a channel state`);
+    throw new Rejected(`通道 ${id} 的状态格式不对`);
   }
 }
 
@@ -22,8 +22,10 @@ function checkView(id, view) {
 export function take(live, reading) {
   if (!isObject(reading) || !isObject(reading.channels) || !Number.isFinite(reading.taken_time)
       || typeof reading.run_id !== "string" || !isObject(reading.status)) {
-    throw new Rejected("the reading is incomplete");
+    throw new Rejected("答复不完整");
   }
   for (const [id, view] of Object.entries(reading.channels)) checkView(id, view);
-  Object.assign(live, {channels: reading.channels, status: reading.status, run: reading.run_id, taken: reading.taken_time});
+  // where new groups go (修复轮12/13): said by the backend with the rest, none without an archive
+  const target = typeof reading.archive_target === "string" ? reading.archive_target : null;
+  Object.assign(live, {channels: reading.channels, status: reading.status, run: reading.run_id, taken: reading.taken_time, target});
 }

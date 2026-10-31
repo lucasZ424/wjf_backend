@@ -8,6 +8,7 @@ export const REASONS = {
   POLL_MISSING: "本轮未应答", POLL_TIMEOUT: "本轮超时", POLL_EXCEPTION: "本轮协议异常", POLL_CONNECTION: "本轮连接失败",
   SOURCE_INVALID: "来源数据无效", INPUT_UNAVAILABLE: "输入不可用", BASELINE_ONLY: "等待连续两轮",
   NOT_A_PLANNED_ROUND: "非计划轮次", EXTREME_INPUT: "输入超出物理极值", NONFINITE: "结果非有限数",
+  ITEM_REFUSED: "监控项被服务器拒绝",
 };
 export const reasonText = code => REASONS[code] || code || "无效";
 export const ORIGINS = {RECEIVED: "实收", STATE_ASSERTION: "状态重申", RETENTION_BASELINE: "保留边界基线"};
@@ -27,11 +28,20 @@ export function retentionNotes(result, stamp) {
 export const ENDS = {NEXT_CHANGE: "至下一次变化", WATERMARK: "至已确认水位", SEGMENT_END: "至有效段结束", GAP: "至归档缺口起点"};
 
 export const channelRows = channel => channel.segments.flatMap(s => s.rows.map(row => ({...row, run: s.run_id, seg: s.seg})));
+// The page names a quality or a result state in words (终版 §17.5); the CSV keeps the codes, to be checked against the database.
+const QUALITIES = {GOOD: "良好", BAD: "不良", UNCERTAIN: "不确定"};
+const STATUSES = {OK: "已算出", NOT_AVAILABLE: "不可用"};
+export const qualityText = q => QUALITIES[q] || (String(q).startsWith("MISSING_") ? `未取得（${REASONS[`POLL_${String(q).slice(8)}`] || String(q).slice(8)}）` : q);
+const codeOf = row => row.status_code ? ` 0x${(row.status_code >>> 0).toString(16).toUpperCase()}` : "";
 export function rowState(row) {
-  const code = row.status_code ? ` 0x${(row.status_code >>> 0).toString(16).toUpperCase()}` : "";
   return row.kind === "raw"
-    ? `${row.quality}${code}${row.extreme ? " 极值" : ""}`
-    : `${row.status}${row.reason ? ` · ${reasonText(row.reason)}` : ""}${row.extreme ? " 极值" : ""}`;
+    ? `${row.quality}${codeOf(row)}${row.extreme ? " 极值" : ""}`
+    : `${row.status}${row.reason ? `（${reasonText(row.reason)}）` : ""}${row.extreme ? " 极值" : ""}`;
+}
+export function rowText(row) {
+  return row.kind === "raw"
+    ? `${qualityText(row.quality)}${codeOf(row)}${row.extreme ? " 极值" : ""}`
+    : `${STATUSES[row.status] || row.status}${row.reason ? `（${reasonText(row.reason)}）` : ""}${row.extreme ? " 极值" : ""}`;
 }
 // A record next to an archive gap says so: the last one before it, and the restatement that opens the segment after.
 export function gapMark(row, channel, result) {

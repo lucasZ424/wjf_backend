@@ -24,7 +24,7 @@ READING = "**/api/snapshot"
 PAIR = 2  # the third temperature pair
 PROXY_PER_K = 1.1475  # MPa per K: E 170 GPa x alpha 1.35e-5 1/K x restraint 0.5
 FORGED = 987654.321  # a load nobody sent: "987,654" on screen would mean a damaged message was applied
-NAMES = ["系统总览", "水冷壁应变场", "热应力分析", "历史查询", "系统自检", "通信·日志", "系统管理·权限"]
+NAMES = ["系统总览", "水冷壁应变场", "热应力分析", "历史查询", "系统自检", "通信与日志", "系统管理与权限"]
 
 
 def fmt(value):
@@ -107,7 +107,8 @@ def check_trend_frames(seen):
             assert delta is None and stress is None, f"a result without its partner: {panels}"
             dashes += 1
         else:
-            assert abs(stress - PROXY_PER_K * delta) <= 0.01, f"a new input beside an old result: {panels}"
+            # 终版 §17.6 shows ℃ to 0.1 and MPa to 0.01; a partner from another group is a whole kelvin off, > 1 MPa
+            assert abs(stress - PROXY_PER_K * delta) <= PROXY_PER_K * 0.05 + 0.005 + 1e-9, f"a new input beside an old result: {panels}"
             valid += 1
     return valid, dashes
 
@@ -243,7 +244,8 @@ def check_strain_frames(seen, change_may_wait=False):
                 continue
             k = round((raw - 0.6) / 0.01)
             assert abs(raw - (0.6 + 0.01 * k)) < 1e-6, row
-            assert abs(strain - raw * unit) <= 0.006, f"the strain is not that of this input: {row}"
+            # 终版 §17.6 shows whole microstrain; the next round's input is 0.01 mV/V away, 1.67 με
+            assert abs(strain - raw * unit) <= 0.5 + 1e-9, f"the strain is not that of this input: {row}"
             if k == UNANSWERED + 1:
                 assert change is None, f"a change was bridged across an unanswered round: {row}"
             elif k == 0:
@@ -251,7 +253,8 @@ def check_strain_frames(seen, change_may_wait=False):
             elif change is None:
                 assert change_may_wait, f"the change is missing although the previous round was there: {row}"
             else:
-                assert abs(change - 0.01 * unit) <= 0.006, f"the change is not that of this round: {row}"
+                # whole microstrain on the page (终版 §17.6): one step is 1.67 με, a change across two rounds 3.33
+                assert abs(change - 0.01 * unit) <= 0.5 + 1e-9, f"the change is not that of this round: {row}"
             complete += 1
     return complete, dashes
 
@@ -263,7 +266,7 @@ def test_rounds_and_a_cut_off_never_show_an_input_next_to_another_rounds_result(
     open_page(page, still, "水冷壁应变场")
     page.locator("#strain-table tbody tr").nth(0).get_by_text("100").wait_for()
     drive_strain(still, page, {10: lambda: cut_off(page, 4)})
-    page.wait_for_function("window.__frames.at(-1)[0][1].startsWith('0.76 mV/V')")
+    page.wait_for_function("window.__frames.at(-1)[0][1].startsWith('0.7600 mV/V')")
     complete, dashes = check_strain_frames(frames(page))
     assert complete >= 8, f"enough different states were really seen: {complete}"
     assert dashes >= 2, "the unanswered round and the cut-off were both seen as dashes"
@@ -411,7 +414,7 @@ def test_around_an_archive_gap_every_result_has_its_input_and_every_input_its_re
     bridge, strain = seen["bridge_mvv_01"], seen["strain_01"]
     # same observation time, same batch, same origin, same gap mark and the same end: no result without its input
     # and no input without its result - across the gap too
-    batch = lambda r: r[2].split("·")[0]  # noqa: E731
+    batch = lambda r: r[2].split("-")[0]  # noqa: E731
     assert [(r[1], batch(r), r[5], r[8], r[9]) for r in bridge] == [(r[1], batch(r), r[5], r[8], r[9]) for r in strain]
     before = [r for r in strain if r[8].startswith("至有效段结束 1970/1/1 08:17:06")]
     after = [r for r in strain if r[9] == "缺口后重申"]

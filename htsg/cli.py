@@ -7,7 +7,7 @@ from contextlib import contextmanager, nullcontext
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from .auth import Accounts, write_fallback
+from .auth import FALLBACK, Accounts, write_fallback
 from .config import load_settings
 
 
@@ -34,24 +34,27 @@ def deployment_lock(path=Path(".local/backend.lock")):
 
 
 def init_accounts(accounts: Path, primary_dsn: str, timing=None) -> Path | None:
-    """The deployment's only administrator, written into the primary database and the account file together, so that a
-    deployment never reaches its first start without an account (修复轮02).  Returns where its credential was saved, or None
-    when the database or the file holds the administrator already.  Read-only users are added on the page.  The initial
-    password is the fallback for good (修复轮07): its hash beside the account file, the password for the owner with the user
-    name and the password each on a line."""
+    """The deployment's only administrator, in the account file with its management record in the primary database, so that
+    a deployment never reaches its first start without an account (修复轮02).  Returns where its credential was saved, or
+    None when the file holds the administrator already or a fallback is there (a new one would make the password the owner
+    keeps useless: sign in with it instead - setting a password on the page brings a lost administrator account back).
+    Read-only users are added on the page.  The initial password is the fallback for good (修复轮07): its hash beside the
+    account file, the password for the owner with the user name and the password each on a line."""
     from .archive import ArchiveStore
     from .web import audit_entry
 
-    local, store = Accounts(accounts), ArchiveStore(primary_dsn, timing)
+    local = Accounts(accounts)
+    fallback_there = accounts.with_name(FALLBACK).exists()
+    if fallback_there or any(user["role"] == "admin" for user in local.users.values()):
+        return None
+    store = ArchiveStore(primary_dsn, timing)
     try:
-        local.persist = store.sync_accounts
-        local.reconcile(store)  # the database copy first: it may hold the administrator already
-        if any(user["role"] == "admin" for user in local.users.values()):
-            return None
+        local.record = store.audit
         password, destination = secrets.token_urlsafe(32), accounts.with_name("initial-credentials.json")
-        # on the disk before the account is: a run cut short in between makes no administrator, and is run again
-        write_fallback(accounts, password)
+        # the password on the disk before its fallback, the fallback before the account: a run cut short makes no
+        # administrator whose password nobody has; the fallback signs in and the page's password change makes the account
         destination.write_text(json.dumps({"username": "admin", "password": password}, indent=2) + "\n", encoding="utf-8")
+        write_fallback(accounts, password)
         local.create("admin", "admin", audit_entry({"username": "init-accounts"}, "CREATE_ACCOUNT", "admin"), token=password)
     finally:
         store.close()
@@ -117,7 +120,8 @@ def main(*, deployment_locked=False):
             print(f"Administrator created; its credential is in {saved}: hand it to the owner, who keeps it off this computer - "
                   "the initial password stays the fallback for good; never commit this file.")
         else:
-            print("The administrator already exists; no changes.")
+            print("The administrator or its fallback already exists; no changes.  A lost account file: sign in with the "
+                  "initial password and set a password on the page.")
     else:
         with nullcontext() if deployment_locked else deployment_lock():
             _run(args, config)

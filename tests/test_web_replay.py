@@ -6,6 +6,7 @@ one instant, and a value restated after the gap.
 """
 
 import json
+import re
 
 import pytest
 from browser_support import sign_in
@@ -128,7 +129,7 @@ def test_a_gap_is_shaded_and_listed_and_nothing_is_drawn_or_invented_inside_it(p
     page.locator("#replay-records tbody tr").first.wait_for()
     got = [c.locator("td").all_inner_texts() for c in record_rows(page).all()]
     assert [c[5] for c in got] == ["实收", "状态重申", "状态重申"]  # 1001, restated after the gap at 1029 and 1047
-    assert not [c for c in got if c[5] == "实收" and c[3] == "479"], "the sample lost in the gap is not invented"
+    assert not [c for c in got if c[5] == "实收" and c[3] == "479.0"], "the sample lost in the gap is not invented"
     inside = pixels(page, 1027.0, 1029.0)
     assert inside["cyan"] == 0 and inside["amber"] > 100, "shaded gap, no line through it"
     assert pixels(page, 1005.0, 1025.0)["cyan"] > 50 and pixels(page, 1031.0, 1034.0)["cyan"] > 5, "drawn on both sides"
@@ -139,10 +140,10 @@ def test_a_bad_quality_interval_is_marked_red_and_borrows_no_value(page, replay_
     query(page, points=("temp_inner_06",))
     every = [(r.get_attribute("class"), r.locator("td").all_inner_texts()) for r in record_rows(page).all()]
     got = [c for c in every if c[1][5] == "实收"]  # what was received; restatements after the gap and the clock step follow
-    assert [c[1][4].split()[0] for c in got] == ["GOOD", "BAD", "GOOD"]
+    assert [c[1][4].split()[0] for c in got] == ["良好", "不良", "良好"]  # 终版 §17.5: in words
     assert [c[1][5] for c in every[3:]] == ["状态重申", "状态重申"]
     assert "bad" in got[1][0] and got[1][1][3] == "—" and "0x80350000" in got[1][1][4]
-    assert got[0][1][3] == got[2][1][3] == f"{VALUES['temp_inner_06']:g}", "same number, three separate records"
+    assert got[0][1][3] == got[2][1][3] == f"{VALUES['temp_inner_06']:.1f}", "same number, three separate records"
     assert "含无效或极值记录" in page.locator("#replay-summary").inner_text()
     between = pixels(page, 1020.0, 1022.0)
     assert between["red"] > 5 and between["cyan"] == 0, "the Bad interval is not filled with the earlier Good value"
@@ -153,9 +154,9 @@ def test_versions_at_one_instant_are_all_shown_in_batch_order(page, replay_rig):
     query(page, points=("temp_inner_05",))
     every = [r.locator("td").all_inner_texts() for r in record_rows(page).all()]
     got = [c for c in every[1:] if c[5] == "实收"]  # after the first value; the restatements come later
-    assert [c[3] for c in got] == ["481", "482", "483"]
+    assert [c[3] for c in got] == ["481.0", "482.0", "483.0"]  # 终版 §17.6: ℃ to one decimal
     assert len({c[0] for c in got}) == 1, "one instant, three rows"
-    assert [c[2].split("·")[1] for c in got] == ["0", "1", "2"]
+    assert [c[2].split("-")[1] for c in got] == ["0", "1", "2"]
 
 
 def test_reaching_the_row_limit_is_announced_and_never_hidden(page, replay_rig):
@@ -232,3 +233,34 @@ def test_at_most_twelve_channels_can_be_chosen_by_hand(page, replay_rig):
     assert "最多" in page.locator("#replay-limit").inner_text() and "12" in page.locator("#replay-limit").inner_text()
     page.locator("#replay-points").select_option(ids[:12])
     assert page.locator("#replay-points option:checked").count() == 12
+
+
+def test_filtering_the_channel_list_keeps_the_chosen_channels_in_view(page, replay_rig):
+    """修复轮13: a chosen channel hidden by the filter was dropped by the next plain click, without a word."""
+    open_history(page, replay_rig)
+    page.locator("#replay-points").select_option(["temp_inner_05", "temp_inner_06"])
+    page.locator("#replay-filter").fill("load")
+    shown = page.locator("#replay-points option").evaluate_all("options => options.filter(o => !o.hidden).map(o => o.value)")
+    assert {"temp_inner_05", "temp_inner_06", "load_mw"} <= set(shown) and len(shown) < 10, shown
+
+
+def test_units_and_the_window_length_read_as_people_say_them(page, replay_rig):
+    open_history(page, replay_rig)
+    option = page.locator("#replay-points option[value='temp_inner_06']").text_content()
+    assert "℃" in option and "degC" not in option
+    for seconds, said in [(5400, "1.5 小时"), (90, "1.5 分钟"), (45, "45 秒"), (172800, "2 天")]:
+        page.locator("#replay-seconds").fill(str(seconds))
+        assert page.locator("#replay-span").inner_text() == said, seconds
+
+
+def test_the_replay_axis_names_its_times_dates_for_long_windows_and_follows_the_page_width(page, replay_rig):
+    open_history(page, replay_rig)
+    query(page)  # 100 s
+    ticks = page.evaluate("document.querySelector('#replay-chart').plot.ticks")
+    assert len(ticks) >= 4 and all(re.fullmatch(r"\d\d:\d\d:\d\d", t["label"]) for t in ticks), ticks
+    query(page, seconds=3 * 86400)
+    ticks = page.evaluate("document.querySelector('#replay-chart').plot.ticks")
+    assert len(ticks) >= 3 and all(re.fullmatch(r"\d\d-\d\d \d\d:\d\d", t["label"]) for t in ticks), ticks
+    right = page.evaluate("document.querySelector('#replay-chart').plot.right")
+    page.set_viewport_size({"width": 1100, "height": 1000})
+    page.wait_for_function("w => document.querySelector('#replay-chart').plot.right < w - 100", arg=right)

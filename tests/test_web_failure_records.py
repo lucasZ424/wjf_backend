@@ -138,7 +138,8 @@ def test_a_bridge_that_fails_and_comes_back_is_the_same_moment_on_the_live_page_
     ask(page, local(failed_at), 120)
     cells = [row.locator("td").all_inner_texts() for row in page.locator("#replay-records tbody tr").all()]
     classes = [row.get_attribute("class") for row in page.locator("#replay-records tbody tr").all()]
-    assert [c[4] for c in cells] == qualities, "the page lists the records the archive holds, failure included"
+    words = {"GOOD": "良好", MISSING: "未取得（本轮协议异常）"}  # 终版 §17.5: the page names them, the file keeps the codes
+    assert [c[4] for c in cells] == [words[q] for q in qualities], "the page lists the records the archive holds, failure included"
     assert cells[at][3] == "—" and "bad" in classes[at].split(), "the failure has no number and is marked unusable"
     assert cells[at - 1][8].startswith("至下一次变化"), "the value before it holds to the next record, not on to the segment end"
 

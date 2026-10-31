@@ -84,7 +84,7 @@ async def test_the_runtime_reads_both_protocols_archives_serves_the_history_and_
             headers = {"Authorization": "Bearer " + credentials["viewer"]}
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://htsg") as client:
                 health = (await client.get("/api/health", headers=headers)).json()
-                assert health["runtime"]["accounts"] == "DATABASE_AUTHORITATIVE" and health["runtime"]["fatal"] is None
+                assert health["runtime"]["accounts"] == "FILE" and health["runtime"]["fatal"] is None
                 granted = health["negotiated"]["ua_field"]
                 assert granted["keepalive_count"] == TIMING.ua_keepalive_count and granted["requested"]["queue_size"] == 10
                 assert granted["violations"] == [], "what the server really granted was checked against the limits"
@@ -129,7 +129,7 @@ async def test_realtime_state_does_not_wait_for_a_database_that_cannot_be_reache
             # 修复轮09: with no database at the start no bucket can be prepared - the groups are refused as a gap, counted
             await until(lambda: runtime.queue.stats["refused"] > 0, "the groups that cannot be stored are counted")
             assert runtime.health["buckets"] == "NONE_READY_AT_START"
-            assert runtime.health["accounts"] == "LOCAL_VERIFICATION_CACHE_ONLY" and runtime.health["fatal"] is None
+            assert runtime.health["accounts"] == "FILE" and runtime.health["fatal"] is None
             assert not runtime.failed.is_set(), "no task of the chain died because the archive is away"
         finally:
             await runtime.stop()

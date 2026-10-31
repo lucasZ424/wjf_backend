@@ -24,7 +24,7 @@ ZEROED = b"\0" * 512  # what a power loss right after the rename can leave
 
 
 def deploy(archive_db_factory, tmp_path):
-    """What the deployment runs: the only administrator, into the database and the account file."""
+    """What the deployment runs: the only administrator, into the account file with its record in the database."""
     store = archive_db_factory("primary")
     store.initialize(small_config())
     saved = cli.init_accounts(tmp_path / "accounts.json", store.dsn)
@@ -45,8 +45,7 @@ def test_the_credentials_handed_over_have_the_user_name_and_the_password_each_on
 def test_the_initial_password_still_signs_the_administrator_in_after_they_set_their_own(archive_db_factory, tmp_path):
     store, handed, _ = deploy(archive_db_factory, tmp_path)
     accounts = Accounts(tmp_path / "accounts.json")
-    accounts.persist = store.sync_accounts
-    accounts.reconcile(store)
+    accounts.record = store.audit
     accounts.set_secret("admin", NEW)
     again = Accounts(tmp_path / "accounts.json")  # as after a restart
     assert again.verify("admin:" + NEW)["role"] == "admin"
@@ -55,18 +54,16 @@ def test_the_initial_password_still_signs_the_administrator_in_after_they_set_th
     assert again.verify("viewer:" + handed["password"]) is None, "the fallback is the administrator's only"
 
 
-@pytest.mark.parametrize("trouble", ["unconfirmed-change", "file-zeroed", "file-missing"])
+@pytest.mark.parametrize("trouble", ["file-zeroed", "file-missing"])
 def test_the_initial_password_signs_in_when_nothing_else_can(archive_db_factory, tmp_path, trouble):
-    """Before, each of these left nobody able to sign in until the database copy of the accounts could be read again."""
+    """The account file is the only copy (2026-10-30): when it is lost, the initial password is what is left."""
     store, handed, _ = deploy(archive_db_factory, tmp_path)
     path = tmp_path / "accounts.json"
-    if trouble == "unconfirmed-change":
-        path.with_suffix(".pending").write_text("Database account reconciliation required")
-    elif trouble == "file-zeroed":
+    if trouble == "file-zeroed":
         path.write_bytes(ZEROED)
     else:
         path.unlink()
-    accounts = Accounts(path)  # the database copy is not read: as while it cannot be
+    accounts = Accounts(path)
     assert accounts.verify("admin:" + handed["password"]) == {"username": "admin", "role": "admin"}
     assert accounts.verify("admin:" + NEW) is None
 
@@ -77,8 +74,7 @@ def test_an_unreadable_fallback_file_stops_nothing_and_takes_only_the_fallback_a
     accounts = Accounts(tmp_path / "accounts.json")
     assert accounts.fallback_unreadable, "why it is missing is kept for the log"
     assert accounts.verify("admin:" + handed["password"])["role"] == "admin", "the account itself still signs in"
-    accounts.persist = store.sync_accounts
-    accounts.reconcile(store)
+    accounts.record = store.audit
     accounts.set_secret("admin", NEW)
     assert accounts.verify("admin:" + handed["password"]) is None, "only the fallback is gone"
     assert accounts.verify("admin:" + NEW)["role"] == "admin"

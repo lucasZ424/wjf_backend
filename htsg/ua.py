@@ -24,14 +24,7 @@ from .recovery import Backoff
 from .timing import every_second
 
 SEQ_MAX = 0xFFFFFFFF  # sequence numbers run 1..2**32-1 and skip 0 when wrapping
-STATUS_INFO_DATAVALUE = 0x0400
-STATUS_OVERFLOW = 0x0080
-
-
-def is_overflow(status_value: int) -> bool:
-    """DataValue info bits: the server's monitored-item queue discarded changes (Part 4, 7.39)."""
-    return bool(status_value & STATUS_INFO_DATAVALUE) and bool(status_value & STATUS_OVERFLOW)
-
+is_overflow = rec.is_overflow  # kept here too: where the protocol meets it
 
 # ------------------------------------------------------------------------------- continuity
 
@@ -100,6 +93,7 @@ class Negotiated:
     items: list[ItemRevision] = field(default_factory=list)
     queue_capability: str = "OVERFLOW_DETECTABLE"
     violations: list[str] = field(default_factory=list)
+    refused: list[dict] = field(default_factory=list)  # monitored items the server refused: {point, status}
 
     def as_dict(self) -> dict:
         return {
@@ -115,6 +109,7 @@ class Negotiated:
             "sampling_interval_max": max((i.sampling_interval for i in self.items), default=None),
             "items": len(self.items),
             "violations": list(self.violations),
+            "refused": list(self.refused),
         }
 
 
@@ -207,13 +202,17 @@ async def open_subscription(
         if on_created is not None:
             on_created()
         revisions = await sub.create_items(points, timing)
-        bad = [r.point_id for r in revisions if r.status >> 30 == 2]
-        if bad:
-            raise SubscriptionError(f"monitored items refused: {bad[:5]}")
+        refused = [r for r in revisions if r.status >> 30 == 2]
+        if refused and len(refused) == len(revisions):  # nothing to subscribe to (e.g. the namespace changed): tried again
+            raise SubscriptionError(f"monitored items refused: {[r.point_id for r in refused[:5]]}")
     except BaseException:
         await sub.delete_quietly()
         raise
-    return sub, negotiate(timing, created, revisions, client.session_timeout / 1000)
+    # 2026-10-30: a refused item costs only its own point; it is tried again with the next subscription (rebuild or restart)
+    accepted = [r for r in revisions if r.status >> 30 != 2]
+    granted = negotiate(timing, created, accepted, client.session_timeout / 1000)
+    granted.refused = [{"point": r.point_id, "status": r.status} for r in refused]
+    return sub, granted
 
 
 def negotiate(timing: Timing, created, revisions: list[ItemRevision], session_timeout: float) -> Negotiated:
@@ -278,7 +277,7 @@ class UaChannel:
         if verdict == "DUPLICATE":
             self.stats["duplicate"] += 1
             notifications = []  # already applied; it is still proof that the server is alive
-        items, overflow = [], False
+        items = []
         for notification in notifications:
             if isinstance(notification, ua.StatusChangeNotification):
                 return self._lost("SUBSCRIPTION_STATUS:" + str(notification.Status.name), wall, mono)
@@ -290,7 +289,8 @@ class UaChannel:
                     self.stats["unknown_handle"] += 1
                     return self._lost("UNKNOWN_HANDLE", wall, mono)
                 item = self.item_from(point, monitored.Value)
-                overflow = overflow or is_overflow(item.status_code or 0)
+                if is_overflow(item.status_code or 0):  # the owner records it and restarts that point's fault clock
+                    self.stats["overflow"] += 1
                 items.append(item)
         kind = "data" if items else "keepalive"
         self.stats[kind] += 1
@@ -300,9 +300,6 @@ class UaChannel:
                 publish_seq=int(message.SequenceNumber),
             )
         )  # fmt: skip
-        if overflow:
-            self.stats["overflow"] += 1
-            self._lost("OVERFLOW", wall, mono)
 
     @staticmethod
     def item_from(point: Point, data_value) -> rec.Item:
@@ -371,7 +368,10 @@ class UaAcquirer:
 
     async def _teardown(self, client, sub):
         if sub is not None:
-            await asyncio.wait_for(sub.delete_quietly(), self.timing.ua_request_timeout)
+            try:
+                await asyncio.wait_for(sub.delete_quietly(), self.timing.ua_request_timeout)
+            except TimeoutError:
+                pass  # a half-open link: the subscription dies with the session; the socket and the task are still ended below
         try:
             await asyncio.wait_for(client.disconnect(), self.timing.ua_request_timeout)
         except Exception:
@@ -409,6 +409,9 @@ class UaAcquirer:
                 client, self.points, self.timing, self.channel.on_publish, handles,
                 on_created=lambda: self.hub.begin_waiting(self.source.id, gen, time.monotonic()),
             )  # fmt: skip
+            if self.negotiated.refused:
+                points = [r["point"] for r in self.negotiated.refused]
+                self.hub.items_refused(self.source.id, gen, points, time.time(), time.monotonic())
             self.hub.attempt_ok(self.source.id, "SUBSCRIBE", time.time(), time.monotonic())
             self.phase = None
             async for _ in self.ticker():

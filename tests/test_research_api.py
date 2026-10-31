@@ -27,8 +27,7 @@ def test_real_account_changes_are_audited_and_viewer_cannot_control(archive_db_f
     accounts = Accounts(tmp_path / "accounts.json")
     admin = {"Authorization": "Bearer " + accounts.create("admin", "admin")}
     viewer = {"Authorization": "Bearer " + accounts.create("viewer", "viewer")}
-    accounts.persist = router.primary.sync_accounts  # what the runtime does at start
-    accounts.reconcile(router.primary)
+    accounts.record = router.primary.audit  # what the runtime does at start
     app = create_web_app(config=config, accounts=accounts, owner=Owner(config, 1000.0, 100.0, run_id="t"), archive_router=router)
     with TestClient(app) as client:
         assert client.get("/").status_code == 200

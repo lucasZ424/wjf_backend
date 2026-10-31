@@ -14,9 +14,9 @@ class ResearchModel(BaseModel):
 
 
 class Project(ResearchModel):
-    title: str = "HTSG 科研监测"
+    title: str = "HTSG 锅炉高温应变监测"
     rated_mw: float = Field(660, gt=0)
-    notice: str = "科研模拟与估算，不代表现场实测"
+    notice: str = "换算应变与热应力为估算值，不是实测"
     basis: str = ""
 
 

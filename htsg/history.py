@@ -758,7 +758,7 @@ def decode_cursor(token: str | None, identity: str, size: int) -> list | None:
             raise ValueError()
         return key
     except (ValueError, TypeError, UnicodeError) as error:
-        raise ValueError("Invalid cursor or cursor belongs to another query") from error
+        raise ValueError("翻页位置无效或不属于这次查询，请重新查询") from error
 
 
 FAULT_COLUMNS = (
@@ -775,7 +775,7 @@ def list_faults(
     The list shows only what is really stored; buffered or rejected faults never appear here.
     """
     if not 1 <= limit <= 1000:
-        raise ValueError("limit must be between 1 and 1000")
+        raise ValueError("每页条数须在 1 到 1000 之间")
     import hashlib
     import json
 

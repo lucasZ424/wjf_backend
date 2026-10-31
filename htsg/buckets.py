@@ -514,7 +514,22 @@ class Maintenance:
             "reasons": alarm_reasons(self._health, usable=usable, other_files=self._other_files()) if active else [],
         }
         report["emergency_route"] = report.get("emergency_route", False)
+        report["disk"] = self._volumes()
         self._health["retention"] = report
+
+    def _volumes(self) -> dict:
+        """Both storage volumes as this round read them, with the lines they are judged by (修复轮12, 第15节 磁盘占用).  A volume
+        that cannot be read is said to be so; it never ends the round."""
+        volumes = {"measured_at": time.time(), "cleanup_start": self.policy.cleanup_start, "cleanup_stop": self.policy.cleanup_stop,
+                   "emergency_start": self.policy.emergency_start, "emergency_reserve_bytes": self.policy.emergency_reserve_bytes}  # fmt: skip
+        for role, path in (("primary", self.policy.primary_path), ("emergency", self.policy.emergency_path)):
+            try:
+                disk = self.disk_usage(path)
+            except OSError:
+                volumes[role] = None
+                continue
+            volumes[role] = {"total": disk.total, "free": disk.free, "used_fraction": 1 - disk.free / disk.total}
+        return volumes
 
     def _read_report(self, usage) -> dict:
         databases, rows = {}, {}
