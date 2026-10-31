@@ -697,7 +697,7 @@ def stored_markers(factory, groups):
     for group in groups:
         assert store.write_group(group).durable, group.group_id
     with store.session() as conn:
-        return [x["detail"] for x in conn.execute("SELECT detail FROM state_event WHERE kind='CLOCK_JUMP' ORDER BY at_mono,id").fetchall()]
+        return conn.execute("SELECT seg,start_reason FROM segment ORDER BY seg").fetchall()
 
 
 def test_clock_steps_beyond_the_limit_are_counted_and_the_first_marker_stored_says_how_many_went(archive_db_factory):
@@ -712,8 +712,9 @@ def test_clock_steps_beyond_the_limit_are_counted_and_the_first_marker_stored_sa
     assert s.archive == "OK" and s.owed_jumps == [] and s.owed_dropped == 0, "stored, so nothing is owed any more"
     assert owner.health["clock_markers_dropped"] == 4, "what went stays counted for the run"
     sound(writer.stored)
-    found = stored_markers(archive_db_factory, writer.stored)
-    assert len(found) == 16 and [x.get("earlier_markers_dropped") for x in found] == [4] + [None] * 15
+    # the markers are no longer stored (修复轮14: only retention baselines are kept as state records); the unit that
+    # carried them was checked above, and what the archive keeps of each jump is the segment it cut
+    stored_markers(archive_db_factory, writer.stored)
 
 
 def test_up_to_the_limit_nothing_is_dropped_and_nothing_is_said():

@@ -42,14 +42,12 @@ from htsg.buckets import PREPARED_AHEAD  # noqa: E402
 from htsg.simulation import FieldSimulator  # noqa: E402
 
 GIB = 1024**3
-GROUP_ROWS_SQL = """
-SELECT count(*) FROM commit_group g WHERE g.records <> (
-  (SELECT count(*) FROM observation o WHERE o.group_id = g.group_id) + (SELECT count(*) FROM result r WHERE r.group_id = g.group_id)
-  + (SELECT count(*) FROM state_event e WHERE e.group_id = g.group_id) + (SELECT count(*) FROM fault_record f WHERE f.group_id = g.group_id))
+# A row of `sample` names no group (修复轮14): the rows a database holds are counted against what its groups say they wrote.
+# Rows a group said it wrote and that are not there are missing; rows no group accounts for are orphans.
+ROWS_SQL = """
+SELECT (SELECT coalesce(sum(records), 0) FROM commit_group),
+       (SELECT count(*) FROM sample) + (SELECT count(*) FROM state_event)
 """
-ORPHAN_SQL = " + ".join(
-    f"(SELECT count(*) FROM {table} WHERE group_id NOT IN (SELECT group_id FROM commit_group))" for table in ("observation", "result", "state_event", "fault_record")
-)
 
 
 def fetch(url: str, credential: str = "", timeout=5):
@@ -115,15 +113,15 @@ class Backend:
 def database_check(store) -> dict:
     with psycopg.connect(store.dsn) as conn:
         if conn.execute("SELECT to_regclass('commit_group')").fetchone()[0] is None:  # killed before the schema was even laid down
-            return {"schema": False, "groups": 0, "half_written_groups": 0, "orphan_rows": 0, "runs": [], "open_segments_in_ended_runs": 0}
-        half = conn.execute(GROUP_ROWS_SQL).fetchone()[0]
-        orphans = conn.execute("SELECT " + ORPHAN_SQL).fetchone()[0]
+            return {"schema": False, "groups": 0, "missing_rows": 0, "orphan_rows": 0, "runs": [], "open_segments_in_ended_runs": 0}
+        said, held = conn.execute(ROWS_SQL).fetchone()
+        missing, orphans = max(0, said - held), max(0, held - said)
         groups = conn.execute("SELECT count(*) FROM commit_group").fetchone()[0]
         runs = conn.execute("SELECT run_id, ended_wall IS NOT NULL, end_reason FROM run ORDER BY started_wall").fetchall()
         open_segments = conn.execute(
             "SELECT count(*) FROM segment s JOIN run r USING(run_id) WHERE r.ended_wall IS NOT NULL AND s.end_wall IS NULL"
         ).fetchone()[0]
-    return {"schema": True, "groups": groups, "half_written_groups": half, "orphan_rows": orphans, "runs": [(ended, reason) for _, ended, reason in runs], "open_segments_in_ended_runs": open_segments}
+    return {"schema": True, "groups": groups, "missing_rows": missing, "orphan_rows": orphans, "runs": [(ended, reason) for _, ended, reason in runs], "open_segments_in_ended_runs": open_segments}
 
 
 async def crash(iterations: int, seed: int = 7) -> dict:
@@ -158,7 +156,7 @@ async def crash(iterations: int, seed: int = 7) -> dict:
             checks = {name: database_check(store) for name, store in (("primary", primary), ("emergency", emergency))}
             report["kills"].append({"mode": mode, "after_seconds": round(time.monotonic() - started, 2), **checks})
             for check in checks.values():
-                assert check["half_written_groups"] == 0 and check["orphan_rows"] == 0, check
+                assert check["missing_rows"] == 0 and check["orphan_rows"] == 0, check
         final = Backend(work, work / "config.json", work / "database.json", work / "accounts.json")
         backends.append(final)
         final.start()
@@ -225,16 +223,17 @@ async def storage(seconds: float) -> dict:
         whole = {}
         for name, store in lab.router.stores:
             check = database_check(store)
-            whole[name] = {k: check[k] for k in ("half_written_groups", "orphan_rows")}
+            whole[name] = {k: check[k] for k in ("missing_rows", "orphan_rows")}
         ids = []
         for _, store in lab.router.stores:
             with psycopg.connect(store.dsn) as conn:
                 ids += [r[0] for r in conn.execute("SELECT group_id FROM commit_group").fetchall()]
         history = await asyncio.to_thread(fetch, f"http://127.0.0.1:{lab.port}/api/replay?center={time.time() - 10}&seconds=600&points=bridge_mvv_01", lab.viewer, 30)  # off the loop: the web application is served by it
-        raw = [x for s in history["channels"]["bridge_mvv_01"]["segments"] for x in s["rows"] if x["origin"] == "RECEIVED"]
+        # the receipts: a restatement counts from the very start of its segment (修复轮14 keeps no origin per row)
+        raw = [x for s in history["channels"]["bridge_mvv_01"]["segments"] for x in s["rows"] if x["time"] != s["start_wall"]]
         report["switching"] = {
             "steps": rows, "whole_groups": whole, "group_ids": len(ids), "group_ids_unique": len(set(ids)) == len(ids),
-            "history": {"partial": history["partial"], "raw_rows": len(raw), "duplicates": len(raw) - len({x["id"] for x in raw}), "in_order": [x["time"] for x in raw] == sorted(x["time"] for x in raw)},
+            "history": {"partial": history["partial"], "raw_rows": len(raw), "duplicates": len(raw) - len({(x["time"], x["value"]) for x in raw}), "in_order": [x["time"] for x in raw] == sorted(x["time"] for x in raw)},
             "owner_archive_lost_groups": lab.runtime.owner.health["archive_lost_groups"],
         }
     report["real_disk_growth_bytes"] = free_before - shutil.disk_usage(drive).free

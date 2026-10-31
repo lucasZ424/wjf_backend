@@ -5,6 +5,7 @@ refuses them - an accepted limit, but one that must be seen on the self-check pa
 must not stay there once the group is written.
 """
 
+from archive_support import samples
 from test_archive_router import rig  # noqa: F401 - the fixture
 from test_archive_write import make_group
 
@@ -87,11 +88,10 @@ async def test_a_long_wait_for_a_bucket_keeps_acquisition_live_bounded_and_hones
         before = queue.stats["committed"]
         await rounds_until(lambda: queue.stats["committed"] > before and not queue.depth, "a new reading was not stored", b1=9.75)
         with rig.primary.session() as conn:
-            stored = conn.execute(
-                "SELECT value,batch_seq,bucket FROM observation WHERE point_id='b1' AND value=9.75 ORDER BY batch_seq DESC LIMIT 1"
-            ).fetchone()
+            found = samples(conn, "c.point_id='b1' AND s.value=9.75", order="s.t DESC")
+            stored = found[0] if found else None
             gaps = conn.execute("SELECT end_wall FROM archive_gap WHERE source_id='mb'").fetchall()
-        assert stored is not None and stored["bucket"] == 2 and stored["batch_seq"] > 10, ("stored again, in its bucket", stored)
+        assert stored is not None and stored["bucket"] == 2, ("stored again, in its bucket", stored)
         assert gaps and all(g["end_wall"] is not None for g in gaps), "the loss is in the archive as a gap, and the gap is closed"
         with rig.emergency.session() as conn:
             assert conn.execute("SELECT count(*) AS n FROM commit_group").fetchone()["n"] == 0, "no group went to the emergency database"

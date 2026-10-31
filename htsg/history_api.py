@@ -106,13 +106,4 @@ def build_history_router(router, user_dep, config, *, concurrency: int = 2) -> A
             channel["unit"] = units.get(cid)
         return result
 
-    @api.get("/api/replay/basis/{result_id:path}", dependencies=[Depends(user_dep)])
-    async def basis(result_id: str, bucket: int | None = None):  # bucket: the one the result's history row names
-        found = await blocking(history.input_basis, router.stores, result_id, bucket)
-        if not found["found"]:
-            if found["unavailable"]:
-                raise HTTPException(503, "历史库无法读取")
-            raise HTTPException(404, "没有找到该结果")
-        return found
-
     return api

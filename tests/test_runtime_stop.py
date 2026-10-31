@@ -230,18 +230,22 @@ def count(store, table, where="true"):
 
 
 def taken_in_order(store):
-    """The kinds of state records in the order the archive took their groups."""
-    query = "SELECT e.kind FROM state_event e JOIN commit_group g USING (group_id) ORDER BY g.committed_at,e.id"
+    """The groups in the order the archive took them, the run's own two named RUN_START and RUN_END.  Neither is a stored
+    state record any more (修复轮14): they are the run-level groups, the end the one built at the end time its own record
+    wrote into the run's row - so a run whose row has no end has no RUN_END here, as `run_of` says too."""
+    query = (
+        "SELECT CASE WHEN g.source_id<>'_run' THEN g.kind WHEN g.built_wall=r.ended_wall THEN 'RUN_END' "
+        "ELSE 'RUN_START' END AS kind FROM commit_group g LEFT JOIN run r USING (run_id) ORDER BY g.committed_at,g.order_no"
+    )
     return [x["kind"] for x in rows(store, query)]
 
 
 def not_whole(store):
-    """The stored groups that do not hold all the records they say they hold."""
-    members = " + ".join(
-        f"(SELECT count(*) FROM {table} m WHERE m.group_id=c.group_id)"
-        for table in ("observation", "result", "state_event", "fault_record")
-    )
-    return [x["group_id"] for x in rows(store, f"SELECT c.group_id FROM commit_group c WHERE c.records <> {members}")]
+    """Rows the stored groups say they hold and the database does not, or holds without a group saying so.  A row names no
+    group any more (修复轮14), so the rows are counted against the groups as a whole."""
+    (x,) = rows(store, "SELECT (SELECT coalesce(sum(records),0) FROM commit_group) AS said,"
+                       "(SELECT count(*) FROM sample)+(SELECT count(*) FROM state_event) AS held")  # fmt: skip
+    return [] if x["said"] == x["held"] else [x]
 
 
 def stop_facts(runtime):
@@ -292,7 +296,7 @@ async def test_a_normal_stop_at_full_scale_takes_a_fraction_of_the_deadline(arch
             await runtime.stop()
             took = time.monotonic() - started
     assert took < 9.0, f"the stop took {took:.2f} s: the deadline is 8 s plus 1 s"
-    assert stop_facts(runtime) == (False, "COMMITTED", [], 0) and count(primary, "state_event", "kind='RUN_END'") == 1
+    assert stop_facts(runtime) == (False, "COMMITTED", [], 0) and taken_in_order(primary).count("RUN_END") == 1
     assert rows(primary, "SELECT end_reason FROM run")[0]["end_reason"] == "NORMAL"
     assert count(primary, "segment", "end_wall IS NULL") == 0, "no segment is left open"
     print(f"\nnormal stop at full scale: {took:.3f} s")
@@ -363,8 +367,8 @@ async def test_a_source_whose_archive_is_lost_gets_its_gap_and_its_segment_end_a
         (gap,) = gaps_of(lab.primary)
         assert gap["start_wall"] == lost_since and stopped_at <= gap["end_wall"] <= time.time()
         assert gap["reason"].startswith("REFUSED")
-        assert count(lab.primary, "observation", "origin = 'STATE_ASSERTION'") == 0, "no baseline of the retained state"
-        assert count(lab.primary, "result", "origin = 'STATE_ASSERTION'") == 0 and count(lab.primary, "watermark") == 0
+        assert count(lab.primary, "sample", "item = -1") == 0, "no restatement of the retained state (stored first in order)"
+        assert count(lab.primary, "watermark") == 0
         assert run_of(lab.primary)[1] == "NORMAL" and taken_in_order(lab.primary)[-1] == "RUN_END"
         assert stop_facts(lab.runtime) == (False, "COMMITTED", [], 0) and lab.took < 3.0
 
@@ -407,7 +411,7 @@ async def test_a_full_queue_at_the_stop_with_a_stuck_writer_registers_no_end_and
         assert lab.ua.archive == "LOST" and lab.ua.lost_reason == "QUEUE_FULL", "the end of the segment found no room"
         incomplete, end, failed, stuck = stop_facts(lab.runtime)
         assert (incomplete, end, failed) == (True, "NOT_QUEUED", []) and stuck >= 1 and 0.4 < lab.took < 1.0
-        assert run_of(lab.primary) == (None, None) and count(lab.primary, "state_event", "kind='RUN_END'") == 0
+        assert run_of(lab.primary) == (None, None) and taken_in_order(lab.primary).count("RUN_END") == 0
         assert [(x["seg"], x["end_wall"]) for x in segments_of(lab.primary)] == [(1, None)] and gaps_of(lab.primary) == []
         restart(lab)
         assert run_of(lab.primary)[1] == "ABNORMAL_EXIT"
@@ -446,7 +450,7 @@ async def test_the_stop_ends_at_the_deadline_when_the_archive_does_not_answer(ar
         await lab.stop()
         incomplete, end, failed, stuck = stop_facts(lab.runtime)
         assert (incomplete, end, failed) == (True, "NOT_QUEUED", []) and stuck >= 1 and 0.4 < lab.took < 1.0, lab.took
-        assert run_of(lab.primary) == (None, None) and count(lab.primary, "state_event", "kind='RUN_END'") == 0
+        assert run_of(lab.primary) == (None, None) and taken_in_order(lab.primary).count("RUN_END") == 0
         restart(lab)
         assert run_of(lab.primary)[1] == "ABNORMAL_EXIT"
 
@@ -477,7 +481,7 @@ async def test_an_end_whose_commit_stays_unknown_is_not_registered_and_the_stop_
         await lab.stop()
         incomplete, end, failed, stuck = stop_facts(lab.runtime)
         assert (incomplete, end, failed) == (True, "UNCONFIRMED", []) and stuck == 1 and 0.4 < lab.took < 1.0, lab.took
-        assert run_of(lab.primary) == (None, None) and count(lab.primary, "state_event", "kind='RUN_END'") == 0
+        assert run_of(lab.primary) == (None, None) and taken_in_order(lab.primary).count("RUN_END") == 0
         assert [x["end_reason"] for x in segments_of(lab.primary)] == ["SHUTDOWN"], "the segment was closed before the end"
         restart(lab)
         assert run_of(lab.primary)[1] == "ABNORMAL_EXIT"
@@ -502,7 +506,7 @@ async def test_a_unit_and_the_final_group_both_turned_away_end_the_stop_at_once_
         await asyncio.wait_for(stopping, 10)
         assert lab.took < 3.0, f"the stop took {lab.took:.2f} s although nothing could be settled any more"
         assert stop_facts(lab.runtime)[:3] == (True, "NOT_QUEUED", ["ua"]), "the source that could not be settled is named"
-        assert run_of(lab.primary) == (None, None) and count(lab.primary, "state_event", "kind='RUN_END'") == 0
+        assert run_of(lab.primary) == (None, None) and taken_in_order(lab.primary).count("RUN_END") == 0
         restart(lab)
         assert run_of(lab.primary)[1] == "ABNORMAL_EXIT"
         assert [x["end_reason"] for x in segments_of(lab.primary)] == ["EXIT_TRUNCATED"]
@@ -538,7 +542,7 @@ async def test_a_source_whose_final_group_is_turned_away_does_not_take_the_other
         later.release()
         await asyncio.wait_for(stopping, 10)
         assert stop_facts(lab.runtime) == (True, "NOT_QUEUED", [failed], 0)
-        assert run_of(lab.primary) == (None, None) and count(lab.primary, "state_event", "kind='RUN_END'") == 0
+        assert run_of(lab.primary) == (None, None) and taken_in_order(lab.primary).count("RUN_END") == 0
         segments = {x["source_id"]: x for x in segments_of(lab.primary)}
         (gap,) = rows(lab.primary, "SELECT source_id,start_wall,end_wall,reason FROM archive_gap")
         assert gap["source_id"] == good and gap["reason"].startswith("REFUSED"), "the gap of the source that could be settled is stored"
@@ -589,7 +593,7 @@ async def test_a_source_still_recovering_when_another_is_turned_away_is_settled_
         await asyncio.wait_for(stopping, 10)
         assert lab.owner.shutdown_settled() and lab.owner.sources[good].shutdown_done, "no source is left half settled"
         assert stop_facts(lab.runtime) == (True, "NOT_QUEUED", [failed], 0)
-        assert run_of(lab.primary) == (None, None) and count(lab.primary, "state_event", "kind='RUN_END'") == 0
+        assert run_of(lab.primary) == (None, None) and taken_in_order(lab.primary).count("RUN_END") == 0
         (gap,) = rows(lab.primary, "SELECT source_id FROM archive_gap")
         assert gap["source_id"] == good, "the recovering source has its gap"
         stored = segments_of(lab.primary)
@@ -609,7 +613,7 @@ async def test_an_end_that_was_committed_but_reported_unknown_is_registered_once
         lab.wire.rule(is_end, verdict="UNKNOWN_WROTE", times=1)
         await lab.stop()
         assert [x.status for x in lab.wire.log if is_end_entry(x)] == ["UNKNOWN", "ALREADY"], "the same group, asked again"
-        assert count(lab.primary, "state_event", "kind='RUN_END'") == 1 and not not_whole(lab.primary)
+        assert taken_in_order(lab.primary).count("RUN_END") == 1 and not not_whole(lab.primary)
         assert run_of(lab.primary)[1] == "NORMAL"
 
 
@@ -630,7 +634,7 @@ async def test_a_full_queue_is_asked_again_for_the_end_with_the_same_group(archi
         await lab.stored()
         await lab.stop()
         assert len(offered) == 4 and all(group is offered[0] for group in offered), "one group, offered until the queue took it"
-        assert count(lab.primary, "state_event", "kind='RUN_END'") == 1 and not not_whole(lab.primary)
+        assert taken_in_order(lab.primary).count("RUN_END") == 1 and not not_whole(lab.primary)
         assert run_of(lab.primary)[1] == "NORMAL" and lab.owner.health["run_group_rejected"] == 3
 
 
@@ -652,7 +656,7 @@ async def test_a_start_of_run_the_queue_did_not_take_leaves_the_run_to_be_create
         await lab.stored()
         assert run_of(lab.primary) == (None, None), "the run exists without the group that was turned away"
         await lab.stop()
-        assert count(lab.primary, "state_event", "kind='RUN_START'") == 0
+        assert taken_in_order(lab.primary).count("RUN_START") == 0
         (started,) = rows(lab.primary, "SELECT started_wall FROM run")
         assert started["started_wall"] == lab.owner.started_wall
         assert run_of(lab.primary)[1] == "NORMAL"

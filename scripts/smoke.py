@@ -138,14 +138,15 @@ async def smoke(seconds: float) -> dict:
             await asyncio.sleep(seconds)
             after = await asyncio.to_thread(resilience.fetch, base + "/api/health", viewer)
             body = await asyncio.to_thread(resilience.fetch, base + f"/api/replay?center={time.time()}&seconds=7200&points=bridge_mvv_01", viewer, 30)
-            raw = [x for s in body["channels"]["bridge_mvv_01"]["segments"] for x in s["rows"] if x["origin"] == "RECEIVED"]
+            # the receipts: a restatement counts from the very start of its segment (修复轮14 keeps no origin per row)
+            raw = [x for s in body["channels"]["bridge_mvv_01"]["segments"] for x in s["rows"] if x["time"] != s["start_wall"]]
             report[label] = {
                 "page_served_is_this_tree": hashlib.sha256(served).hexdigest() == sha256(ROOT / "htsg/static/app.js"),
                 "config_id_is_the_one_on_disk": ui["config_id"] == config.config_id,
                 "archive_sources": {k: v["archive"] for k, v in after["archive"]["sources"].items()},
                 "groups_committed": after["archive"]["queue"]["committed"], "queue_failures": after["archive"]["queue"]["failures"],
                 "negotiated_ua": after["negotiated"].get("ua_field"), "accounts": after["runtime"]["accounts"],
-                "history": {"raw_rows": len(raw), "duplicates": len(raw) - len({x["id"] for x in raw}), "in_order": [x["time"] for x in raw] == sorted(x["time"] for x in raw), "partial": body["partial"], "gaps": len(body["gaps"])},
+                "history": {"raw_rows": len(raw), "duplicates": len(raw) - len({(x["time"], x["value"]) for x in raw}), "in_order": [x["time"] for x in raw] == sorted(x["time"] for x in raw), "partial": body["partial"], "gaps": len(body["gaps"])},
             }
             report[label]["stop"] = await backend.stop_and_wait()
             await asyncio.sleep(2)  # the process finishes writing the end of the run after its port is closed

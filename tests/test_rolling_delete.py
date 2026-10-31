@@ -145,14 +145,14 @@ def test_with_the_switch_off_no_new_deletion_starts_but_a_range_already_marked_i
 
 
 def detach_pending(store, n):
-    """Leave bucket n's observation partition half detached, the way a crash or a timeout inside DETACH CONCURRENTLY does."""
+    """Leave bucket n's sample partition half detached, the way a crash or a timeout inside DETACH CONCURRENTLY does."""
     reader = psycopg.connect(store.dsn)
     reader.execute("BEGIN ISOLATION LEVEL REPEATABLE READ")
-    reader.execute("SELECT count(*) FROM observation")
+    reader.execute("SELECT count(*) FROM sample")
     with psycopg.connect(store.dsn, autocommit=True) as conn:
         conn.execute("SET statement_timeout='1s'")
         with pytest.raises(psycopg.errors.QueryCanceled):
-            conn.execute(f"ALTER TABLE observation DETACH PARTITION observation_b{n} CONCURRENTLY")
+            conn.execute(f"ALTER TABLE sample DETACH PARTITION sample_b{n} CONCURRENTLY")
         assert conn.execute("SELECT count(*) FROM pg_inherits WHERE inhdetachpending").fetchone()[0] == 1
     reader.close()
 
@@ -164,7 +164,7 @@ def test_a_deletion_interrupted_at_any_step_is_finished_by_the_next_round(tmp_pa
     with psycopg.connect(pair[0].dsn, autocommit=True) as conn:
         conn.execute("UPDATE bucket SET state='DELETING' WHERE no=1")
         if stage == "half":
-            for table in ("commit_group", "observation"):
+            for table in ("commit_group", "sample"):
                 conn.execute(f"ALTER TABLE {table} DETACH PARTITION {table}_b1")
             conn.execute("DROP TABLE commit_group_b1")
     if stage == "pending":
@@ -180,7 +180,7 @@ def test_a_long_transaction_postpones_the_deletion_and_the_next_round_finishes_i
     build(pair[0], cfg, 20)
     reader = psycopg.connect(pair[0].dsn)
     reader.execute("BEGIN ISOLATION LEVEL REPEATABLE READ")
-    reader.execute("SELECT count(*) FROM observation")  # a long query of the history page
+    reader.execute("SELECT count(*) FROM sample")  # a long query of the history page
     m.cycle()
     assert states(pair[0])[1] == "DELETING" and m.snapshot.health["deletion"].startswith("POSTPONED")
     reader.close()

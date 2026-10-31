@@ -53,7 +53,7 @@ def replay(client, **kw):
 
 
 def test_every_endpoint_needs_credentials_and_accepts_viewer_and_admin(api):
-    for path in ("/api/channels", "/api/faults", "/api/replay?center=1&seconds=1&points=ti", "/api/replay/basis/x"):
+    for path in ("/api/channels", "/api/faults", "/api/replay?center=1&seconds=1&points=ti"):
         assert api.get(path).status_code == 401, path
         assert api.get(path, headers={"Authorization": "Bearer wrong"}).status_code == 401
     for headers in (VIEWER, ADMIN):
@@ -143,12 +143,6 @@ def test_a_selected_fault_leads_to_a_replay_window_around_its_time(api):
     fault = api.get("/api/faults", params={"limit": 1}, headers=VIEWER).json()["items"][0]
     body = replay(api, center=fault["confirmed_wall"], seconds=30, points="ti,dt").json()
     assert set(body["channels"]) == {"ti", "dt"}, "other channels of the same window can be looked at too"
-
-
-def test_result_basis_is_reachable_and_an_unknown_result_is_404(api):
-    assert api.get("/api/replay/basis/run1/ua/b1/r/dt", headers=VIEWER).status_code == 200
-    assert api.get("/api/replay/basis/no/such/result", headers=VIEWER).status_code == 404
-
 
 def test_storage_trouble_is_partial_when_one_database_fails_and_503_when_all_do(api):
     real = api.router.emergency

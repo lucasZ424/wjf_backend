@@ -140,26 +140,6 @@ def test_a_group_written_into_a_bucket_sealed_before_it_was_ever_used_is_found(s
     assert [v for v, held in raw(h.query([("primary", store)], CHANNELS, 90.0, 200.0)) if not held] == [100.0]
     assert bucket_range(store, 1) == (100.0, 100.0)
 
-
-def test_the_basis_of_a_result_is_found_from_the_bucket_its_row_carries(store):
-    store.prepare_bucket(2)
-    result = r.Result(
-        id=r.result_id(RUN, "ua", 2, "dt"), run_id=RUN, source_id="ua", conn_gen=1, seg=1, batch_seq=2, point_id="dt",
-        value=1.0, status=r.RESULT_OK, reason=None, config_id=CONFIG.config_id, at_wall=201.0,
-    )  # fmt: skip
-    assert store.write_group(group(1, 1, [100.0])).durable
-    assert store.write_group(group(2, 2, [200.0], results=(result,))).durable
-    rows = [x for s in h.query([("primary", store)], {"dt": "ua"}, 150.0, 250.0)["channels"]["dt"]["segments"] for x in s["rows"]]
-    (shown,) = [x for x in rows if x["id"] == result.id]
-    assert shown["bucket"] == 2, "a row says which bucket it is in, so its basis can be asked of that bucket"
-    basis = h.input_basis([("primary", store)], result.id, bucket=shown["bucket"])
-    assert basis["found"] and [x["id"] for x in basis["inputs"]["ti"]["rows"]] == [r.observation_id(RUN, "ua", 2, 0)]
-    assert h.input_basis([("primary", store)], result.id, bucket=1)["found"], "a wrong hint is not a wrong answer"
-
-
-# ---- many buckets: the bound of one table, and locks that do not grow with the buckets kept
-
-
 class Locks:
     """The store a query is given, counting the locks its transaction holds just before it ends."""
 
@@ -212,7 +192,7 @@ def fill(store, buckets):
         walls = [float((n - 1) * PER_BUCKET + i + 1) for i in range(PER_BUCKET)]
         assert store.write_group(group(2 * n + 1, n, walls)).durable
     with store.session() as conn:
-        conn.execute("ANALYZE observation")
+        conn.execute("ANALYZE sample")
 
 
 def locks_of_a_window(store, start):

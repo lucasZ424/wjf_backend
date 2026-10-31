@@ -13,8 +13,8 @@ import time
 from pathlib import Path
 
 import httpx
-import psycopg
 import pytest
+from archive_support import groups_in_order, samples
 from live_support import PROCESS, UA_NAMES, full_config
 from protocol_support import FieldModbus, FieldUa
 from test_archive_router import Disks
@@ -68,8 +68,8 @@ def build(field, tmp_path, primary, emergency):
 
 
 def kinds(store, kind):
-    with psycopg.connect(store.dsn) as conn:
-        return conn.execute("SELECT count(*) FROM state_event WHERE kind=%s", (kind,)).fetchone()[0]
+    with store.session() as conn:
+        return [x["kind"] for x in groups_in_order(conn)].count(kind)
 
 
 async def test_the_runtime_reads_both_protocols_archives_serves_the_history_and_ends_the_run(archive_db_factory, tmp_path):
@@ -102,13 +102,19 @@ async def test_the_runtime_reads_both_protocols_archives_serves_the_history_and_
                 rows = {pid: [x for s in body["channels"][pid]["segments"] for x in s["rows"]] for pid in body["channels"]}
                 assert len(rows["bridge_mvv_01"]) >= 2, "a Modbus round is stored every second"
                 still = rows["temp_inner_01"]
-                assert [x["origin"] for x in still].count("RECEIVED") == 1, "a value that never changes is stored once ..."
-                assert {x["origin"] for x in still} <= {"RECEIVED", "STATE_ASSERTION", "RETENTION_BASELINE"}, "... then only restated"
-                by_batch = {x["batch_seq"]: x["value"] for x in rows["bridge_mvv_01"] if x["origin"] == "RECEIVED"}
-                strains = [x for x in rows["strain_01"] if x["origin"] == "RECEIVED"]
-                assert len(strains) == 1, "a result is stored when it changes: the steady bridge gives one"
-                for strain in strains:
-                    assert strain["value"] == pytest.approx(by_batch[strain["batch_seq"]] * 1000 / 6), "a result with ITS input"
+                with primary.session() as conn:  # receipts are in their batch's order; a restatement is -1, a baseline last
+                    receipts = samples(conn, "c.point_id='temp_inner_01' AND s.item BETWEEN 0 AND 32766")
+                assert len(receipts) == 1, "a value that never changes is stored once ..."
+                assert len({x["value"] for x in still}) == 1, "... then only restated"
+                by_time = {x["time"]: x["value"] for x in rows["bridge_mvv_01"]}
+                strains = rows["strain_01"]
+                assert len({x["value"] for x in strains}) == 1, "a result is stored when it changes: the steady bridge gives one value"
+                for strain in (x for x in strains if not x["held"]):
+                    # its input is the bridge reading of the same round: the result carries the round's time, the reading
+                    # its response's, microseconds apart; rounds are a second apart (no batch number is stored: 修复轮14)
+                    near = min(by_time, key=lambda t, at=strain["time"]: abs(t - at))
+                    assert abs(near - strain["time"]) < 0.1, (strain, sorted(by_time))
+                    assert strain["value"] == pytest.approx(by_time[near] * 1000 / 6), "a result with ITS input"
                 inner, outer = 480.0 + UA_NAMES.index("temp_inner_01") * 0.01, 440.0 + UA_NAMES.index("temp_outer_01") * 0.01
                 assert rows["delta_t_01"][0]["value"] == pytest.approx(inner - outer)
         finally:

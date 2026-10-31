@@ -3,33 +3,28 @@
 A value counts from its effective time until the EARLIEST of: the next record of that channel, the end of
 its segment, the start of an archive gap, and - for a segment still open - the confirmed watermark.  There
 is no interpolation and nothing crosses a segment: a window with no change still reports the value in
-effect at its start (with its ORIGINAL time), and an unbounded tail is reported as unknown, not guessed.
+effect at its start (with the time it counts from), and an unbounded tail is reported as unknown, not guessed.
+
+Rows are the narrow rows of `sample` (修复轮14): channel and run are this database's own numbers, read back through its
+`channel` and `run_number` tables, and `state` is read back into a quality or a result state (`records.read_state`).
 """
 
 from __future__ import annotations
 
 import math
 import time
-from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field
 
 import psycopg
 
-from .records import MISSING
+from .records import read_state
 
 ROW_LIMIT = 10000  # rows of the window per channel, plus the value in effect at its start; reaching it is reported
 CHANNEL_LIMIT = 12  # channels one replay may ask for (修复轮03): the fixed template of a fault, never all channels at once
 DEFAULT_WINDOW_SECONDS = 3600  # the window a fault brings (修复轮03): half before, half after; set from the measurement
 INF = math.inf
 
-OBS_COLUMNS = (
-    "id,run_id,source_id,conn_gen,seg,batch_seq,item_seq,point_id,value,quality,status_code,received_wall,"
-    "effective_wall,origin,orig_id,asserted_wall,extreme,tick,poll_id,response_id,bucket"
-)
-RES_COLUMNS = (
-    "id,run_id,source_id,conn_gen,seg,batch_seq,point_id,value,status,reason,extreme,config_id,at_wall,"
-    "effective_wall,basis,estimate,origin,orig_id,asserted_wall,basis_incomplete,bucket"
-)
+SAMPLE_COLUMNS = "s.t,s.value,s.run,s.seg,s.ua_status,s.channel,s.state,s.item"
 
 
 @dataclass
@@ -40,7 +35,7 @@ class StoreRead:
     segments: list = field(default_factory=list)
     gaps: list = field(default_factory=list)
     watermarks: list = field(default_factory=list)
-    rows: list = field(default_factory=list)  # raw observations and derived results, marked by kind
+    rows: list = field(default_factory=list)  # inputs and derived results, marked by kind
     truncated: set = field(default_factory=set)
     retention: dict = field(default_factory=lambda: dict(NOTHING_DELETED))  # what the rolling deletion took (§13.6)
 
@@ -141,25 +136,67 @@ def read_store(store, name, channels: dict[str, str], start: float, end: float, 
             conn, "SELECT run_id,source_id,seg,covered_wall FROM watermark WHERE source_id=ANY(%s)", (sources,)
         )
         restated = _restated(conn, buckets, out.segments, start)
-        for kind, table, columns, time_col in (
-            ("raw", "observation", OBS_COLUMNS, "effective_wall"),
-            ("derived", "result", RES_COLUMNS, "effective_wall"),
-        ):
-            window = _rows(
-                conn,
-                f"SELECT * FROM (SELECT {columns},row_number() OVER (PARTITION BY point_id "
-                f"ORDER BY {time_col},run_id,seg,batch_seq,{'item_seq' if kind == 'raw' else 'id'}) AS rn "
-                f"FROM {table} WHERE point_id=ANY(%s) AND {time_col}>=%s AND {time_col}<=%s AND bucket=ANY(%s)) t "
-                f"WHERE rn<=%s",
-                (points, start, end, window_buckets, limit + 1),
-            ) if window_buckets else []  # fmt: skip
-            for row in window:
-                if row.pop("rn") > limit:
-                    out.truncated.add(row["point_id"])
-                out.rows.append({**row, "kind": kind})  # the extra row stays: it ends the last one shown
-            held = _held_in(conn, buckets, out.segments, points, start, kind, restated)
-            out.rows.extend({**row, "kind": kind} for row in held)
+        names = _Names(conn, points, out.name)
+        window = _rows(
+            conn,
+            f"SELECT * FROM (SELECT {SAMPLE_COLUMNS},row_number() OVER (PARTITION BY c.point_id "
+            f"ORDER BY s.t,s.run,s.seg,s.item) AS rn FROM sample s JOIN channel c ON c.no=s.channel "
+            f"WHERE s.channel=ANY(%s) AND s.t>=%s AND s.t<=%s AND s.bucket=ANY(%s)) w WHERE rn<=%s",
+            (list(names.channels), start, end, window_buckets, limit + 1),
+        ) if window_buckets and names.channels else []  # fmt: skip
+        for row in window:
+            row = names.read(row)
+            if row is None:
+                continue
+            if row.pop("rn") > limit:
+                out.truncated.add(row["point_id"])
+            out.rows.append(row)  # the extra row stays: it ends the last one shown
+        out.rows.extend(_held_in(conn, buckets, out.segments, names, start, restated))
     return out
+
+
+class _Names:
+    """This database's numbers for the channels asked for and for runs, and a stored row read back in words: its point,
+    source and run by name, its state as a quality or a result state, its OPC UA status code unsigned again.  A row whose
+    channel or run this database cannot name is left out rather than shown under a wrong name - it cannot happen while
+    the rows and their numbers are written in one transaction.  Every row gets an id of this read alone: rows carry
+    none in the database, and the databases are merged by joining their rows (a group is written to one database only)."""
+
+    def __init__(self, conn, points, name):
+        self.channels = {
+            x["no"]: (x["point_id"], x["source_id"])
+            for x in conn.execute("SELECT no,point_id,source_id FROM channel WHERE point_id=ANY(%s)", (points,)).fetchall()
+        }
+        self.runs = {x["no"]: x["run_id"] for x in conn.execute("SELECT no,run_id FROM run_number").fetchall()}
+        self.run_no = {run_id: no for no, run_id in self.runs.items()}
+        self.channel_no = {key: no for no, key in self.channels.items()}
+        self.name, self.count = name, 0
+
+    def read(self, row) -> dict | None:
+        channel, run_id = self.channels.get(row["channel"]), self.runs.get(row["run"])
+        if channel is None or run_id is None:
+            return None
+        self.count += 1
+        state = read_state(row["state"])
+        out = {
+            "id": f"{self.name}/{self.count}",
+            "point_id": channel[0],
+            "source_id": channel[1],
+            "run_id": run_id,
+            "seg": row["seg"],
+            "effective_wall": row["t"],
+            "item": row["item"],
+            "value": row["value"],
+            "status_code": row["ua_status"] & 0xFFFFFFFF if row["ua_status"] else None,
+            "quality": state.get("quality"),
+            "status": state.get("status"),
+            "reason": state.get("reason"),
+            "kind": state["kind"],
+            "extreme": state["extreme"],
+        }
+        if "rn" in row:
+            out["rn"] = row["rn"]
+        return out
 
 
 def _restated(conn, buckets, segments, start) -> dict:
@@ -188,16 +225,21 @@ def _restated(conn, buckets, segments, start) -> dict:
     return out
 
 
-def _held_in(conn, buckets, segments, points, start, kind, restated) -> list:
+def _held_in(conn, buckets, segments, names, start, restated) -> list:
     """The value in effect at `start` of every (segment, channel): its latest row before `start`, inside the segment.
 
     The buckets are searched the one reaching latest first, a few at a time and twice as many each round.  A pair is settled
     once its row is later than anything a bucket left can hold, or once no bucket left reaches back to its floor: the start
     of its segment, or the last baseline that restated it (`restated`) - usually inside the window's own bucket.  A pair
-    with no row (a raw channel asked of the results, say) so stops at that baseline too."""
-    table, columns, tie = ("observation", OBS_COLUMNS, ",o.item_seq DESC") if kind == "raw" else ("result", RES_COLUMNS, "")
-    rank = lambda row: (row["effective_wall"], row["batch_seq"], row.get("item_seq") or 0)  # noqa: E731 - the ORDER BY below
-    pairs = [(s["run_id"], s["source_id"], s["seg"], s["start_wall"], p) for s in segments for p in points]
+    with no row (a channel this source never gave, say) so stops at that baseline too.  Only the pairs this database has
+    numbers for are asked: a run or channel it never stored has no row here."""
+    rank = lambda row: (row["t"], row["item"])  # noqa: E731 - the ORDER BY below
+    pairs = [
+        (s["run_id"], s["source_id"], s["seg"], s["start_wall"], point)
+        for s in segments
+        for (point, source) in names.channel_no
+        if source == s["source_id"] and s["run_id"] in names.run_no
+    ]
     floors = {
         q: max(-INF if q[3] is None else q[3], restated.get(q[:3], -INF)) for q in pairs
     }  # fmt: skip
@@ -208,24 +250,24 @@ def _held_in(conn, buckets, segments, points, start, kind, restated) -> list:
         i, size = i + size, size * 2
         for row in _rows(
             conn,
-            f"SELECT b.* FROM unnest(%s::text[],%s::text[],%s::int[],%s::float8[],%s::text[]) "
-            f"AS k(run_id,source_id,seg,start_wall,point_id) "
-            f"CROSS JOIN LATERAL (SELECT {columns} FROM {table} o WHERE o.point_id=k.point_id "
-            f"AND o.run_id=k.run_id AND o.source_id=k.source_id AND o.seg=k.seg "
-            f"AND o.effective_wall<%s AND o.effective_wall>=coalesce(k.start_wall,'-infinity'::float8) AND o.bucket=ANY(%s) "
-            f"ORDER BY o.effective_wall DESC,o.batch_seq DESC{tie} LIMIT 1) b",
-            ([q[0] for q in pairs], [q[1] for q in pairs], [q[2] for q in pairs], [q[3] for q in pairs],
-             [q[4] for q in pairs], start, chunk),
+            f"SELECT b.* FROM unnest(%s::int[],%s::int[],%s::int[],%s::float8[]) AS k(run,seg,channel,start_wall) "
+            f"CROSS JOIN LATERAL (SELECT {SAMPLE_COLUMNS} FROM sample s WHERE s.channel=k.channel AND s.run=k.run "
+            f"AND s.seg=k.seg AND s.t<%s AND s.t>=coalesce(k.start_wall,'-infinity'::float8) AND s.bucket=ANY(%s) "
+            f"ORDER BY s.t DESC,s.item DESC LIMIT 1) b",
+            ([names.run_no[q[0]] for q in pairs], [q[2] for q in pairs],
+             [names.channel_no[(q[4], q[1])] for q in pairs], [q[3] for q in pairs], start, chunk),
         ):  # fmt: skip
-            key = (row["run_id"], row["source_id"], row["seg"], row["point_id"])
+            key = (row["run"], row["seg"], row["channel"])
             if key not in best or rank(row) > rank(best[key]):
                 best[key] = row
         reach = _reach_of(order[i:])
         pairs = [
             q for q in pairs
-            if reach >= floors[q] and not (q[:3] + q[4:] in best and best[q[:3] + q[4:]]["effective_wall"] > reach)
+            if reach >= floors[q] and not (
+                (key := (names.run_no[q[0]], q[2], names.channel_no[(q[4], q[1])])) in best and best[key]["t"] > reach
+            )
         ]  # fmt: skip
-    return list(best.values())
+    return [row for row in map(names.read, best.values()) if row is not None]
 
 
 def read_segment_rows(store, keys) -> list:
@@ -261,14 +303,13 @@ def _merge_segments(reads: list[StoreRead]) -> dict:
 
 
 def _ranking(row: dict) -> tuple:
-    """The order the queries rank the rows of a channel in: by effective time, then by identity (a result by its id)."""
-    last = row["item_seq"] if row["kind"] == "raw" else row["id"]
-    return row["effective_wall"], row["run_id"], row["seg"], row["batch_seq"], last
+    """The order the queries rank the rows of a channel in: by time, then by run, segment and order inside the batch."""
+    return row["effective_wall"], row["run_id"], row["seg"], row["item"], row["id"]
 
 
 def _limit_per_channel(rows: dict, start: float, limit: int, truncated: set):
     """The limit is per channel over ALL the databases, not per database: each was asked for `limit`+1 rows of the window, so
-    together they may hold up to twice that.  The rows of a channel are those of the union, once each (by stable id), in the
+    together they may hold up to twice that.  The rows of a channel are those of the union (a group is in one database), in the
     order every database ranks them in; what is left over the limit is not shown and the channel is marked truncated.  The
     first row over the limit is kept, marked `boundary`, to bound the hold of the last row shown (without it that row would
     be held to the end of its segment, as if nothing followed it); `assemble` never shows it.  The value held in from
@@ -310,7 +351,7 @@ def assemble(
             key = (mark["run_id"], mark["source_id"], mark["seg"])
             marks[key] = max(marks.get(key, -INF), mark["covered_wall"])
         for row in read.rows:
-            rows.setdefault(row["id"], row)
+            rows[row["id"]] = row  # ids are made per read, so no database's row hides another's
         truncated |= read.truncated
     _limit_per_channel(rows, start, limit, truncated)
     by_channel: dict[str, dict[tuple, list]] = {p: {} for p in channels}
@@ -325,7 +366,7 @@ def assemble(
     for pid, per_segment in by_channel.items():
         spans = []
         for key, seg_rows in per_segment.items():
-            seg_rows.sort(key=lambda r: (r["batch_seq"], r.get("item_seq", 0), r["id"]))
+            seg_rows.sort(key=lambda r: (r["effective_wall"], r["item"], r["id"]))  # one batch's rows share a time
             info = segments.get(key, {})
             seg_end, mark = info.get("end_wall"), marks.get(key)
             cut_at_exit = info.get("end_reason") == "EXIT_TRUNCATED"
@@ -361,12 +402,8 @@ def assemble(
                 out_rows.append(
                     {
                         "id": row["id"],
-                        "bucket": row.get("bucket"),  # where its basis is asked for (修复轮09 第1项)
                         "kind": row["kind"],
                         "time": t,
-                        "observed_at": row["received_wall"] if row["kind"] == "raw" else row["at_wall"],
-                        "origin": row["origin"],
-                        "orig_id": row["orig_id"],
                         "value": row["value"],
                         "valid": bool(valid),
                         "quality": row.get("quality"),
@@ -374,9 +411,6 @@ def assemble(
                         "status": row.get("status"),
                         "reason": row.get("reason"),
                         "extreme": row["extreme"],
-                        "batch_seq": row["batch_seq"],
-                        "item_seq": row.get("item_seq"),
-                        "basis_incomplete": row.get("basis_incomplete", False),
                         "held": t < start,
                         "until": until,
                         "ended_by": why,
@@ -436,253 +470,6 @@ def query(stores, channels: dict[str, str], start: float, end: float, limit: int
                 unavailable.append(one.name)
     reads = [one for _, one in read]
     return assemble(reads, channels, start, end, unavailable=tuple(unavailable), limit=limit, **kw)
-
-
-# --------------------------------------------------------------------------- input basis (§10)
-
-BASIS_FIELDS = (
-    "id,point_id,value,quality,status_code,extreme,origin,orig_id,run_id,source_id,seg,batch_seq,item_seq,"
-    "received_wall,effective_wall,tick"
-)
-
-
-HIDDEN = object()  # in the parameters of a statement: the buckets this database hides (being deleted, deleted)
-
-
-@contextmanager
-def _snapshots(stores):
-    """Every database read for one lookup in ONE repeatable-read, read-only transaction, with the buckets it hides - the
-    same isolation as the history page (§13.5): a deletion going on cannot hand the basis half a bucket, and what the page
-    no longer shows is not given here either.  Yields the open reads and the names of databases that could not be read."""
-    reads, down, stack = [], [], ExitStack()
-    try:
-        for name, store in stores:
-            try:
-                conn = stack.enter_context(store.session())
-                conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-                buckets = conn.execute(BUCKET_ROWS).fetchall()
-            except psycopg.Error:
-                down.append(name)
-                continue
-            reads.append((name, conn, [b["no"] for b in buckets if b["state"] in RETIRED], buckets))
-        yield reads, down
-    finally:
-        try:
-            stack.close()
-        except psycopg.Error:  # read only: what was read stands; the session has closed the connection that broke
-            pass
-
-
-def _bind(params, hidden):
-    return tuple(hidden if p is HIDDEN else p for p in params)
-
-
-def _first(reads, down, sql, params):
-    """First row any database still readable has, and its name; a database that fails is added to `down`."""
-    for name, conn, hidden, _ in reads:
-        if name in down:
-            continue
-        try:
-            row = conn.execute(sql, _bind(params, hidden)).fetchone()
-        except psycopg.Error:
-            down.append(name)
-            continue
-        if row is not None:
-            return name, row
-    return None, None
-
-
-def _all(reads, down, sql, params):
-    seen = {}
-    for name, conn, hidden, _ in reads:
-        if name in down:
-            continue
-        try:
-            for row in conn.execute(sql, _bind(params, hidden)).fetchall():
-                seen.setdefault(row["id"], row)
-        except psycopg.Error:
-            down.append(name)
-    return list(seen.values())
-
-
-CHUNK = object()  # in the parameters of a searched statement: the buckets of this round of the search
-
-
-def _search(reads, down, sql, params, order_of, settled):
-    """Per database, `sql` over its buckets in the order `order_of(buckets)` gives, a few at a time and twice as many each
-    round, until `settled(rows found, buckets left)`; the rows of every database, one per id.  The statement names only
-    the buckets of its round, so it is planned and locked over those alone (修复轮09 第1项)."""
-    seen = {}
-    for name, conn, _, buckets in reads:
-        if name in down:
-            continue
-        order, found, i, size = order_of(buckets), [], 0, 1
-        try:
-            while i < len(order) and not settled(found, order[i:]):
-                chunk = [b["no"] for b in order[i : i + size]]
-                i, size = i + size, size * 2
-                found += conn.execute(sql, tuple(chunk if p is CHUNK else p for p in params)).fetchall()
-        except psycopg.Error:
-            down.append(name)
-            continue
-        for row in found:
-            seen.setdefault(row["id"], row)
-    return list(seen.values())
-
-
-def _down_from(bucket: int, floor: float):
-    """Live buckets numbered `bucket` or lower that can hold a row from `floor` on, highest first.  A run's groups get
-    bucket numbers that never go down, so an earlier batch of the same run is in this bucket or a lower one."""
-    return lambda buckets: sorted(
-        (b for b in _alive(buckets) if b["no"] <= bucket and (b["data_hi"] is None or b["data_hi"] >= floor)),
-        key=lambda b: b["no"], reverse=True,
-    )  # fmt: skip
-
-
-def _source_inputs(derived: dict, name: str, points: dict) -> list[str]:
-    """Raw point ids a derived channel ultimately rests on, in rule order."""
-    out = []
-    for item in derived[name]["inputs"] if name in derived else [name]:
-        for pid in [item] if item in points else _source_inputs(derived, item, points):
-            if pid not in out:
-                out.append(pid)
-    return out
-
-
-def input_basis(stores, result_id: str, bucket: int | None = None) -> dict:
-    """Which stored observations a derived result was computed from, restored the way §10 prescribes.
-
-    OPC UA: the state at the END of the triggering batch within the same segment, plus every version in
-    that batch in batch order.  Modbus: only that round's responses (strain_change: also the previous
-    planned round).  Nothing is borrowed from other rounds or segments; what cannot be found is reported.
-    """
-    with _snapshots(stores) as (reads, down):
-        return _input_basis(reads, down, result_id, bucket)
-
-
-def _input_basis(reads, down, result_id: str, bucket: int | None = None) -> dict:
-    """`bucket`: where the history row of the result said it is - asked first; a result not there is looked for everywhere."""
-    result = None
-    if bucket is not None:
-        name, result = _first(
-            reads, down, "SELECT * FROM result WHERE id=%s AND bucket=%s AND bucket<>ALL(%s)", (result_id, bucket, HIDDEN)
-        )
-    if result is None:
-        name, result = _first(reads, down, "SELECT * FROM result WHERE id=%s AND bucket<>ALL(%s)", (result_id, HIDDEN))
-    if result is None:
-        return {"found": False, "unavailable": down}
-    _, config = _first(reads, down, "SELECT payload FROM config_version WHERE id=%s", (result["config_id"],))
-    payload = config["payload"] if config else None
-    out = {
-        "found": True,
-        "result": {k: result[k] for k in ("id", "point_id", "value", "status", "reason", "origin", "orig_id",
-                                          "run_id", "source_id", "seg", "batch_seq", "basis", "basis_incomplete")},
-        "config_id": result["config_id"],
-        "unavailable": down,
-        "inputs": {},
-        "missing": [],
-        "notes": [],
-    }  # fmt: skip
-    if payload is None:
-        out.update(complete=False, notes=["CONFIGURATION_VERSION_NOT_FOUND"])
-        return out
-    derived = {d["id"]: d for d in payload["derived"]}
-    points = {p["id"]: p for p in payload["points"]}
-    kinds = {s["id"]: s["kind"] for s in payload["sources"]}
-    rule = derived[result["point_id"]]
-    out["rule"] = {"operation": rule["operation"], "inputs": rule["inputs"], "model_id": rule.get("model_id")}
-    previous_batch = (result["basis"] or {}).get("previous_batch_seq")
-    _, seg = _first(reads, down, "SELECT start_wall FROM segment WHERE run_id=%s AND source_id=%s AND seg=%s",
-                    (result["run_id"], result["source_id"], result["seg"]))  # fmt: skip
-    _, run = _first(reads, down, "SELECT started_wall FROM run WHERE run_id=%s", (result["run_id"],))
-    seg_floor = -INF if seg is None or seg["start_wall"] is None else seg["start_wall"]
-    run_floor = -INF if run is None else run["started_wall"]
-    for pid in _source_inputs(derived, result["point_id"], points):
-        source = points[pid]["source"]
-        entry = {"source_id": source, "mode": None, "rows": [], "batch_end": None}
-        if source != result["source_id"]:
-            entry["mode"] = "CROSS_SOURCE_LATEST"  # no cross-source guarantee; shown for orientation only
-            rows = _search(
-                reads,
-                down,
-                f"SELECT {BASIS_FIELDS} FROM observation WHERE point_id=%s AND run_id=%s AND effective_wall<=%s "
-                "AND bucket=ANY(%s) ORDER BY effective_wall DESC,batch_seq DESC,item_seq DESC LIMIT 1",
-                (pid, result["run_id"], result["at_wall"], CHUNK),
-                lambda buckets: _newest_first(buckets, result["at_wall"], run_floor),
-                lambda found, rest: bool(found) and max(r["effective_wall"] for r in found) > _reach_of(rest),
-            )
-            rows = [max(rows, key=lambda r: (r["effective_wall"], r["batch_seq"], r["item_seq"]))] if rows else []
-        elif kinds[source] == "modbus":
-            entry["mode"] = "THIS_ROUND"
-            wanted = [result["batch_seq"]] + ([previous_batch] if previous_batch else [])
-            rows = _search(
-                reads,
-                down,
-                f"SELECT {BASIS_FIELDS} FROM observation WHERE point_id=%s AND run_id=%s AND source_id=%s "
-                "AND batch_seq=ANY(%s) AND bucket=ANY(%s) ORDER BY batch_seq,item_seq",
-                (pid, result["run_id"], source, wanted, CHUNK),
-                _down_from(result["bucket"], run_floor),
-                lambda found, rest: set(wanted) <= {r["batch_seq"] for r in found},
-            )
-            rows = sorted(rows, key=lambda r: (r["batch_seq"], r["item_seq"]))
-            if previous_batch:
-                out["previous_round"] = {"batch_seq": previous_batch, "tick": (result["basis"] or {}).get("previous_tick")}
-        else:
-            entry["mode"] = "BATCH_END_STATE"
-            in_batch = _search(
-                reads,
-                down,
-                f"SELECT {BASIS_FIELDS} FROM observation WHERE point_id=%s AND run_id=%s AND source_id=%s "
-                "AND seg=%s AND batch_seq=%s AND bucket=ANY(%s) ORDER BY item_seq",
-                (pid, result["run_id"], source, result["seg"], result["batch_seq"], CHUNK),
-                _down_from(result["bucket"], seg_floor),
-                lambda found, rest: bool(found),  # a batch is one group: all its rows are in one bucket
-            )
-            if in_batch:
-                rows = sorted(in_batch, key=lambda r: r["item_seq"])
-            else:
-                rows = _search(
-                    reads,
-                    down,
-                    f"SELECT {BASIS_FIELDS} FROM observation WHERE point_id=%s AND run_id=%s AND source_id=%s "
-                    "AND seg=%s AND batch_seq<%s AND bucket=ANY(%s) ORDER BY batch_seq DESC,item_seq DESC LIMIT 1",
-                    (pid, result["run_id"], source, result["seg"], result["batch_seq"], CHUNK),
-                    _down_from(result["bucket"], seg_floor),
-                    lambda found, rest: bool(found),  # higher buckets hold later batches: the first found is the latest
-                )
-                rows = [max(rows, key=lambda r: (r["batch_seq"], r["item_seq"]))] if rows else []
-        entry["rows"] = [dict(r) for r in rows]
-        current = [r for r in entry["rows"] if r["batch_seq"] == result["batch_seq"] or entry["mode"] != "THIS_ROUND"]
-        entry["batch_end"] = current[-1]["id"] if current else None
-        this_round = [r for r in entry["rows"] if r["batch_seq"] == result["batch_seq"]] if entry["mode"] == "THIS_ROUND" else []
-        if not entry["rows"] or (this_round and all((r["quality"] or "").startswith(MISSING) for r in this_round)):
-            out["missing"].append(pid)  # nothing was found - or this round gave the input only a failure record
-        for r in entry["rows"]:
-            if r["origin"] in ("STATE_ASSERTION", "RETENTION_BASELINE"):
-                original = _search(  # received no later than the restatement says, filed no later than it
-                    reads, down, "SELECT id FROM observation WHERE id=%s AND bucket=ANY(%s)", (r["orig_id"], CHUNK),
-                    lambda buckets, r=r: _newest_first(buckets, r["effective_wall"], r["received_wall"]),
-                    lambda found, rest: bool(found),
-                )
-                if not original:
-                    out["notes"].append(f"ORIGINAL_OBSERVATION_LOST:{r['orig_id']}")
-        out["inputs"][pid] = entry
-    if out["missing"]:  # 依据已裁剪 (§10.1): a deleted range that began by then may have held what is missing
-        _, pruned = _first(
-            reads, down, "SELECT 1 AS found FROM bucket WHERE state=ANY(%s) AND first_wall<=%s LIMIT 1", (list(RETIRED), result["at_wall"])
-        )
-        if pruned is not None:
-            out["notes"].append("BASIS_PRUNED")
-    if result["basis_incomplete"]:
-        out["notes"].append("INPUTS_LOST_IN_ARCHIVE_GAP")
-    if result["origin"] == "STATE_ASSERTION":
-        out["notes"].append("RESTATED_RESULT")
-    if result["origin"] == "RETENTION_BASELINE":
-        out["notes"].append("RETENTION_BASELINE_RESULT")
-    out["complete"] = not out["missing"] and not result["basis_incomplete"] and not any(
-        n.startswith("ORIGINAL_OBSERVATION_LOST") for n in out["notes"]
-    )
-    return out
 
 
 # ------------------------------------------------------------------ channels, coverage, fault list

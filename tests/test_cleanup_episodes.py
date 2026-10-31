@@ -33,7 +33,7 @@ def long_reader(store):
     """A long query of the history page: it holds back DETACH ... CONCURRENTLY, so the deletion is postponed."""
     reader = psycopg.connect(store.dsn)
     reader.execute("BEGIN ISOLATION LEVEL REPEATABLE READ")
-    reader.execute("SELECT count(*) FROM observation")
+    reader.execute("SELECT count(*) FROM sample")
     return reader
 
 

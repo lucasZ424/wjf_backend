@@ -60,14 +60,14 @@ def retire(store, n, state):
         assert store.retire_bucket(n)
 
 
-def shown(result):
-    return [(x["value"], x["time"], x["origin"]) for s in result["channels"]["ti"]["segments"] for x in s["rows"]]
+def shown(result):  # a row no longer says how it came to be (修复轮14): the baseline is the one at its boundary time
+    return [(x["value"], x["time"]) for s in result["channels"]["ti"]["segments"] for x in s["rows"]]
 
 
 def test_a_range_being_deleted_is_marked_no_longer_queryable_and_not_shown(store):
     retire(store, 1, "DELETING")
     result = h.query([("primary", store)], CHANNELS, 1000.0, 1010.0)
-    assert 1001.0 not in [t for _, t, _ in shown(result)], "rows of a bucket being deleted are not shown"
+    assert 1001.0 not in [t for _, t in shown(result)], "rows of a bucket being deleted are not shown"
     (retired,) = result["retention"]["primary"]["retired"]
     assert (retired["state"], retired["from"], retired["to"]) == ("DELETING", 1001.0, 1001.0)
 
@@ -79,17 +79,17 @@ def test_before_the_boundary_is_deleted_and_inside_the_oldest_kept_bucket_only_p
     assert kept["deleted_before"] == 1002.5, "the boundary is the earliest baseline of the oldest bucket kept"
     assert [(x["state"], x["from"], x["to"]) for x in kept["retired"]] == [("DELETED", 1001.0, 1001.0)]
     assert [(x["from"], x["to"]) for x in kept["possibly_incomplete"]] == [(1002.0, 1002.5)], "bucket start to its baseline"
-    assert shown(result)[0] == (481.0, 1002.0, "RECEIVED")
-    assert (481.0, 1002.5, r.ORIGIN_BASELINE) in shown(result), "the baseline counts from its boundary, never before it"
+    assert shown(result)[0] == (481.0, 1002.0)
+    assert (481.0, 1002.5) in shown(result), "the baseline counts from its boundary, never before it"
 
 
 def test_a_window_held_across_the_boundary_takes_its_value_from_the_baseline(store):
     retire(store, 1, "DELETED")
     with store.session() as conn:
-        conn.execute("DELETE FROM observation WHERE bucket=2 AND origin='RECEIVED'")  # only the baseline is left there
+        conn.execute("DELETE FROM sample WHERE bucket=2 AND item<>32767")  # only the baseline (last in order) is left
     result = h.query([("primary", store)], CHANNELS, 1003.0, 1003.5)
     (held,) = [x for s in result["channels"]["ti"]["segments"] for x in s["rows"] if x["held"]]
-    assert (held["value"], held["time"], held["origin"]) == (481.0, 1002.5, r.ORIGIN_BASELINE)
+    assert (held["value"], held["time"]) == (481.0, 1002.5), "the baseline's value, from the baseline's time"
 
 
 def test_a_database_that_never_deleted_anything_says_nothing_about_deletion(store):
@@ -109,73 +109,7 @@ def test_each_database_is_read_in_one_repeatable_read_read_only_transaction(stor
     h.query([("primary", store)], CHANNELS, 1000.0, 1010.0)
     assert seen and set(seen) == {("repeatable read", "on")}
 
-
-def test_an_input_in_a_deleted_bucket_is_reported_as_pruned_not_as_missing_without_reason(store):
-    basis = h.input_basis([("primary", store)], "run1/ua/b2/r/dt")  # the result of bucket 2
-    assert basis["found"] and "BASIS_PRUNED" not in basis["notes"], "nothing was deleted: a missing input is only missing"
-    retire(store, 1, "DELETED")
-    with store.session() as conn:
-        conn.execute("DELETE FROM observation WHERE bucket=2 AND origin='RECEIVED'")
-        conn.execute("UPDATE bucket SET first_wall=1000.0,last_wall=1002.0 WHERE no=1")  # say bucket 1 held that time
-    basis = h.input_basis([("primary", store)], "run1/ua/b2/r/dt")
-    assert "BASIS_PRUNED" in basis["notes"] and basis["complete"] is False, "依据已裁剪: said, not left as a silent gap"
-
-
-def test_the_label_of_a_baseline_row_in_page_and_csv_is_retention_boundary_baseline():
-    from pathlib import Path
-
-    text = (Path(h.__file__).parent / "static/replay.js").read_text(encoding="utf-8")
-    assert 'RETENTION_BASELINE: "保留边界基线"' in text
-
-
 def test_marking_records_the_time_range_the_bucket_held(store):
     retire(store, 1, "DELETING")
     with psycopg.connect(store.dsn) as conn:
         assert conn.execute("SELECT first_wall,last_wall FROM bucket WHERE no=1").fetchone() == (1001.0, 1001.0)
-
-
-# ---- the input basis (修复轮09 审核第5条): the same isolation as the history page
-
-def being_deleted(store, n):
-    """Bucket `n` is DELETING, the state a range is in from its marking until it is gone."""
-    with store.session() as conn:
-        conn.execute("UPDATE bucket SET state='DELETING' WHERE no=%s", (n,))
-
-
-def test_the_basis_of_a_result_in_a_bucket_being_deleted_is_not_given(store):
-    """The history page no longer shows a bucket being deleted; its results must not come back through the basis page."""
-    being_deleted(store, 2)
-    basis = h.input_basis([("primary", store)], "run1/ua/b2/r/dt")
-    assert basis["found"] is False
-
-
-def test_the_basis_never_rests_on_a_row_of_a_bucket_being_deleted(store):
-    """The result of batch 4 lost its own rows; the state before it is looked for in older batches - not in bucket 2, which
-    is being deleted: what was left of it would be reported as a complete basis while it disappears."""
-    being_deleted(store, 2)
-    with store.session() as conn:
-        conn.execute("DELETE FROM observation WHERE bucket=3")
-    basis = h.input_basis([("primary", store)], "run1/ua/b4/r/dt")
-    rows = basis["inputs"]["ti"]["rows"]
-    assert rows and all(row["batch_seq"] == 1 for row in rows), "the newest state outside the bucket being deleted"
-
-
-def test_the_basis_reads_each_database_in_one_repeatable_read_read_only_transaction(store, monkeypatch):
-    opened, real = [], store.session
-
-    def counting():
-        opened.append(1)
-        return real()
-
-    monkeypatch.setattr(store, "session", counting)
-    seen, real_execute = [], psycopg.Connection.execute
-
-    def spying(conn, query, params=None, **kw):
-        if "FROM observation" in str(query) or "FROM result" in str(query):
-            seen.append(tuple(real_execute(conn, f"SHOW {k}").fetchone()[k] for k in ("transaction_isolation", "transaction_read_only")))
-        return real_execute(conn, query, params, **kw)
-
-    monkeypatch.setattr(psycopg.Connection, "execute", spying)
-    assert h.input_basis([("primary", store)], "run1/ua/b4/r/dt")["found"]
-    assert len(opened) == 1, "one transaction: a deletion going on cannot hand the basis half a bucket"
-    assert seen and set(seen) == {("repeatable read", "on")}

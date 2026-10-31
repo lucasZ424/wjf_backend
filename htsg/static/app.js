@@ -1,6 +1,6 @@
 "use strict";
 import {newLive, Rejected, take} from "/static/stream.js";
-import {buildCsv, channelRows, ENDS, gapMark, ORIGINS, qualityText, reasonText, retentionNotes, rowText} from "/static/replay.js";
+import {buildCsv, channelRows, ENDS, gapMark, qualityText, reasonText, retentionNotes, rowText} from "/static/replay.js";
 
 const $ = id => document.getElementById(id);
 const esc = value => String(value ?? "—").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
@@ -557,7 +557,7 @@ const lastOf = rows => rows.length ? rows[rows.length - 1] : null;
 
 function startBasis(rows, result, unit) {
   const held = rows.filter(r => r.held);
-  if (held.length) return held.map(r => `${r.valid ? `${reading(r.value, unit)} ${esc(unitText(unit))}`.trim() : "无效"}（原观测 ${stamp(r.observed_at)}，${ORIGINS[r.origin] || r.origin}）`).join("；");
+  if (held.length) return held.map(r => `${r.valid ? `${reading(r.value, unit)} ${esc(unitText(unit))}`.trim() : "无效"}（生效于 ${stamp(r.time)}）`).join("；");
   return rows.some(r => r.time <= result.start) ? "窗口起点处的记录" : "窗口起点前无可依据的值";
 }
 
@@ -588,7 +588,7 @@ function drawReplay() {
     <div class="controls"><label>图表与记录通道<select id="replay-focus">${request.points.map(id => option(id, id === focus)).join("")}</select></label><button id="replay-export">导出 CSV</button></div>
     <canvas id="replay-chart" class="chart" aria-label="回溯图表"></canvas>
     <p class="chart-caption">阶梯线是每个值的生效期；虚线是窗口起点时仍有效的值；红色是无效或超出极值；阴影是归档缺口，竖虚线是有效段起点。曲线不插值、不补点。</p>
-    <div id="replay-records" class="scroll">${recordsTable(rows, focusData, result)}</div>`;
+    <div id="replay-records" class="scroll">${recordsTable(rows, focusData)}</div>`;
   $("replay-focus").onchange = event => { replay.chart = event.target.value; runReplay(); };
   $("replay-export").onclick = exportCsv;
   plotReplay($("replay-chart"), focusData, result);
@@ -600,11 +600,11 @@ function gapReason(code) {
   const text = String(code ?? ""), name = GAP_REASONS[text] || (text.startsWith("REFUSED:") ? "写入被拒" : "");
   return `${name ? `${name}（<code>${esc(text)}</code>）` : `<code>${esc(text)}</code>`}`;
 }
-function recordsTable(rows, channel, result) {
-  const head = ["生效时间", "原观测时间", "批次与序号", "值", "质量或状态", "来源", "种类", "有效段", "说明", "缺口标记"];
+function recordsTable(rows, channel) {
+  const head = ["生效时间", "值", "质量或状态", "种类", "有效段", "说明", "缺口标记"];
   if (!rows.length) return table(head, []);
   return `<div class="table-wide"><table><thead><tr>${head.map(h => `<th>${h}</th>`).join("")}</tr></thead><tbody>${rows.map(r =>
-    `<tr class="${r.valid ? "" : "bad"} ${r.held ? "held" : ""}"><td>${stampMs(r.time)}</td><td>${stampMs(r.observed_at)}</td><td>${r.batch_seq}${r.item_seq != null ? `-${r.item_seq}` : ""}</td><td>${r.valid ? reading(r.value, channel.unit) : "—"}</td><td>${esc(rowText(r))}</td><td>${ORIGINS[r.origin] || esc(r.origin)}</td><td>${r.kind === "raw" ? "原始" : "派生"}</td><td>${esc(r.run)}/${r.seg}</td><td>${r.held ? "窗口起点的保持值；" : ""}${r.until == null ? "其后未知" : `${ENDS[r.ended_by] || ""} ${stamp(r.until)}`}</td><td>${gapMark(r, channel, result)}</td></tr>`).join("")}</tbody></table></div>`;
+    `<tr class="${r.valid ? "" : "bad"} ${r.held ? "held" : ""}"><td>${stampMs(r.time)}</td><td>${r.valid ? reading(r.value, channel.unit) : "—"}</td><td>${esc(rowText(r))}</td><td>${r.kind === "raw" ? "原始" : "派生"}</td><td>${esc(r.run)}/${r.seg}</td><td>${r.held ? "窗口起点的保持值；" : ""}${r.until == null ? "其后未知" : `${ENDS[r.ended_by] || ""} ${stamp(r.until)}`}</td><td>${gapMark(r)}</td></tr>`).join("")}</tbody></table></div>`;
 }
 
 // The file is made from the result on screen - no new query - and carries the byte-order mark spreadsheets need.

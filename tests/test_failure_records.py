@@ -44,9 +44,11 @@ def memory_read(rec, channels):
                     {"run_id": s.run_id, "source_id": s.source_id, "seg": s.detail["seg"], "covered_wall": s.detail["covered_wall"]}
                 )
         for o in (o for o in group.observations if o.point_id in channels):
-            read.rows.append({**asdict(o), "effective_wall": o.received_wall if o.asserted_wall is None else o.asserted_wall, "kind": "raw"})
+            read.rows.append({**asdict(o), "effective_wall": o.received_wall if o.asserted_wall is None else o.asserted_wall,
+                              "item": o.item_seq, "kind": "raw"})  # fmt: skip
         for x in (x for x in group.results if x.point_id in channels):
-            read.rows.append({**asdict(x), "effective_wall": x.at_wall if x.asserted_wall is None else x.asserted_wall, "kind": "derived"})
+            read.rows.append({**asdict(x), "effective_wall": x.at_wall if x.asserted_wall is None else x.asserted_wall,
+                              "item": 0, "kind": "derived"})  # fmt: skip
     read.segments = list(segments.values())
     return read
 
@@ -118,12 +120,6 @@ def test_a_valid_input_that_a_whole_round_timeout_takes_away_gets_one_record_and
     check_one_timeout(in_memory(rec, CHANNELS, 1009.0, 1013.0))
     store, result = on_database(archive_db_factory, rec, owner.config, CHANNELS, 1009.0, 1013.0)
     check_one_timeout(result)
-    # input_basis: the result of the failed round rests on an input that has only a failure record there
-    with store.session() as conn:
-        result_id = conn.execute("SELECT id FROM result WHERE point_id='s1' AND at_wall=1011").fetchone()["id"]
-    basis = h.input_basis([("primary", store)], result_id)
-    assert basis["missing"] == ["b1"] and basis["complete"] is False
-    assert [x["quality"] for x in basis["inputs"]["b1"]["rows"]] == ["MISSING_TIMEOUT"]
 
 
 def test_a_second_failed_round_in_a_row_adds_no_record():

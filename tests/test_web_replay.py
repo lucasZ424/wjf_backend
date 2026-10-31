@@ -106,17 +106,16 @@ def test_only_settings_are_kept_and_they_survive_a_reload_but_not_a_clear_or_a_l
     assert page.errors == []
 
 
-def test_the_value_in_effect_at_the_window_start_is_shown_with_its_original_time_and_identity(page, replay_rig):
+def test_the_value_in_effect_at_the_window_start_is_shown_with_the_time_it_counts_from(page, replay_rig):
     open_history(page, replay_rig)
     query(page, center="1970-01-01T08:17:13", seconds=4, points=("temp_outer_01",))  # [1031, 1035], no change inside
     basis = page.locator("#replay-summary tbody tr").inner_text()
-    assert "440" in basis and "状态重申" in basis and "1970/1/1 08:16:41" in basis, "restated; observed at 1001"
+    assert "440" in basis and "生效于 1970/1/1 08:17:09" in basis, "restated at 1029: the time it counts from"
     (row,) = record_rows(page).all()
     cells = row.locator("td").all_inner_texts()
     assert "held" in row.get_attribute("class")
     assert cells[0].startswith("1970/1/1 08:17:09"), "in effect from the restatement at 1029, not from the window"
-    assert cells[1].startswith("1970/1/1 08:16:41") and cells[5] == "状态重申"
-    assert "窗口起点的保持值" in cells[8] and "至有效段结束" in cells[8] and "08:17:16" in cells[8]
+    assert "窗口起点的保持值" in cells[5] and "至有效段结束" in cells[5] and "08:17:16" in cells[5]
 
 
 def test_a_gap_is_shaded_and_listed_and_nothing_is_drawn_or_invented_inside_it(page, replay_rig):
@@ -128,8 +127,11 @@ def test_a_gap_is_shaded_and_listed_and_nothing_is_drawn_or_invented_inside_it(p
     page.locator("#replay-focus").select_option("temp_inner_07")
     page.locator("#replay-records tbody tr").first.wait_for()
     got = [c.locator("td").all_inner_texts() for c in record_rows(page).all()]
-    assert [c[5] for c in got] == ["实收", "状态重申", "状态重申"]  # 1001, restated after the gap at 1029 and 1047
-    assert not [c for c in got if c[5] == "实收" and c[3] == "479.0"], "the sample lost in the gap is not invented"
+    assert [c[0][:17] for c in got] == ["1970/1/1 08:16:41", "1970/1/1 08:17:09", "1970/1/1 08:17:27"]  # 1001, 1029, 1047
+    lost = [c for c in got if c[1] == "479.0"]
+    assert lost and all(not c[0].startswith(("1970/1/1 08:17:07", "1970/1/1 08:17:08")) for c in lost), (
+        "the sample lost in the gap is not invented: the value is only there as restated at the segment start"
+    )
     inside = pixels(page, 1027.0, 1029.0)
     assert inside["cyan"] == 0 and inside["amber"] > 100, "shaded gap, no line through it"
     assert pixels(page, 1005.0, 1025.0)["cyan"] > 50 and pixels(page, 1031.0, 1034.0)["cyan"] > 5, "drawn on both sides"
@@ -139,11 +141,11 @@ def test_a_bad_quality_interval_is_marked_red_and_borrows_no_value(page, replay_
     open_history(page, replay_rig)
     query(page, points=("temp_inner_06",))
     every = [(r.get_attribute("class"), r.locator("td").all_inner_texts()) for r in record_rows(page).all()]
-    got = [c for c in every if c[1][5] == "实收"]  # what was received; restatements after the gap and the clock step follow
-    assert [c[1][4].split()[0] for c in got] == ["良好", "不良", "良好"]  # 终版 §17.5: in words
-    assert [c[1][5] for c in every[3:]] == ["状态重申", "状态重申"]
-    assert "bad" in got[1][0] and got[1][1][3] == "—" and "0x80350000" in got[1][1][4]
-    assert got[0][1][3] == got[2][1][3] == f"{VALUES['temp_inner_06']:.1f}", "same number, three separate records"
+    got = every[:3]  # what was received; the restatements after the gap and the clock step follow
+    assert [c[1][2].split()[0] for c in got] == ["良好", "不良", "良好"]  # 终版 §17.5: in words
+    assert len(every) == 5, "two restatements follow"
+    assert "bad" in got[1][0] and got[1][1][1] == "—" and "0x80350000" in got[1][1][2]
+    assert got[0][1][1] == got[2][1][1] == f"{VALUES['temp_inner_06']:.1f}", "same number, three separate records"
     assert "含无效或极值记录" in page.locator("#replay-summary").inner_text()
     between = pixels(page, 1020.0, 1022.0)
     assert between["red"] > 5 and between["cyan"] == 0, "the Bad interval is not filled with the earlier Good value"
@@ -153,10 +155,9 @@ def test_versions_at_one_instant_are_all_shown_in_batch_order(page, replay_rig):
     open_history(page, replay_rig)
     query(page, points=("temp_inner_05",))
     every = [r.locator("td").all_inner_texts() for r in record_rows(page).all()]
-    got = [c for c in every[1:] if c[5] == "实收"]  # after the first value; the restatements come later
-    assert [c[3] for c in got] == ["481.0", "482.0", "483.0"]  # 终版 §17.6: ℃ to one decimal
+    got = every[1:4]  # after the first value; the restatements come later
+    assert [c[1] for c in got] == ["481.0", "482.0", "483.0"], "in batch order"  # 终版 §17.6: ℃ to one decimal
     assert len({c[0] for c in got}) == 1, "one instant, three rows"
-    assert [c[2].split("-")[1] for c in got] == ["0", "1", "2"]
 
 
 def test_reaching_the_row_limit_is_announced_and_never_hidden(page, replay_rig):

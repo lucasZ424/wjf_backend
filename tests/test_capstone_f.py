@@ -155,9 +155,15 @@ def replay(client, **kw):
     }
 
 
-def rows(body, pid, kind="raw", origin=None):
-    out = [x for s in body["channels"][pid]["segments"] for x in s["rows"] if x["kind"] == kind]
-    return [x for x in out if origin is None or x["origin"] == origin]
+def rows(body, pid, kind="raw", restated=None):
+    """A channel's rows; `restated` True / False keeps only the values written again when a segment opened (a restatement
+    after a gap, the baseline after a clock step) / only the others.  A row no longer says how it came to be (修复轮14):
+    a restatement is the row that counts from the very start of its segment."""
+    out = [
+        {**x, "restated": s["start_wall"] is not None and x["time"] == s["start_wall"]}
+        for s in body["channels"][pid]["segments"] for x in s["rows"] if x["kind"] == kind
+    ]  # fmt: skip
+    return [x for x in out if restated is None or x["restated"] == restated]
 
 
 def test_all_417_channels_are_answered_with_nothing_truncated_or_partial(world):
@@ -172,13 +178,13 @@ def test_inputs_match_the_known_values_and_a_still_value_is_backed_by_its_eviden
     for name, value in VALUES.items():
         if name in ("temp_inner_05", "temp_inner_06", "temp_inner_07"):
             continue
-        received = rows(body, name, origin=r.ORIGIN_RECEIVED)
-        assert [(x["value"], x["observed_at"]) for x in received] == [(value, 1001.0)], name
+        received = rows(body, name, restated=False)
+        assert [(x["value"], x["time"]) for x in received] == [(value, 1001.0)], name
     # a window that sees no change at all still carries the value in effect, with its original time
     quiet = replay(world, center=1033.0, seconds=4)  # inside the segment that began at the restatement (1029-1036)
     held = rows(quiet, "temp_outer_01")
     assert len(held) == 1 and held[0]["held"] is True and held[0]["value"] == 440.0
-    assert held[0]["origin"] == r.ORIGIN_ASSERTION and held[0]["observed_at"] == 1001.0, "restated after the gap"
+    assert held[0]["restated"], "restated after the gap"
     assert held[0]["time"] == 1029.0 and held[0]["until"] == 1036.0, "counts from the restatement, ends with the segment"
     # the +10 s step left wall 1037-1046 with no segment at all: a window there must claim nothing
     hole = replay(world, center=1043.0, seconds=6)
@@ -191,42 +197,39 @@ def test_modbus_rounds_and_every_derived_value_follow_the_script(world):
     # it is not stored as received, it enters history as the restated baseline of the recovery unit
     expected_polls = [t for t in range(101, 146) if not 126 <= t <= 129]
     for k, name in enumerate(BRIDGES):
-        got = rows(body, name, origin=r.ORIGIN_RECEIVED)
-        assert [x["observed_at"] for x in got] == [wall(t) for t in expected_polls], name
+        got = rows(body, name, restated=False)
+        assert [x["time"] for x in got] == [wall(t) for t in expected_polls], name
         assert [x["value"] for x in got] == pytest.approx([bridge(k, t) for t in expected_polls])
-        restated = rows(body, name, origin=r.ORIGIN_ASSERTION)[0]
-        assert (restated["time"], restated["observed_at"]) == (wall(129), wall(129)), "the round survives as a restatement"
+        restated = rows(body, name, restated=True)[0]
+        assert restated["time"] == wall(129), "the round survives as a restatement"
         assert restated["value"] == pytest.approx(bridge(k, 129))
-        strain = {x["observed_at"]: x["value"] for x in rows(body, f"strain_{k + 1:02d}", "derived", r.ORIGIN_RECEIVED)}
+        strain = {x["time"]: x["value"] for x in rows(body, f"strain_{k + 1:02d}", "derived", restated=False)}
         for x in got:
-            assert strain[x["observed_at"]] == pytest.approx(x["value"] * 1000 / 6), "no old input with a new result"
+            assert strain[x["time"]] == pytest.approx(x["value"] * 1000 / 6), "no old input with a new result"
     first_inner, outer = VALUES["temp_inner_01"], VALUES["temp_outer_01"]
-    assert rows(body, "delta_t_01", "derived", r.ORIGIN_RECEIVED)[0]["value"] == pytest.approx(first_inner - outer)
-    assert rows(body, "stress_01", "derived", r.ORIGIN_RECEIVED)[0]["value"] == pytest.approx(1.1475 * (first_inner - outer))
+    assert rows(body, "delta_t_01", "derived", restated=False)[0]["value"] == pytest.approx(first_inner - outer)
+    assert rows(body, "stress_01", "derived", restated=False)[0]["value"] == pytest.approx(1.1475 * (first_inner - outer))
 
 
 def test_versions_at_one_instant_are_all_kept_in_batch_order(world):
     body = replay(world)
-    got = rows(body, "temp_inner_05", origin=r.ORIGIN_RECEIVED)[1:]  # after the initial value
-    assert [(x["value"], x["item_seq"]) for x in got] == [(481.0, 0), (482.0, 1), (483.0, 2)]
+    got = rows(body, "temp_inner_05", restated=False)[1:]  # after the initial value
+    assert [x["value"] for x in got] == [481.0, 482.0, 483.0], "in batch order: they share one time"
     assert len({x["time"] for x in got}) == 1
-    derived = [x for x in rows(body, "delta_t_05", "derived", r.ORIGIN_RECEIVED) if x["time"] == got[0]["time"]]
+    derived = [x for x in rows(body, "delta_t_05", "derived", restated=False) if x["time"] == got[0]["time"]]
     assert [x["value"] for x in derived] == [483.0 - 440.0], "only the batch-end result is calculated"
 
 
 def test_a_quality_only_change_is_traceable_and_the_bad_interval_borrows_nothing(world):
     body = replay(world)
-    got = rows(body, "temp_inner_06", origin=r.ORIGIN_RECEIVED)
-    assert [(x["quality"], x["observed_at"]) for x in got] == [("GOOD", 1001.0), ("BAD", 1020.0), ("GOOD", 1022.0)]
+    got = rows(body, "temp_inner_06", restated=False)
+    assert [(x["quality"], x["time"]) for x in got] == [("GOOD", 1001.0), ("BAD", 1020.0), ("GOOD", 1022.0)]
     assert len({x["id"] for x in got}) == 3 and len({x["value"] for x in got}) == 1, "same number, three records"
     assert got[0]["until"] == 1020.0 and got[0]["ended_by"] == "NEXT_CHANGE", "Good ends where Bad begins"
     assert got[1]["valid"] is False and got[1]["status_code"] == 0x80350000 and got[1]["until"] == 1022.0
-    derived = rows(body, "delta_t_06", "derived", r.ORIGIN_RECEIVED)
+    derived = rows(body, "delta_t_06", "derived", restated=False)
     assert [(x["status"], x["valid"]) for x in derived] == [("OK", True), ("NOT_AVAILABLE", False), ("OK", True)]
-    third = world.get(f"/api/replay/basis/{derived[2]['id']}", headers=HEADERS).json()
-    assert third["inputs"]["temp_inner_06"]["rows"][-1]["id"] == got[2]["id"], "the later Good value, not the first"
-    middle = world.get(f"/api/replay/basis/{derived[1]['id']}", headers=HEADERS).json()
-    assert middle["inputs"]["temp_inner_06"]["rows"][-1]["quality"] == "BAD"
+    assert [x["time"] for x in derived] == [x["time"] for x in got], "each result at the time of the input it rests on"
 
 
 def test_an_archive_gap_is_never_bridged_and_a_lost_sample_is_not_invented(world):
@@ -238,11 +241,11 @@ def test_an_archive_gap_is_never_bridged_and_a_lost_sample_is_not_invented(world
     assert len(spans) >= 2
     first = spans[0]["rows"][0]
     assert first["value"] == VALUES["temp_inner_07"] and first["until"] == 1027.0, "not stretched across the gap"
-    assert not [x for x in rows(body, "temp_inner_07", origin=r.ORIGIN_RECEIVED) if x["value"] == 479.0]
+    assert not [x for x in rows(body, "temp_inner_07", restated=False) if x["value"] == 479.0]
     restated = spans[1]["rows"][0]
-    assert restated["value"] == 479.0 and restated["origin"] == r.ORIGIN_ASSERTION
-    assert (restated["time"], restated["observed_at"]) == (1029.0, 1027.0), "original time kept, counted from 1029"
-    polls = {x["observed_at"] for x in rows(body, "bridge_mvv_01", origin=r.ORIGIN_RECEIVED)}
+    assert (restated["value"], restated["time"]) == (479.0, 1029.0), "the state kept is restated, counted from 1029"
+    assert restated["time"] == spans[1]["start_wall"]
+    polls = {x["time"] for x in rows(body, "bridge_mvv_01", restated=False)}
     assert not polls & {1026.0, 1027.0, 1028.0}, "no interpolation across the missing rounds"
 
 
@@ -255,7 +258,7 @@ def test_nothing_crosses_a_segment_and_the_clock_step_opens_one(world):
             for x in span["rows"]:
                 if x["until"] is not None and span["end_wall"] is not None:
                     assert x["until"] <= span["end_wall"], "a hold never outlives its segment"
-        assert spans[1]["rows"][0]["origin"] == r.ORIGIN_ASSERTION == spans[2]["rows"][0]["origin"]
+        assert spans[1]["rows"][0]["time"] == spans[1]["start_wall"] and spans[2]["rows"][0]["time"] == spans[2]["start_wall"]
         assert spans[2]["start_wall"] == 1047.0 and spans[0]["end_wall"] <= spans[1]["start_wall"] <= spans[2]["start_wall"]
 
 
@@ -265,11 +268,11 @@ def test_an_unreadable_database_is_shown_as_incomplete_and_the_row_cap_is_announ
     body = replay(world)
     assert body["partial"] is True and body["unavailable"] == ["emergency"]
     assert body["coverage_complete_until"] is None and all(v is None for v in body["coverage_end"].values())
-    seen = {x["observed_at"] for x in rows(body, "bridge_mvv_01", origin=r.ORIGIN_RECEIVED)}
+    seen = {x["time"] for x in rows(body, "bridge_mvv_01", restated=False)}
     assert seen and max(seen) < 1030.0, "only what the readable database holds; nothing after is implied"
     capped = replay(world, limit=3)
     assert capped["truncated"] is True and capped["channels"]["bridge_mvv_01"]["truncated"] is True
-    assert len(rows(capped, "bridge_mvv_01", origin=r.ORIGIN_RECEIVED)) <= 3
+    assert len(rows(capped, "bridge_mvv_01", restated=False)) <= 3
 
 
 def test_converting_the_time_zone_does_not_move_the_utc_window(world):

@@ -1,14 +1,14 @@
--- HTSG archive schema, generation 6 (终版设计 §5, §10, §13.2, §13.6).
--- Typed records, idempotent by stable id.  Only for NEW databases: a database created by the
--- frame-based generation (schema_version 1-4) or by generation 5 is recognised and refused, never upgraded in place.
--- Generation numbers continue the legacy numbering so one number never means two layouts.
--- Generation 6: commit_group, observation, result and state_event are partitioned by bucket - the unit the rolling
--- deletion takes away whole.  Their partitions are made by the maintenance thread (ArchiveStore.prepare_bucket); the
--- bucket list says which buckets this database has and what each may take.  Every other table is kept for good.
+-- HTSG archive schema, generation 7 (终版设计 §5, §13.2, §13.6; 修复轮14).
+-- Only for NEW databases: a database created by the frame-based generation (schema_version 1-4) or by generation 5 or 6
+-- is recognised and refused, never upgraded in place.  Generation numbers continue the legacy numbering so one number
+-- never means two layouts.
+-- commit_group, sample and state_event are partitioned by bucket - the unit the rolling deletion takes away whole.  Their
+-- partitions are made by the maintenance thread (ArchiveStore.prepare_bucket); the bucket list says which buckets this
+-- database has and what each may take.  Every other table is kept for good.
 
 CREATE TABLE IF NOT EXISTS htsg_meta (key text PRIMARY KEY, value text NOT NULL);
 
--- Full configuration snapshot per config id: every derived result and fault points at one.
+-- Full configuration snapshot per config id: every run and fault points at one.
 CREATE TABLE IF NOT EXISTS config_version (
     id text PRIMARY KEY, payload jsonb NOT NULL, saved_at timestamptz NOT NULL DEFAULT now()
 );
@@ -71,41 +71,37 @@ CREATE TABLE IF NOT EXISTS commit_group (
 CREATE INDEX IF NOT EXISTS commit_group_order ON commit_group(run_id, order_no);
 CREATE INDEX IF NOT EXISTS commit_group_wall ON commit_group(built_wall);  -- the time a bucket covers, per partition
 
--- status_code is bigint: OPC UA status codes are unsigned 32-bit.  effective_wall is the time the
--- value counts from in history: the receipt time, or the assertion time for a C2 state assertion.
-CREATE TABLE IF NOT EXISTS observation (
-    bucket bigint NOT NULL, id text NOT NULL, group_id text NOT NULL,
-    run_id text NOT NULL, source_id text NOT NULL, conn_gen integer NOT NULL, seg integer NOT NULL,
-    batch_seq bigint NOT NULL, item_seq integer NOT NULL,
-    point_id text NOT NULL, value double precision, quality text NOT NULL, status_code bigint,
-    received_wall double precision NOT NULL, received_mono double precision NOT NULL,
-    source_time double precision,
-    origin text NOT NULL, orig_id text, asserted_wall double precision, asserted_mono double precision,
-    extreme boolean NOT NULL DEFAULT false, tick bigint, poll_id text, response_id text,
-    effective_wall double precision GENERATED ALWAYS AS (coalesce(asserted_wall, received_wall)) STORED,
-    PRIMARY KEY (id, bucket)
-) PARTITION BY LIST (bucket);
-CREATE INDEX IF NOT EXISTS observation_point_time ON observation(point_id, effective_wall, batch_seq, item_seq);
-CREATE INDEX IF NOT EXISTS observation_batch ON observation(run_id, source_id, batch_seq, item_seq);
-CREATE INDEX IF NOT EXISTS observation_segment ON observation(run_id, source_id, seg, point_id);
-CREATE INDEX IF NOT EXISTS observation_group ON observation(group_id);
+-- Generation 7 (修复轮14): every input value and derived result is ONE narrow row of `sample`, nothing else per row.
+-- The channel and the run are small numbers each database gives on its own (`channel`, `run_number`); `state` is a code
+-- of `state_code` with bit 0x4000 marking a value beyond its physical limits; `ua_status` is the OPC UA status code as a
+-- signed 32-bit integer (0 for every other row); `item` orders the rows of one batch that share a time.  `t` is the time
+-- the value counts from: its receipt, or the time it was written again (a restatement or a retention baseline).
+-- Columns are laid out widest first, so a row without NULLs takes no alignment padding.
+CREATE TABLE IF NOT EXISTS channel (
+    no smallint PRIMARY KEY, point_id text NOT NULL, source_id text NOT NULL, UNIQUE (point_id, source_id)
+);
+CREATE TABLE IF NOT EXISTS run_number (no integer PRIMARY KEY, run_id text NOT NULL UNIQUE);
+CREATE TABLE IF NOT EXISTS state_code (code smallint PRIMARY KEY, key text NOT NULL, meaning text NOT NULL);
 
-CREATE TABLE IF NOT EXISTS result (
-    bucket bigint NOT NULL, id text NOT NULL, group_id text NOT NULL,
-    run_id text NOT NULL, source_id text NOT NULL, conn_gen integer NOT NULL, seg integer NOT NULL,
-    batch_seq bigint NOT NULL,
-    point_id text NOT NULL, value double precision, status text NOT NULL, reason text,
-    extreme boolean NOT NULL DEFAULT false, config_id text NOT NULL REFERENCES config_version(id),
-    at_wall double precision NOT NULL, basis jsonb, estimate jsonb,
-    origin text NOT NULL, orig_id text, asserted_wall double precision,
-    basis_incomplete boolean NOT NULL DEFAULT false,
-    effective_wall double precision GENERATED ALWAYS AS (coalesce(asserted_wall, at_wall)) STORED,
-    PRIMARY KEY (id, bucket)
+CREATE TABLE IF NOT EXISTS sample (
+    t double precision NOT NULL, value double precision,
+    bucket integer NOT NULL, run integer NOT NULL, seg integer NOT NULL, ua_status integer NOT NULL,
+    channel smallint NOT NULL, state smallint NOT NULL, item smallint NOT NULL
 ) PARTITION BY LIST (bucket);
-CREATE INDEX IF NOT EXISTS result_point_time ON result(point_id, effective_wall, batch_seq);
-CREATE INDEX IF NOT EXISTS result_batch ON result(run_id, source_id, batch_seq);
-CREATE INDEX IF NOT EXISTS result_group ON result(group_id);
+CREATE INDEX IF NOT EXISTS sample_channel_time ON sample(channel, t);
 
+-- For a technician reading the database by hand: the same rows in words.
+CREATE OR REPLACE VIEW sample_view AS
+SELECT to_timestamp(s.t) AS time, c.point_id, c.source_id, s.value, coalesce(k.meaning, '未知') AS state,
+       CASE WHEN s.ua_status <> 0 THEN '0x' || upper(to_hex(s.ua_status)) END AS ua_status,
+       (s.state & 16384) <> 0 AS beyond_limits, r.run_id, s.seg, s.bucket
+FROM sample s
+LEFT JOIN channel c ON c.no = s.channel
+LEFT JOIN run_number r ON r.no = s.run
+LEFT JOIN state_code k ON k.code = (s.state & 16383);
+
+-- Only the retention baselines are kept here (修复轮14): the replay reads which sources each one restated.  Segment
+-- starts and ends, gaps, watermarks and run ends go to their own tables.
 CREATE TABLE IF NOT EXISTS state_event (
     bucket bigint NOT NULL, id text NOT NULL, group_id text NOT NULL, run_id text NOT NULL, source_id text NOT NULL,
     seg integer NOT NULL, kind text NOT NULL, at_wall double precision NOT NULL,

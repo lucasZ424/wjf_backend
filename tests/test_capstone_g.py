@@ -412,16 +412,15 @@ def test_around_an_archive_gap_every_result_has_its_input_and_every_input_its_re
         seen[channel] = rows_of(page)
         keep(page, f"g08-gap-{channel}") if channel == "strain_01" else None
     bridge, strain = seen["bridge_mvv_01"], seen["strain_01"]
-    # same observation time, same batch, same origin, same gap mark and the same end: no result without its input
-    # and no input without its result - across the gap too
-    batch = lambda r: r[2].split("-")[0]  # noqa: E731
-    assert [(r[1], batch(r), r[5], r[8], r[9]) for r in bridge] == [(r[1], batch(r), r[5], r[8], r[9]) for r in strain]
-    before = [r for r in strain if r[8].startswith("至有效段结束 1970/1/1 08:17:06")]
-    after = [r for r in strain if r[9] == "缺口后重申"]
-    assert len(before) == 1 and len(after) == 1, "the last value before the gap ends at its start; the first after is a restatement"
-    assert after[0][0].startswith("1970/1/1 08:17:09") and strain.index(after[0]) == strain.index(before[0]) + 1, "nothing in between"
+    # same time, same end and the same gap mark: no result without its input and no input without its result - across
+    # the gap too (columns: 生效时间, 值, 质量或状态, 种类, 有效段, 说明, 缺口标记)
+    assert [(r[0], r[5], r[6]) for r in bridge] == [(r[0], r[5], r[6]) for r in strain]
+    before = [r for r in strain if r[5].startswith("至有效段结束 1970/1/1 08:17:06")]
+    assert len(before) == 1, "the last value before the gap ends at its start"
+    after = strain[strain.index(before[0]) + 1]
+    assert after[0].startswith("1970/1/1 08:17:09"), "nothing in between: the next is restated where the segment opens"
     for b, s in zip(bridge, strain, strict=True):
-        assert abs(float(s[3].replace(",", "")) - float(b[3].replace(",", "")) * 1000 / 6) <= 1.0, (b, s)
+        assert abs(float(s[1].replace(",", "")) - float(b[1].replace(",", "")) * 1000 / 6) <= 1.0, (b, s)
 
 
 # ----------------------------------------------------------------------- permissions and the missing write routes

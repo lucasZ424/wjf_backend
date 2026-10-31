@@ -10,6 +10,7 @@ from dataclasses import replace
 
 import psycopg
 import pytest
+from archive_support import said_and_held, samples
 from owner_support import small_config
 
 from htsg import records as r
@@ -64,20 +65,20 @@ def counts(store):
     with store.session() as conn:
         return {
             t: conn.execute(f"SELECT count(*) AS n FROM {t}").fetchone()["n"]
-            for t in ("commit_group", "observation", "result", "state_event", "fault_record", "segment", "watermark", "run")
+            for t in ("commit_group", "sample", "state_event", "fault_record", "segment", "watermark", "run")
         }  # fmt: skip
 
 
 def test_observations_results_states_and_faults_commit_in_one_transaction(store):
     assert store.write_group(make_group()) == WriteOutcome("COMMITTED")
+    # three inputs and one result are four rows; the segment start and the watermark go to their own tables only (修复轮14)
     assert counts(store) == {
-        "commit_group": 1, "observation": 3, "result": 1, "state_event": 2, "fault_record": 1,
-        "segment": 1, "watermark": 1, "run": 1,
+        "commit_group": 1, "sample": 4, "state_event": 0, "fault_record": 1, "segment": 1, "watermark": 1, "run": 1,
     }  # fmt: skip
     with store.session() as conn:
-        tables = ("observation", "result", "state_event", "fault_record")
-        for t in tables:
-            assert conn.execute(f"SELECT DISTINCT group_id FROM {t}").fetchall() == [{"group_id": "run1/g1"}]
+        assert said_and_held(conn) == (4, 4), "the group says what it wrote"
+        assert {(x["point_id"], x["kind"]) for x in samples(conn)} == {("ti", "raw"), ("dt", "derived")}
+        assert conn.execute("SELECT DISTINCT group_id FROM fault_record").fetchall() == [{"group_id": "run1/g1"}]
         seg = conn.execute("SELECT conn_gen,start_wall,start_reason FROM segment").fetchone()
         wm = conn.execute("SELECT covered_wall,group_order FROM watermark").fetchone()
     assert seg == {"conn_gen": 1, "start_wall": 1000.0, "start_reason": "CONNECT"}
@@ -86,8 +87,8 @@ def test_observations_results_states_and_faults_commit_in_one_transaction(store)
 
 def test_a_failure_in_the_middle_leaves_no_half_group(store):
     bad = make_group()
-    broken = replace(bad.results[0], config_id="no-such-config")  # violates the configuration reference
-    outcome = store.write_group(replace(bad, results=(broken,)))
+    broken = replace(bad.faults[0], config_id="no-such-config")  # the last write of the group: every row is in by then
+    outcome = store.write_group(replace(bad, faults=(broken,)))
     assert outcome.status == "FAILED" and outcome.error == "ForeignKeyViolation"
     assert set(counts(store).values()) == {0}, "not one observation, state, fault or group row survives"
     assert store.write_group(make_group()).status == "COMMITTED", "the corrected group can still be written"
@@ -109,8 +110,8 @@ def test_a_repeated_group_is_idempotent_and_a_resubmitted_fault_keeps_its_id(sto
 def test_an_unknown_commit_is_reported_as_unknown_and_can_be_verified_by_id(store):
     original = store._write_members
 
-    def kill_own_backend_before_commit(conn, group):
-        original(conn, group)
+    def kill_own_backend_before_commit(conn, group, learned):
+        original(conn, group, learned)
         with psycopg.connect(store.dsn, autocommit=True) as other:
             other.execute("SELECT pg_terminate_backend(%s)", (conn.info.backend_pid,))
 
@@ -121,6 +122,8 @@ def test_an_unknown_commit_is_reported_as_unknown_and_can_be_verified_by_id(stor
     assert store.group_committed("run1/g1", 1) is False, "verified by stable id: it did not become durable"
     assert store.write_group(make_group()).status == "COMMITTED", "same target, same ids: safe to retry"
     assert store.group_committed("run1/g1", 1) is True
+    with store.session() as conn:  # the numbers given in the transaction that died were not kept: no row names a lost one
+        assert said_and_held(conn) == (4, 4) and len(samples(conn)) == 4
 
 
 def test_connection_and_session_limits_are_3_3_1_seconds_and_survive_reconnection(store):

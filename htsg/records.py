@@ -31,6 +31,66 @@ GROUP_BASELINE = "BASELINE"  # the retention-boundary baseline of all sources, o
 STATUS_INFO_DATAVALUE = 0x0400
 STATUS_OVERFLOW = 0x0080
 
+# What a stored row's `state` means (修复轮14): a code of this table, plus EXTREME for a value beyond its physical limits.
+# Codes below DERIVED_FROM are an input's quality, the rest a derived result's state; the database's `state_code` table is
+# written from it.  A quality or reason not listed is stored as UNKNOWN_INPUT / CALC_ERROR, never refused.
+STATE_CODES = (
+    (0, "UNKNOWN", "未知"),
+    (1, GOOD, "良好"),
+    (2, BAD, "不良"),
+    (3, UNCERTAIN, "不确定"),
+    (11, MISSING + "UNANSWERED", "未取得：本轮未应答"),
+    (12, MISSING + "TIMEOUT", "未取得：本轮超时"),
+    (13, MISSING + "EXCEPTION", "未取得：本轮协议异常"),
+    (14, MISSING + "CONNECTION", "未取得：本轮连接失败"),
+    (20, RESULT_OK, "已算出"),
+    (21, "INPUT_UNAVAILABLE", "不可用：输入不可用"),
+    (22, "EXTREME_INPUT", "不可用：输入超出物理极值"),
+    (23, "MODEL_NOT_CONFIGURED", "不可用：计算模型未配置"),
+    (24, "SOURCE_INVALID", "不可用：来源数据无效"),
+    (25, "NOT_A_PLANNED_ROUND", "不可用：非计划轮次"),
+    (26, "BASELINE_ONLY", "不可用：等待连续两轮"),
+    (27, "NONFINITE", "不可用：结果非有限数"),
+    (28, "UNSUPPORTED_OPERATION", "不可用：不支持的计算"),
+    (29, "CALC_ERROR", "不可用：计算出错"),
+)
+UNKNOWN_INPUT, CALC_ERROR, DERIVED_FROM = 0, 29, 20
+EXTREME = 0x4000
+_CODE_OF = {key: code for code, key, _ in STATE_CODES}
+_KEY_OF = {code: key for code, key, _ in STATE_CODES}
+
+
+def input_state(quality: str, extreme: bool) -> int:
+    code = _CODE_OF.get(quality, UNKNOWN_INPUT)
+    return (code if code < DERIVED_FROM else UNKNOWN_INPUT) | (EXTREME if extreme else 0)
+
+
+def result_state(status: str, reason: str | None, extreme: bool) -> int:
+    code = _CODE_OF[RESULT_OK] if status == RESULT_OK else _CODE_OF.get(reason, CALC_ERROR)
+    return (code if code >= DERIVED_FROM else CALC_ERROR) | (EXTREME if extreme else 0)
+
+
+def read_state(state: int) -> dict:
+    """A stored `state` back in the words the replay uses.  A code this program does not know reads as an UNKNOWN input
+    quality or, in the result range, as a result not available for UNKNOWN_STATE - never as another state."""
+    code, extreme = state & (EXTREME - 1), bool(state & EXTREME)
+    if code < DERIVED_FROM:
+        return {"kind": "raw", "quality": _KEY_OF.get(code, "UNKNOWN"), "extreme": extreme}
+    ok = code == _CODE_OF[RESULT_OK]
+    reason = None if ok else _KEY_OF.get(code, "UNKNOWN_STATE")
+    return {"kind": "derived", "status": RESULT_OK if ok else RESULT_NA, "reason": reason, "extreme": extreme}
+
+
+def ua_status_stored(code: int | None) -> int:
+    """An OPC UA status code (unsigned 32-bit) as the signed 32-bit integer the database keeps; 0 when there is none."""
+    code = (code or 0) & 0xFFFFFFFF
+    return code - 0x100000000 if code >= 0x80000000 else code
+
+
+def item_stored(item_seq: int) -> int:
+    """The order of a row inside its batch, kept within a smallint: a baseline's 2**31-1 becomes 32767, still last."""
+    return max(-32768, min(32767, item_seq))
+
 
 def is_overflow(status_value: int) -> bool:
     """OPC UA DataValue info bits: the server's monitored-item queue discarded changes (Part 4, 7.39)."""

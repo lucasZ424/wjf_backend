@@ -7,7 +7,6 @@ import psycopg
 import pytest
 from legacy_support import make_legacy
 
-from htsg import records as r
 from htsg.archive import SCHEMA_GENERATION, LegacyDatabaseError, SchemaError
 from htsg.config import Settings
 
@@ -21,73 +20,15 @@ def store(archive_db_factory):
     store.prepare_bucket(1)
     return store
 
-
-def observation_row(**changes):
-    row = dict(
-        bucket=1, id="run1/ua/b1/i0", group_id="run1/g1", run_id="run1", source_id="ua", conn_gen=1, seg=1,
-        batch_seq=1, item_seq=0, point_id="p", value=1.0, quality="GOOD", status_code=0,
-        received_wall=1000.0, received_mono=5.0, origin=r.ORIGIN_RECEIVED,
-    )  # fmt: skip
-    return {**row, **changes}
-
-
-def insert_observation(conn, **changes):
-    row = observation_row(**changes)
-    columns = ",".join(row)
-    conn.execute(f"INSERT INTO observation({columns}) VALUES({','.join(['%s'] * len(row))})", list(row.values()))
-
-
-def test_status_code_holds_unsigned_32_bit_values(store):
+def test_the_one_index_of_a_stored_value_is_channel_and_time_and_no_older_table_is_left(store):
+    """修复轮14: one index per row (the replay reads a channel over time); every further index costs bytes on every row."""
     with store.session() as conn:
-        insert_observation(conn, status_code=0xFFFFFFFF)
-        insert_observation(conn, id="run1/ua/b1/i1", item_seq=1, status_code=0x80350000)
-        codes = [x["status_code"] for x in conn.execute("SELECT status_code FROM observation ORDER BY id")]
-    assert codes == [0xFFFFFFFF, 0x80350000]
-
-
-def test_several_records_for_one_point_at_one_instant_are_all_stored_in_batch_order(store):
-    with store.session() as conn:
-        for n, value in enumerate((1.0, 2.0, 3.0)):
-            insert_observation(conn, id=f"run1/ua/b1/i{n}", item_seq=n, value=value)
-        rows = conn.execute(
-            "SELECT value FROM observation WHERE point_id='p' ORDER BY effective_wall,batch_seq,item_seq"
-        ).fetchall()
-    assert [x["value"] for x in rows] == [1.0, 2.0, 3.0]
-
-
-def test_stable_id_is_unique_so_a_retried_group_cannot_duplicate_history(store):
-    with store.session() as conn:
-        insert_observation(conn)
-        conn.execute(
-            "INSERT INTO observation(bucket,id,group_id,run_id,source_id,conn_gen,seg,batch_seq,item_seq,point_id,"
-            "quality,received_wall,received_mono,origin) "
-            "VALUES(1,'run1/ua/b1/i0','g','r','s',1,1,1,0,'p','GOOD',1,1,'RECEIVED') ON CONFLICT(id,bucket) DO NOTHING"
-        )
-        assert conn.execute("SELECT count(*) AS n FROM observation").fetchone()["n"] == 1
-    with pytest.raises(psycopg.errors.UniqueViolation), store.session() as conn:
-        insert_observation(conn)
-
-
-def test_history_time_of_an_assertion_is_its_assertion_time(store):
-    with store.session() as conn:
-        insert_observation(
-            conn, id="run1/ua/a2/p", origin=r.ORIGIN_ASSERTION, orig_id="run1/ua/b1/i0",
-            asserted_wall=2000.0, asserted_mono=50.0, seg=2,
-        )  # fmt: skip
-        row = conn.execute("SELECT received_wall,effective_wall FROM observation").fetchone()
-    # the original observation time is kept, but history counts the value from the assertion time
-    assert (row["received_wall"], row["effective_wall"]) == (1000.0, 2000.0)
-
-
-def test_point_time_and_order_indexes_exist_and_no_frame_table_does(store):
-    with store.session() as conn:
-        indexes = {x["indexdef"] for x in conn.execute("SELECT indexdef FROM pg_indexes WHERE tablename='observation'")}
+        indexes = [x["indexdef"] for x in conn.execute("SELECT indexdef FROM pg_indexes WHERE tablename='sample'")]
         tables = {x["table_name"] for x in conn.execute(
             "SELECT table_name FROM information_schema.tables WHERE table_schema='public'")}  # fmt: skip
-    assert any("(point_id, effective_wall, batch_seq, item_seq)" in d for d in indexes)
-    assert any("(run_id, source_id, batch_seq, item_seq)" in d for d in indexes)
-    assert not tables & {"frame", "frame_value", "event", "source_sample", "schema_version"}
-    assert {"observation", "result", "state_event", "fault_record", "commit_group", "segment",
+    assert len(indexes) == 1 and "(channel, t)" in indexes[0]
+    assert not tables & {"frame", "frame_value", "event", "source_sample", "schema_version", "observation", "result"}
+    assert {"sample", "channel", "run_number", "state_code", "state_event", "fault_record", "commit_group", "segment",
             "archive_gap", "watermark", "config_version", "run", "account", "management_log"} <= tables  # fmt: skip
 
 
@@ -98,11 +39,13 @@ def test_full_configuration_snapshot_is_queryable_by_config_id(store):
     assert row["payload"]["timing"]["ua_data_validity"] == 3
 
 
-def test_a_result_must_reference_a_stored_configuration(store):
+def test_a_fault_must_reference_a_stored_configuration(store):
+    """The thresholds a fault was confirmed under stay findable: its configuration is kept for good."""
     with pytest.raises(psycopg.errors.ForeignKeyViolation), store.session() as conn:
         conn.execute(
-            "INSERT INTO result(bucket,id,group_id,run_id,source_id,conn_gen,seg,batch_seq,point_id,status,config_id,"
-            "at_wall,origin) VALUES(1,'x','g','r','s',1,1,1,'p','OK','no-such-config',1,'RECEIVED')"
+            "INSERT INTO fault_record(id,group_id,run_id,source_id,seg,batch_seq,point_id,direction,confirmed_wall,"
+            "confirmed_mono,basis_kind,basis_id,basis_wall,config_id,rule) "
+            "VALUES('f','g','r','s',1,1,'p','HIGH',1,1,'OBSERVATION','b',1,'no-such-config','{}')"
         )
 
 

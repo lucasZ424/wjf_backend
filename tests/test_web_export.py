@@ -127,24 +127,24 @@ def test_the_file_holds_exactly_the_rows_on_screen_and_the_settings_that_made_th
     cells, classes = shown(page)
     assert len(rows) == len(cells) >= 5
     col = {n: header.index(n) for n in header}
+    assert not {"原观测时间", "批次号", "批内序号", "来源"} & set(header), "修复轮14: no longer stored, no longer exported"
     for file_row, table_row, css in zip(rows, cells, classes, strict=True):
-        assert f"{file_row[col['批次号']]}-{file_row[col['批内序号']]}" == table_row[2]
-        assert file_row[col["来源"]] == table_row[5]
+        assert file_row[col["缺口标记"]] == table_row[6]
         assert (file_row[col["是否有效"]] == "否") == ("bad" in css.split()), "the red rows are the invalid rows"
         if file_row[col["是否有效"]] == "是":
-            digits = len(table_row[3].split(".")[1]) if "." in table_row[3] else 0  # 终版 §17.6: the page rounds by unit, the file keeps the value
-            assert round(float(file_row[col["值"]]), digits) == float(table_row[3])
+            digits = len(table_row[1].split(".")[1]) if "." in table_row[1] else 0  # 终版 §17.6: the page rounds by unit, the file keeps the value
+            assert round(float(file_row[col["值"]]), digits) == float(table_row[1])
         else:
-            assert file_row[col["值"]] == "" and table_row[3] == "—"
+            assert file_row[col["值"]] == "" and table_row[1] == "—"
     bad = [r for r in rows if r[col["是否有效"]] == "否"]
     assert len(bad) == 1 and "BAD" in bad[0][col["质量/状态"]] and "0x80350000" in bad[0][col["质量/状态"]]
     # the other channel on screen gives the other file, again equal to its table
     page.locator("#replay-focus").select_option("temp_inner_07")
-    page.wait_for_function("document.querySelector('#replay-records') && document.querySelector('#replay-records').textContent.includes('状态重申')")
+    page.wait_for_function("document.querySelector('#replay-focus')?.value === 'temp_inner_07' && document.querySelector('#replay-records tbody tr')")
     _, (_, _, rows7) = export(page, tmp_path)
     assert len(rows7) == len(shown(page)[0]) and {r[0] for r in rows7} == {"temp_inner_07"}
-    marks = [r[header.index("缺口标记")] for r in rows7]
-    assert marks.count("缺口后重申") == 1, "the restatement that opens the segment after the gap says so"
+    times = [float(r[header.index("生效时间(UTC秒)")]) for r in rows7]
+    assert times == [1001.0, 1029.0, 1047.0], "the value before the gap, and the restatements that open the next segments"
     assert page.errors == []
 
 
@@ -154,8 +154,8 @@ def test_a_held_value_is_exported_as_held_with_its_own_time_never_as_a_new_sampl
     _, (_, header, rows) = export(page, tmp_path)
     (row,) = rows
     col = {n: header.index(n) for n in header}
-    assert row[col["保持值"]] == "是" and row[col["来源"]] == "状态重申"
-    assert float(row[col["生效时间(UTC秒)"]]) == 1029.0 and float(row[col["原观测时间(UTC秒)"]]) == 1001.0
+    assert row[col["保持值"]] == "是"
+    assert float(row[col["生效时间(UTC秒)"]]) == 1029.0, "the time it counts from: its restatement"
     assert float(row[col["生效时间(UTC秒)"]]) != 1031.0, "not stamped as the window start"
     assert row[col["有效至"]].startswith("1970-01-01T08:17:16") and row[col["终止原因"]] == "至有效段结束"
     assert row[col["缺口标记"]] == "", "the gap lies before this window, so this result does not mention it"

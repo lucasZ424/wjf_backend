@@ -8,6 +8,7 @@ from pathlib import Path
 
 import psycopg
 import pytest
+from archive_support import samples
 from legacy_support import make_legacy
 from pydantic import ValidationError
 
@@ -19,14 +20,6 @@ ROOT = Path(__file__).resolve().parents[1]
 FULL = load_settings(ROOT / "config" / "research-sim.json")
 
 
-def put(conn, o: r.Observation, group="run1/g1"):
-    data = {name: getattr(o, name) for name in o.__slots__}
-    data["group_id"], data["bucket"] = group, 1
-    conn.execute(
-        f"INSERT INTO observation({','.join(data)}) VALUES({','.join(['%s'] * len(data))})", list(data.values())
-    )
-
-
 def test_full_scale_configuration_loads_and_each_result_reference_resolves(archive_db_factory):
     store = archive_db_factory()
     store.initialize(FULL)
@@ -36,7 +29,7 @@ def test_full_scale_configuration_loads_and_each_result_reference_resolves(archi
         stored = conn.execute("SELECT payload FROM config_version WHERE id=%s", (FULL.config_id,)).fetchone()
         rebuilt = Settings.model_validate(stored["payload"])
         assert rebuilt.config_id == FULL.config_id, "the stored snapshot must reproduce the exact configuration"
-        for table in ("result", "fault_record"):
+        for table in ("run", "fault_record"):  # what still names a configuration (修复轮14: a stored value does not)
             assert conn.execute(
                 f"SELECT count(*) AS n FROM {table} t LEFT JOIN config_version c ON c.id=t.config_id WHERE c.id IS NULL"
             ).fetchone()["n"] == 0
@@ -61,17 +54,14 @@ def test_two_values_of_one_point_at_one_instant_and_a_state_assertion_stay_disti
         asserted_wall=1030.0,
         asserted_mono=50.0,
     )  # fmt: skip
+    store.bind_run("run1", FULL.config_id, 1000.0)
+    group = r.CommitGroup("run1/g1", 1, "run1", "ua_field", r.GROUP_BATCH, 1030.0, (first, second, assertion), bucket=1)
+    assert store.write_group(group).status == "COMMITTED"
     with store.session() as conn:
-        for o in (first, second, assertion):
-            put(conn, o)
-        rows = conn.execute(
-            "SELECT id,origin,orig_id,received_wall,effective_wall FROM observation "
-            "WHERE point_id='temp_inner_01' ORDER BY effective_wall,batch_seq,item_seq"
-        ).fetchall()
-    assert len({x["id"] for x in rows}) == 3
-    assert [x["origin"] for x in rows] == ["RECEIVED", "RECEIVED", "STATE_ASSERTION"]
-    assert [x["effective_wall"] for x in rows] == [1000.5, 1000.5, 1030.0]
-    assert rows[2]["orig_id"] == second.id and rows[2]["received_wall"] == 1000.5
+        rows = samples(conn, "c.point_id='temp_inner_01'")
+    # three rows, told apart by time and by order in the batch: the assertion counts from its own time (修复轮14 keeps
+    # no origin per row), the two values of one instant keep the order they arrived in
+    assert [(x["t"], x["item"], x["value"]) for x in rows] == [(1000.5, 0, 480.0), (1000.5, 1, 495.0), (1030.0, -1, 495.0)]
 
 
 @pytest.mark.parametrize(

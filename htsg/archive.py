@@ -16,20 +16,12 @@ from psycopg.types.json import Jsonb
 from . import records as rec
 from .config import Settings, Timing
 
-SCHEMA_GENERATION = 6  # continues the legacy schema_version 1-4 numbering; 6 adds the buckets (§13.6)
-PARTITIONED = ("commit_group", "observation", "result", "state_event")  # by bucket; every other table is kept for good
+SCHEMA_GENERATION = 7  # continues the legacy schema_version 1-4 numbering; 6 added the buckets, 7 the narrow rows (修复轮14)
+PARTITIONED = ("commit_group", "sample", "state_event")  # by bucket; every other table is kept for good
 RETIRED = ("DELETING", "DELETED")  # a bucket in these states takes no group
 
-OBSERVATION_SQL = (
-    "INSERT INTO observation(bucket,id,group_id,run_id,source_id,conn_gen,seg,batch_seq,item_seq,point_id,value,"
-    "quality,status_code,received_wall,received_mono,source_time,origin,orig_id,asserted_wall,asserted_mono,"
-    "extreme,tick,poll_id,response_id) VALUES(" + ",".join(["%s"] * 24) + ") ON CONFLICT(id,bucket) DO NOTHING"
-)
-RESULT_SQL = (
-    "INSERT INTO result(bucket,id,group_id,run_id,source_id,conn_gen,seg,batch_seq,point_id,value,status,reason,"
-    "extreme,config_id,at_wall,basis,estimate,origin,orig_id,asserted_wall,basis_incomplete) "
-    "VALUES(" + ",".join(["%s"] * 21) + ") ON CONFLICT(id,bucket) DO NOTHING"
-)
+# A row carries no id of its own: the group it came in is written once (`commit_group`), so are its rows (修复轮14).
+SAMPLE_SQL = "INSERT INTO sample(t,value,bucket,run,seg,ua_status,channel,state,item) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s)"
 STATE_SQL = (
     "INSERT INTO state_event(bucket,id,group_id,run_id,source_id,seg,kind,at_wall,at_mono,detail) "
     "VALUES(" + ",".join(["%s"] * 10) + ") ON CONFLICT(id,bucket) DO NOTHING"
@@ -55,10 +47,6 @@ class WriteOutcome:
         return self.status in ("COMMITTED", "ALREADY")
 
 
-def _json(value):
-    return None if value is None else Jsonb(value)
-
-
 def group_span(group: rec.CommitGroup) -> tuple[float, float]:
     """The earliest and latest time a group is filed under: the effective time of each observation and result (the column a
     history window filters on: an asserted time first) and the time the group was built (what the deletion marks note)."""
@@ -66,6 +54,12 @@ def group_span(group: rec.CommitGroup) -> tuple[float, float]:
     walls += [o.received_wall if o.asserted_wall is None else o.asserted_wall for o in group.observations]
     walls += [x.at_wall if x.asserted_wall is None else x.asserted_wall for x in group.results]
     return min(walls), max(walls)
+
+
+def stored_rows(group: rec.CommitGroup) -> int:
+    """The rows a group puts into the tables taken away with its bucket (`sample`, and `state_event` for a baseline): what
+    `commit_group.records` says, so the rows of a database can be counted against its groups (修复轮14)."""
+    return len(group.observations) + len(group.results) + sum(x.kind == "RETENTION_BASELINE" for x in group.states)
 
 
 class SchemaError(RuntimeError):
@@ -92,6 +86,9 @@ class ArchiveStore:
         self._local = threading.local()
         self._connections = []
         self._lock = threading.Lock()
+        # this database's numbers for channels and runs, kept once the transaction that gave them committed (修复轮14)
+        self.channel_numbers: dict[tuple[str, str], int] = {}
+        self.run_numbers: dict[str, int] = {}
 
     def connect(self):
         t = self.timing
@@ -159,6 +156,11 @@ class ArchiveStore:
                     "INSERT INTO htsg_meta(key,value) VALUES('schema_generation',%s) ON CONFLICT DO NOTHING",
                     (str(SCHEMA_GENERATION),),
                 )
+            conn.cursor().executemany(  # the words of the state codes, as this program reads them
+                "INSERT INTO state_code(code,key,meaning) VALUES(%s,%s,%s) "
+                "ON CONFLICT(code) DO UPDATE SET key=excluded.key,meaning=excluded.meaning",
+                rec.STATE_CODES,
+            )
             conn.execute(
                 "INSERT INTO config_version(id,payload) VALUES(%s,%s) ON CONFLICT DO NOTHING",
                 (config.config_id, Jsonb(config.model_dump(mode="json"))),
@@ -171,14 +173,14 @@ class ArchiveStore:
         self.run_info = (run_id, config_id, started_wall)
 
     def write_group(self, group: rec.CommitGroup) -> WriteOutcome:
-        """One transaction per commit group: all records or none, idempotent by stable id within the group's bucket.
+        """One transaction per commit group: all records or none, written once per group within its bucket.
 
         FAILED is certain (rolled back); `NO_BUCKET` when this database does not have the group's bucket.  UNKNOWN is
         returned only when the failure came after the last statement, i.e. while COMMIT was in flight; the caller must
         verify by id rather than rewrite.  The bucket's row is share-locked for the whole transaction and its state checked
         first: marking it for deletion needs the exclusive lock, so the two exclude each other (§13.6 写入资格).
         """
-        reached_commit = False
+        reached_commit, learned = False, ({}, {})
         try:
             with self.session() as conn:
                 row = conn.execute(
@@ -198,7 +200,7 @@ class ArchiveStore:
                         group.run_id,
                         group.source_id,
                         group.kind,
-                        group.record_count(),
+                        stored_rows(group),
                         group.built_wall,
                     ),
                 ).fetchone()
@@ -218,9 +220,11 @@ class ArchiveStore:
                 )
                 if row["state"] == "READY":
                     self._open_bucket(conn, group.bucket)
-                self._write_members(conn, group)
+                self._write_members(conn, group, learned)
                 lacks = lacks and not any(st.kind == "RETENTION_BASELINE" for st in group.states)
                 reached_commit = True
+            self.channel_numbers.update(learned[0])
+            self.run_numbers.update(learned[1])
             return WriteOutcome("COMMITTED", lacks_baseline=lacks)
         except psycopg.Error as error:
             return WriteOutcome("UNKNOWN" if reached_commit else "FAILED", type(error).__name__)
@@ -240,7 +244,7 @@ class ArchiveStore:
             )
 
     def prepare_bucket(self, no: int) -> bool:
-        """An EMPTY bucket here: its four partitions and its READY row, in one transaction; False when it is there already.
+        """An EMPTY bucket here: its partitions and its READY row, in one transaction; False when it is there already.
         Each partition is made apart and then attached: attaching takes only a SHARE UPDATE EXCLUSIVE lock on the table, so it
         neither waits for nor holds up the writes and reads going on - making it with PARTITION OF would take ACCESS EXCLUSIVE."""
         no = int(no)
@@ -278,7 +282,7 @@ class ArchiveStore:
         return row["lo"], row["hi"]
 
     def bucket_bytes(self, no: int) -> int:
-        """The disk its four partitions take, indexes included."""
+        """The disk its partitions take, indexes included."""
         names = [f"{t}_b{int(no)}" for t in PARTITIONED]
         with self.session() as conn:
             row = conn.execute(
@@ -335,10 +339,10 @@ class ArchiveStore:
         return True
 
     def retire_bucket(self, no: int) -> bool:
-        """Take one bucket marked DELETING away: for each of the four tables, finish a detach left pending on that table, detach
+        """Take one bucket marked DELETING away: for each of its tables, finish a detach left pending on that table, detach
         the bucket's partition CONCURRENTLY (outside any transaction block, so reads and writes go on), drop it.  Every step
         looks at the system catalogue first, so it resumes wherever a crash or a timeout stopped it; at most one detach per
-        table is ever pending.  DELETED only once the catalogue shows all four gone.  A long transaction makes a step time out:
+        table is ever pending.  DELETED only once the catalogue shows them all gone.  A long transaction makes a step time out:
         the error is raised, the bucket stays DELETING and the next round goes on (§13.6 删除步骤, 维护连接)."""
         with self.connect() as conn:
             conn.autocommit = True
@@ -372,39 +376,69 @@ class ArchiveStore:
             conn.execute("UPDATE bucket SET state='DELETED',changed_at=now() WHERE no=%s AND state='DELETING'", (no,))
         return True
 
-    def _write_members(self, conn, group: rec.CommitGroup):
+    def _write_members(self, conn, group: rec.CommitGroup, learned: tuple[dict, dict]):
         info = getattr(self, "run_info", None)
         if info and info[0] == group.run_id:
             conn.execute(
                 "INSERT INTO run(run_id,config_id,started_wall) VALUES(%s,%s,%s) ON CONFLICT DO NOTHING", info
             )
         cur = conn.cursor()
-        if group.observations:
-            cur.executemany(OBSERVATION_SQL, [self._observation_row(group, o) for o in group.observations])
-        if group.results:
-            cur.executemany(RESULT_SQL, [self._result_row(group, x) for x in group.results])
-        if group.states:
-            cur.executemany(STATE_SQL, [self._state_row(group, x) for x in group.states])
-            for state in group.states:
-                self._apply_state(conn, group, state)
+        if group.observations or group.results:
+            rows = [
+                self._sample_row(conn, group, o.run_id, o.source_id, o.seg, o.point_id, learned,
+                                 o.received_wall if o.asserted_wall is None else o.asserted_wall, o.value,
+                                 rec.ua_status_stored(o.status_code), rec.input_state(o.quality, o.extreme),
+                                 rec.item_stored(o.item_seq))
+                for o in group.observations
+            ] + [
+                self._sample_row(conn, group, x.run_id, x.source_id, x.seg, x.point_id, learned,
+                                 x.at_wall if x.asserted_wall is None else x.asserted_wall, x.value, 0,
+                                 rec.result_state(x.status, x.reason, x.extreme), 0)
+                for x in group.results
+            ]  # fmt: skip
+            cur.executemany(SAMPLE_SQL, rows)
+        baselines = [x for x in group.states if x.kind == "RETENTION_BASELINE"]  # the only kind the replay reads back
+        if baselines:
+            cur.executemany(STATE_SQL, [self._state_row(group, x) for x in baselines])
+        for state in group.states:
+            self._apply_state(conn, group, state)
         if group.faults:
             cur.executemany(FAULT_SQL, [self._fault_row(group, f) for f in group.faults])
 
-    @staticmethod
-    def _observation_row(g, o):
-        return (
-            g.bucket, o.id, g.group_id, o.run_id, o.source_id, o.conn_gen, o.seg, o.batch_seq, o.item_seq, o.point_id,
-            o.value, o.quality, o.status_code, o.received_wall, o.received_mono, o.source_time, o.origin,
-            o.orig_id, o.asserted_wall, o.asserted_mono, o.extreme, o.tick, o.poll_id, o.response_id,
-        )  # fmt: skip
+    def _sample_row(self, conn, g, run_id, source_id, seg, point_id, learned, t, value, ua_status, state, item):
+        return (t, value, g.bucket, self._run_number(conn, run_id, learned[1]), seg, ua_status,
+                self._channel_number(conn, point_id, source_id, learned[0]), state, item)  # fmt: skip
 
-    @staticmethod
-    def _result_row(g, x):
-        return (
-            g.bucket, x.id, g.group_id, x.run_id, x.source_id, x.conn_gen, x.seg, x.batch_seq, x.point_id, x.value,
-            x.status, x.reason, x.extreme, x.config_id, x.at_wall, _json(x.basis), _json(x.estimate),
-            x.origin, x.orig_id, x.asserted_wall, x.basis_incomplete,
-        )  # fmt: skip
+    def _channel_number(self, conn, point_id: str, source_id: str, learned: dict) -> int:
+        """This database's number for a channel; a channel it has none for gets the next one.  The number is chosen here,
+        not by a sequence, so a transaction rolled back uses none up; the unique key makes a second writer's attempt end in
+        nothing and the number already there is read (修复轮14)."""
+        key = (point_id, source_id)
+        found = self.channel_numbers.get(key) or learned.get(key)
+        if found is None:
+            row = conn.execute("SELECT no FROM channel WHERE point_id=%s AND source_id=%s", key).fetchone()
+            if row is None:
+                conn.execute(
+                    "INSERT INTO channel(no,point_id,source_id) SELECT coalesce(max(no),0)+1,%s,%s FROM channel "
+                    "ON CONFLICT(point_id,source_id) DO NOTHING", key
+                )  # fmt: skip
+                row = conn.execute("SELECT no FROM channel WHERE point_id=%s AND source_id=%s", key).fetchone()
+            found = learned[key] = row["no"]
+        return found
+
+    def _run_number(self, conn, run_id: str, learned: dict) -> int:
+        """This database's number for a run, given the same way as a channel's."""
+        found = self.run_numbers.get(run_id) or learned.get(run_id)
+        if found is None:
+            row = conn.execute("SELECT no FROM run_number WHERE run_id=%s", (run_id,)).fetchone()
+            if row is None:
+                conn.execute(
+                    "INSERT INTO run_number(no,run_id) SELECT coalesce(max(no),0)+1,%s FROM run_number "
+                    "ON CONFLICT(run_id) DO NOTHING", (run_id,)
+                )  # fmt: skip
+                row = conn.execute("SELECT no FROM run_number WHERE run_id=%s", (run_id,)).fetchone()
+            found = learned[run_id] = row["no"]
+        return found
 
     @staticmethod
     def _state_row(g, x):

@@ -136,15 +136,14 @@ def test_maintenance_never_deletes_records_older_than_a_year(archive_db_factory,
     group = make_group(config_id=cfg.config_id)
     assert router.write_group(group).durable
     with primary.session() as conn:
-        conn.execute("UPDATE observation SET received_wall=received_wall-400*86400,received_mono=1")
-        conn.execute("UPDATE result SET at_wall=at_wall-400*86400")
+        conn.execute("UPDATE sample SET t=t-400*86400")
         conn.execute("UPDATE commit_group SET committed_at=now()-interval '400 days'")
-        before = {t: conn.execute(f"SELECT count(*) AS n FROM {t}").fetchone()["n"] for t in ("observation", "result", "commit_group")}
+        before = {t: conn.execute(f"SELECT count(*) AS n FROM {t}").fetchone()["n"] for t in ("sample", "commit_group")}
     for t in (0.0, 61.0, 122.0, 600.0):
         router.maintain(t)
     with primary.session() as conn:
         after = {t: conn.execute(f"SELECT count(*) AS n FROM {t}").fetchone()["n"] for t in before}
-    assert after == before and before["observation"] == 3, "more than a year old and still there"
+    assert after == before and before["sample"] == 3 + 1, "more than a year old and still there (3 inputs, 1 result)"
 
 
 @pytest.mark.parametrize("bad", [0, -1, 1023, 10 * GIB + 1, None, 2**63])

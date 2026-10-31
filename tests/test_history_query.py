@@ -85,7 +85,7 @@ def test_an_archive_gap_stops_the_hold_at_the_start_of_the_gap(archive_db_factor
     for group in [*rec.commits, *sink.groups]:
         store.write_group(group)
     result = ask(store, 100, 120)
-    flat = [(x["value"], x["origin"], x["until"], x["ended_by"]) for s in spans(result) for x in s["rows"] if x["kind"] == "raw"]
+    flat = [(x["value"], x["time"], x["until"], x["ended_by"]) for s in spans(result) for x in s["rows"] if x["kind"] == "raw"]
     first = flat[0]
     assert first[0] == 500.0 and first[2] == at(105.0)[0], "500 is not carried across the gap that began at 105"
     assert first[3] in ("GAP", "SEGMENT_END")
@@ -111,7 +111,7 @@ def test_nothing_crosses_a_segment_and_a_window_in_a_gap_between_segments_shows_
     assert segs[0]["rows"][-1]["until"] == at(106.5)[0]
 
 
-def test_a_restated_value_keeps_its_original_time_and_counts_from_the_restatement(archive_db_factory):
+def test_a_restated_value_counts_from_the_restatement_and_the_original_stays_as_it_was(archive_db_factory):
     owner, rec = owner_and_groups()
     data(owner, 101.0)
     owner.tick(*at(104.0))  # expire (3 s)
@@ -119,9 +119,9 @@ def test_a_restated_value_keeps_its_original_time_and_counts_from_the_restatemen
     owner.accept(r.InputBatch("ua", 1, r.KIND_UA_NOTIFY, wall, mono))  # recovery inside the window
     store = stored(archive_db_factory, rec)
     rows = [x for s in spans(ask(store, 100, 110)) for x in s["rows"] if x["kind"] == "raw"]
-    original = next(x for x in rows if x["origin"] == r.ORIGIN_RECEIVED)
-    restated = next(x for x in rows if x["origin"] == r.ORIGIN_ASSERTION)
-    assert restated["orig_id"] == original["id"] and restated["observed_at"] == original["observed_at"]
+    # a restatement is stored as a row of its own time (修复轮14): it no longer names the row it restates
+    original, restated = rows
+    assert original["time"] == at(101.0)[0] and restated["value"] == original["value"]
     assert restated["time"] == at(104.5)[0], "counts from the restatement; the gap 104.0-104.5 is not back-filled"
 
 
@@ -130,7 +130,7 @@ def test_duplicate_times_inside_one_batch_all_stay(archive_db_factory):
     data(owner, 101.0, items=(("ti", 1.0), ("ti", 2.0), ("ti", 3.0), ("to", 4.0)))
     store = stored(archive_db_factory, rec)
     rows = [x for x in spans(ask(store, 100, 110))[0]["rows"] if x["kind"] == "raw"]
-    assert [(x["value"], x["item_seq"]) for x in rows] == [(1.0, 0), (2.0, 1), (3.0, 2)]
+    assert [x["value"] for x in rows] == [1.0, 2.0, 3.0], "in batch order: the time alone cannot order them"
     assert len({x["time"] for x in rows}) == 1, "one instant, three records, ordered by batch position"
     assert [x["ended_by"] for x in rows[:2]] == ["NEXT_CHANGE", "NEXT_CHANGE"]
 
@@ -192,11 +192,13 @@ def test_the_rows_that_remain_are_the_first_ones_of_the_channel_whichever_databa
     assert result["channels"]["ti"]["truncated"]
 
 
-def test_a_row_stored_in_both_databases_counts_once_toward_the_limit(archive_db_factory):
+def test_rows_split_over_both_databases_count_together_toward_the_limit(archive_db_factory):
+    """The limit is per channel over all databases: a group is in one database only (修复轮14 drops the per-row id that
+    merged copies), so the rows of the two are simply joined, in time order, and counted once each."""
     rec, _ = series(12)
-    stores = two_databases(archive_db_factory, rec, lambda i: [0, 1])  # everything in both
+    stores = two_databases(archive_db_factory, rec, lambda i: [i % 2])  # every other group in each database
     cut = h.query(stores, CHANNELS, at(100)[0], at(110)[0], limit=8)
-    assert values_of(cut) == [500.0 + k for k in range(8)] and cut["truncated"], "twelve rows, not twenty-four, are over a limit of eight"
+    assert values_of(cut) == [500.0 + k for k in range(8)] and cut["truncated"], "twelve rows over two databases, limit eight"
     whole = h.query(stores, CHANNELS, at(100)[0], at(110)[0], limit=12)
     assert len(values_of(whole)) == 12 and not whole["truncated"], "twelve rows are exactly the limit: nothing is over it"
 
@@ -217,13 +219,14 @@ def test_a_long_series_is_answered_quickly_from_the_point_time_index(archive_db_
         conn.execute(
             "INSERT INTO segment(run_id,source_id,seg,conn_gen,start_wall,start_reason) VALUES('run','ua',1,1,0,'CONNECT')"
         )
+        conn.execute("INSERT INTO channel(no,point_id,source_id) VALUES(1,'ti','ua')")
+        conn.execute("INSERT INTO run_number(no,run_id) VALUES(1,'run')")
         conn.execute(
-            "INSERT INTO observation(bucket,id,group_id,run_id,source_id,conn_gen,seg,batch_seq,item_seq,point_id,value,quality,"
-            "status_code,received_wall,received_mono,origin) "
-            "SELECT 1,'o'||n,'g','run','ua',1,1,n,0,'ti',n::float8,'GOOD',0,n,n,'RECEIVED' FROM generate_series(1,60000) n"
+            "INSERT INTO sample(t,value,bucket,run,seg,ua_status,channel,state,item) "
+            "SELECT n,n::float8,1,1,1,0,1,1,0 FROM generate_series(1,60000) n"
         )
         conn.execute("UPDATE bucket SET used=true,state='CURRENT' WHERE no=1")  # what writing them would have recorded
-        conn.execute("ANALYZE observation")
+        conn.execute("ANALYZE sample")
     started = time.perf_counter()
     result = h.query([("primary", store)], CHANNELS, 30000.0, 30100.0)
     elapsed = time.perf_counter() - started

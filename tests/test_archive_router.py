@@ -8,6 +8,7 @@ from collections import namedtuple
 
 import psycopg
 import pytest
+from archive_support import said_and_held, samples
 from owner_support import small_config
 from test_archive_write import CONFIG, RUN, make_group
 
@@ -54,7 +55,7 @@ def rig(archive_db_factory):
     return rig
 
 
-def rows(store, table="observation"):
+def rows(store, table="sample"):  # inputs and derived results alike (修复轮14)
     with store.session() as conn:
         return conn.execute(f"SELECT count(*) AS n FROM {table}").fetchone()["n"]
 
@@ -73,14 +74,16 @@ def test_an_over_budget_group_is_refused_whole_never_split(archive_db_factory):
 def test_a_group_larger_than_the_old_128_record_write_batch_is_one_atomic_transaction(rig):
     result = rig.router.write_group(make_group(n_obs=400, config_id=rig.cfg.config_id))
     assert result.status == "COMMITTED" and result.target == "primary"
-    assert rows(rig.primary) == 400 and rows(rig.primary, "commit_group") == 1
+    assert rows(rig.primary) == 400 + 1 and rows(rig.primary, "commit_group") == 1, "400 inputs and the result"
 
 
 def test_the_emergency_route_keeps_derived_results_with_their_inputs(rig):
     rig.disks.used["D:/a"] = 0.96  # the normal database is over the 95 % switch point
     result = rig.router.write_group(make_group(config_id=rig.cfg.config_id))
     assert result.status == "COMMITTED" and result.target == "emergency" and rig.router.mode == "EMERGENCY"
-    assert rows(rig.emergency) == 3 and rows(rig.emergency, "result") == 1, "derived results are not dropped"
+    with rig.emergency.session() as conn:
+        kinds = [x["kind"] for x in samples(conn)]
+    assert (kinds.count("raw"), kinds.count("derived")) == (3, 1), "derived results are not dropped"
     assert rows(rig.emergency, "fault_record") == 1 and rows(rig.primary) == 0
 
 
@@ -91,10 +94,10 @@ def test_each_group_lands_complete_in_exactly_one_database(rig):
     with rig.primary.session() as p, rig.emergency.session() as e:
         per_db = {}
         for name, conn in (("primary", p), ("emergency", e)):
-            for row in conn.execute(
-                "SELECT group_id,count(*) AS n FROM observation GROUP BY group_id"
-            ).fetchall():
-                per_db.setdefault(row["group_id"], {})[name] = row["n"]
+            said, held = said_and_held(conn)
+            assert said == held, f"{name}: every row there belongs to a group there, every group's rows are there"
+            for row in conn.execute("SELECT group_id FROM commit_group").fetchall():
+                per_db.setdefault(row["group_id"], {})[name] = 1
     assert all(len(where) == 1 for where in per_db.values()), "no group is spread over two databases"
     assert {g: next(iter(w)) for g, w in per_db.items()} == {
         "run1/g1": "primary", "run1/g2": "primary", "run1/g3": "emergency", "run1/g4": "emergency",
@@ -134,7 +137,7 @@ def test_a_commit_that_really_did_not_happen_stays_unknown_and_is_retried_on_the
     assert rows(rig.emergency, "commit_group") == 0
     second = rig.router.write_group(make_group(config_id=rig.cfg.config_id))  # what the writer does: same group, same target
     assert second.status == "COMMITTED" and second.target == "primary"
-    assert rows(rig.primary) == 3 and rig.router.verify("run1/g1", 1) == "primary"
+    assert rows(rig.primary) == 3 + 1 and rig.router.verify("run1/g1", 1) == "primary"
 
 
 def lose_the_reply(rig):

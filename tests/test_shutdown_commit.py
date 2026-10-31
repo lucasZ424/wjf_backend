@@ -5,6 +5,7 @@ import threading
 import time
 
 import pytest
+from archive_support import groups_in_order
 from owner_support import FixedBucket, small_config
 from test_archive_router import Disks
 from test_capstone_d import run_worker
@@ -142,14 +143,8 @@ async def test_real_database_run_end_is_committed_after_recovery_pending_data_an
     await finish(queue, task)
 
     with primary.session() as conn:
-        ordered = conn.execute(
-            "SELECT g.order_no,e.kind FROM state_event e JOIN commit_group g USING(group_id) "
-            "WHERE e.run_id='run' ORDER BY g.order_no,e.id"
-        ).fetchall()
-        taken = conn.execute(
-            "SELECT e.kind FROM state_event e JOIN commit_group g USING(group_id) "
-            "WHERE e.run_id='run' ORDER BY g.committed_at,e.id"
-        ).fetchall()
+        ordered = groups_in_order(conn, "g.order_no", "g.run_id='run'")
+        taken = groups_in_order(conn, where="g.run_id='run'")
         ended = conn.execute("SELECT end_reason FROM run WHERE run_id='run'").fetchone()
     assert ordered[-1]["kind"] == "RUN_END" and ordered[-1]["order_no"] == max(x["order_no"] for x in ordered)
     assert taken[-1]["kind"] == "RUN_END", "last in the order the archive took the groups, not only by the number the owner gave"
@@ -259,10 +254,8 @@ async def test_a_unit_turned_away_after_the_stop_began_is_followed_by_the_final_
         run = conn.execute("SELECT ended_wall,end_reason FROM run WHERE run_id='run'").fetchone()
         segments = conn.execute("SELECT seg,end_wall,end_reason FROM segment ORDER BY seg").fetchall()
         gaps = conn.execute("SELECT start_wall,end_wall,reason FROM archive_gap").fetchall()
-        run_ends = conn.execute("SELECT count(*) AS n FROM state_event WHERE kind='RUN_END'").fetchone()["n"]
-        last = conn.execute(
-            "SELECT e.kind FROM state_event e JOIN commit_group g USING (group_id) ORDER BY g.committed_at DESC,e.id DESC LIMIT 1"
-        ).fetchone()
+        taken = groups_in_order(conn)
+        run_ends, last = [x["kind"] for x in taken].count("RUN_END"), taken[-1]
     if final_verdict == "COMMIT":
         assert (run["end_reason"], run["ended_wall"]) == ("NORMAL", at(105.0)[0])
         assert [(x["seg"], x["end_wall"], x["end_reason"]) for x in segments] == [(1, at(102.0)[0], "ARCHIVE_GAP")], (

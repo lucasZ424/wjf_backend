@@ -51,16 +51,17 @@ def stores(rig, **replace):
     return list(named.items())
 
 
-def test_one_segment_split_over_two_databases_reads_as_one_span_with_a_single_copy_of_each_record(archive_db_factory):
+def test_one_segment_split_over_two_databases_reads_as_one_span_with_each_record_once(archive_db_factory):
+    """A group is written to one database only (修复轮14: no per-row id merges copies any more), so the rows of both are
+    joined as they are: one span, every record once, the hold running on from one database into the other."""
     rig = Rig(archive_db_factory)
     assert rig.write(primary=0.40).target == "primary"  # group 1: observations 480-482 at wall 1001
     assert rig.write(primary=0.96).target == "emergency"  # group 2 after the switch, same segment
-    rig.primary.write_group(make_group(order=2, config_id=rig.cfg.config_id))  # a duplicate copy of group 2
     result = h.query(stores(rig), CHANNELS, 1000.0, 1010.0)
     (span,) = result["channels"]["ti"]["segments"]
     raw = [x for x in span["rows"] if x["kind"] == "raw"]
-    assert len(raw) == len({x["id"] for x in raw}) == 6, "3 + 3 observations, the duplicate collapsed"
-    assert [x["batch_seq"] for x in raw] == [1, 1, 1, 2, 2, 2]
+    assert [(x["time"], x["value"]) for x in raw] == [(1001.0, 480.0), (1001.0, 481.0), (1001.0, 482.0),
+                                                      (1002.0, 480.0), (1002.0, 481.0), (1002.0, 482.0)]  # fmt: skip
     third, fourth = raw[2], raw[3]
     assert third["ended_by"] == "NEXT_CHANGE" and third["until"] == fourth["time"], "the hold links across databases"
     assert result["partial"] is False and result["unavailable"] == []
@@ -92,7 +93,7 @@ def test_a_database_that_cannot_be_read_makes_the_answer_partial_not_silently_co
     assert result["coverage"] == "PARTIAL"
     assert all(v is None for v in result["coverage_end"].values()), "no source is claimed complete"
     raw = [x for s in result["channels"]["ti"]["segments"] for x in s["rows"] if x["kind"] == "raw"]
-    assert {x["batch_seq"] for x in raw} == {2}, "what is readable is shown; what is not, is not guessed"
+    assert {x["time"] for x in raw} == {1002.0}, "what is readable is shown; what is not, is not guessed"
 
 
 def test_a_late_sample_alone_is_not_taken_for_a_complete_watermark(archive_db_factory):

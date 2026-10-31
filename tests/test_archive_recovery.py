@@ -7,6 +7,7 @@ show history as complete while a gap is still open; unbounded waiting would exha
 import asyncio
 import time
 
+from archive_support import said_and_held
 from owner_support import FixedBucket
 from test_archive_gap import Sink, build, lose_the_archive
 from test_run_segments import CONFIG
@@ -153,15 +154,15 @@ def test_against_postgres_the_recovery_unit_lands_in_one_transaction_with_every_
     for group in sink.groups:
         assert router.write_group(group).durable
     with primary.session() as conn:
-        gid = recovery.group_id
-        counts = {
-            t: conn.execute(f"SELECT count(*) AS n FROM {t} WHERE group_id=%s", (gid,)).fetchone()["n"]
-            for t in ("observation", "result", "state_event")
-        }
+        (said,) = conn.execute("SELECT records FROM commit_group WHERE group_id=%s", (recovery.group_id,)).fetchall()
+        restated = conn.execute("SELECT count(*) AS n FROM sample WHERE item=-1").fetchone()["n"]  # first in their order
+        whole = said_and_held(conn)
         gap = conn.execute("SELECT source_id,start_wall,end_wall,reason FROM archive_gap").fetchall()
         segments = conn.execute("SELECT seg,end_reason FROM segment ORDER BY seg").fetchall()
         mark = conn.execute("SELECT seg,group_order FROM watermark ORDER BY seg DESC LIMIT 1").fetchone()
-    assert counts["observation"] == 2 and counts["state_event"] == 4 and counts["result"] >= 1
+    assert len(recovery.observations) == 2 and len(recovery.states) == 4 and len(recovery.results) >= 1, "the unit"
+    assert said["records"] == 2 + len(recovery.results) and restated == 2, "its restated inputs and results, in one go"
+    assert whole[0] == whole[1], "nothing of the unit is missing and nothing is left over"
     assert gap == [{"source_id": "ua", "start_wall": at(102.0)[0], "end_wall": at(104.0)[0], "reason": "QUEUE_FULL"}]
     assert segments[0]["seg"] == 1 and segments[0]["end_reason"] == "ARCHIVE_GAP" and segments[-1]["seg"] == 2
     assert mark == {"seg": 2, "group_order": recovery.order}

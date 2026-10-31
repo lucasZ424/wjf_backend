@@ -15,6 +15,7 @@ import time
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from archive_support import samples
 from browser_support import sign_in
 from live_support import BRIDGES
 from owner_support import poll
@@ -62,10 +63,7 @@ def settled(rig):
 
 def stored(rig, point):
     with rig.router.primary.session() as conn:
-        return conn.execute(
-            "SELECT quality,value,received_wall FROM observation WHERE point_id=%s ORDER BY received_wall,batch_seq,item_seq",
-            (point,),
-        ).fetchall()
+        return [{**x, "received_wall": x["t"]} for x in samples(conn, "c.point_id=%s", (point,))]
 
 
 def local(seconds):
@@ -121,9 +119,8 @@ def test_a_bridge_that_fails_and_comes_back_is_the_same_moment_on_the_live_page_
 
     # -- the archive: one failure record per bridge for four failed rounds, and the value of the bridge before it is intact
     with rig.router.primary.session() as conn:
-        counts = conn.execute(
-            "SELECT point_id,count(*) AS n FROM observation WHERE quality LIKE 'MISSING\\_%' GROUP BY point_id"
-        ).fetchall()
+        failed = [x["point_id"] for x in samples(conn) if (x.get("quality") or "").startswith("MISSING_")]
+    counts = [{"point_id": p, "n": failed.count(p)} for p in sorted(set(failed))]
     assert sorted(x["point_id"] for x in counts) == sorted(BRIDGES) and {x["n"] for x in counts} == {1}, counts
     series = stored(rig, FOCUS)
     qualities = [x["quality"] for x in series]
@@ -139,16 +136,16 @@ def test_a_bridge_that_fails_and_comes_back_is_the_same_moment_on_the_live_page_
     cells = [row.locator("td").all_inner_texts() for row in page.locator("#replay-records tbody tr").all()]
     classes = [row.get_attribute("class") for row in page.locator("#replay-records tbody tr").all()]
     words = {"GOOD": "良好", MISSING: "未取得（本轮协议异常）"}  # 终版 §17.5: the page names them, the file keeps the codes
-    assert [c[4] for c in cells] == [words[q] for q in qualities], "the page lists the records the archive holds, failure included"
-    assert cells[at][3] == "—" and "bad" in classes[at].split(), "the failure has no number and is marked unusable"
-    assert cells[at - 1][8].startswith("至下一次变化"), "the value before it holds to the next record, not on to the segment end"
+    assert [c[2] for c in cells] == [words[q] for q in qualities], "the page lists the records the archive holds, failure included"
+    assert cells[at][1] == "—" and "bad" in classes[at].split(), "the failure has no number and is marked unusable"
+    assert cells[at - 1][5].startswith("至下一次变化"), "the value before it holds to the next record, not on to the segment end"
 
     # -- the file says the same, without a number, and its hold ends are the same instants
     _, (meta, header, rows) = export(page, tmp_path)
     col = {name: header.index(name) for name in header}
     assert len(rows) == len(cells) and [r[col["质量/状态"]] for r in rows] == qualities
     failure, before, after = rows[at], rows[at - 1], rows[at + 1]
-    assert (failure[col["值"]], failure[col["是否有效"]], failure[col["来源"]]) == ("", "否", "实收")
+    assert (failure[col["值"]], failure[col["是否有效"]]) == ("", "否")
     assert abs(float(failure[col["生效时间(UTC秒)"]]) - failed_at) < 1e-3
     assert before[col["终止原因"]] == "至下一次变化" and abs(seconds_of(before[col["有效至"]]) - failed_at) < 2e-3
     assert abs(seconds_of(failure[col["有效至"]]) - came_back_at) < 2e-3, "the failure lasts until the bridge answers again"

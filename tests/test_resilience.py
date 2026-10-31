@@ -36,10 +36,10 @@ async def test_a_hard_kill_at_any_moment_leaves_no_half_written_group_and_the_ne
     assert [k["mode"] for k in report["kills"]] == ["during start-up", "under load"]
     for kill in report["kills"]:
         for check in (kill["primary"], kill["emergency"]):
-            assert check["half_written_groups"] == 0 and check["orphan_rows"] == 0
+            assert check["missing_rows"] == 0 and check["orphan_rows"] == 0
     assert report["kills"][1]["primary"]["groups"] > 0, "the second process really had written before it was killed"
     after = report["after"]["primary"]
-    assert after["half_written_groups"] == 0 and after["open_segments_in_ended_runs"] == 0
+    assert after["missing_rows"] == 0 and after["open_segments_in_ended_runs"] == 0
     closed = [reason for ended, reason in after["runs"] if ended]
     assert closed.count("ABNORMAL_EXIT") >= 1, "a killed run is closed from what is persisted, and says so"
     history = report["history_after_crashes"]
@@ -57,7 +57,7 @@ async def test_the_injected_thresholds_choose_the_route_and_history_stays_whole_
         landed = {name: n for name, n in step["groups_landed"].items() if n}
         target = step["expected"].lower()
         assert set(landed) == {target}, f"every new group went to the one database the route names: {step}"
-    assert all(w == {"half_written_groups": 0, "orphan_rows": 0} for w in part["whole_groups"].values())
+    assert all(w == {"missing_rows": 0, "orphan_rows": 0} for w in part["whole_groups"].values())
     assert part["group_ids_unique"], "no group is stored in two databases"
     assert part["history"]["partial"] is False and part["history"]["duplicates"] == 0 and part["history"]["in_order"]
     assert part["history"]["raw_rows"] >= 6, "the merged history carries the rounds from every database"
@@ -74,7 +74,7 @@ async def test_the_measured_growth_gives_a_year_figure_with_indexes_inside_and_a
         assert part["valid"] and part["buckets_at_start"] == part["buckets_at_end"], "no bucket was prepared inside the window"
         assert part["first_preparation"]["database_bytes_at_window_start"] > 0, "the one-off start is reported on its own"
         assert 0 < part["tables_total_bytes"] <= part["database_size_bytes"], "the tables with their indexes are inside the database size: counted once"
-        assert all(t["indexes"] > 0 for name, t in part["tables"].items() if name in ("observation", "result")), "the indexes are part of the figure"
+        assert all(t["indexes"] > 0 for name, t in part["tables"].items() if name.startswith("sample_b")), "the indexes are part of the figure"
         cap = part["capacity"]
         assert (cap["days_kept_after_deletion"] >= cap["floor_buckets"]) == (cap["verdict"] == "FLOOR_HELD")
         assert cap["days_between_deletions"] > 0 and "bytes_per_year" not in cap

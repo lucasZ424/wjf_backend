@@ -5,6 +5,7 @@ or a clock step that did not open a segment, would let a stale value look valid 
 """
 
 import pytest
+from archive_support import groups_in_order, samples
 from legacy_support import make_legacy
 from owner_support import FixedBucket, Recorder, notify
 from test_source_validity import MONO0, WALL0, at, data, ua_only
@@ -57,11 +58,9 @@ def test_start_registers_the_run_and_a_normal_stop_closes_every_segment_after_th
     assert run["config_id"] == CONFIG.config_id and run["started_wall"] == WALL0
     assert (run["ended_wall"], run["end_reason"]) == (at(103.0)[0], "NORMAL")
     assert one(store, "SELECT 1 FROM segment WHERE end_wall IS NULL AND start_wall IS NOT NULL") == []
-    last = one(
-        store,
-        "SELECT e.kind FROM state_event e JOIN commit_group g USING (group_id) ORDER BY g.order_no DESC,e.id DESC LIMIT 1",
-    )
-    assert last[0]["kind"] == "RUN_END", "the end is registered after everything accepted was processed"
+    with store.session() as conn:
+        last = groups_in_order(conn, "g.order_no")[-1]
+    assert last["kind"] == "RUN_END", "the end is registered after everything accepted was processed"
     assert rec.commits[-1].states[0].kind == "RUN_END"
 
 
@@ -135,11 +134,11 @@ def test_a_step_back_keeps_both_halves_apart_by_segment_and_re_states_the_values
     end = [s for s in rec.states("SEG_END") if s.detail["reason"] == "CLOCK_JUMP"][0]
     assert end.detail["end_wall"] == at(101.0)[0], "the old segment ends at the last wall time seen before the jump"
     store = stored(archive_db_factory, rec)
-    ordered = one(
-        store,
-        "SELECT seg,batch_seq FROM observation WHERE origin='RECEIVED' AND point_id='ti' ORDER BY seg,batch_seq,item_seq",
+    with store.session() as conn:  # the restatements are first in their order (-1); the receipts are the others
+        ordered = samples(conn, "c.point_id='ti' AND s.item>=0", order="s.seg,s.t")
+    assert [x["seg"] for x in ordered] == [1, 2] and ordered[1]["t"] < ordered[0]["t"], (
+        "the later receipt has the earlier wall time: the segment, not the wall, keeps them apart"
     )
-    assert [(x["seg"], x["batch_seq"]) for x in ordered] == [(1, 1), (2, 2)], "order comes from identity, not wall"
 
 
 def test_a_legacy_database_is_never_read_from_or_written_to(archive_db_factory):

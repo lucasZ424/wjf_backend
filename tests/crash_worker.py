@@ -77,8 +77,8 @@ def main():
             os._exit(9)
         if index == kill_at and mode == "in_tx":
 
-            def die_inside(conn, g, original=original):
-                original(conn, g)  # every INSERT has been issued, COMMIT has not
+            def die_inside(conn, g, learned, original=original):
+                original(conn, g, learned)  # every INSERT has been issued, COMMIT has not
                 os._exit(9)
 
             primary._write_members = die_inside
