@@ -1,0 +1,2 @@
+# Windows batch files run with CRLF line endings, whatever the checkout or archive settings (修复轮15)
+*.cmd text eol=crlf
