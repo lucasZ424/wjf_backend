@@ -61,7 +61,8 @@ def oracle(owner):
         stress = None if None in (ti, to) else COEFFICIENT * (ti - to)
         expected[f"stress_{n}"] = stress
         stresses.append(stress)
-    expected["thermal_stress_peak"] = None if None in stresses else max(stresses)
+    # 修复轮15: the largest magnitude with its sign, the first of equal magnitudes in channel order
+    expected["thermal_stress_peak"] = None if None in stresses else max(stresses, key=abs)
     return expected
 
 

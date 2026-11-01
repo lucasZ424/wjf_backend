@@ -41,24 +41,26 @@ def drive(rig, pair, inner, outer, pause=2.1):  # longer than one reading interv
     time.sleep(pause)
 
 
-def cyan_and_red(page, panel, t0, t1):
-    """Pixels of the blue line and of the red 'no value' marks of one panel between two instants."""
+def line_and_red(page, panel, t0, t1, color=None):
+    """Pixels of the panel's line - in the panel's own colour (修复轮15), or in `color` - and of the red 'no value' marks
+    between two instants."""
     return page.evaluate(
-        """([panel, t0, t1]) => {
+        """([panel, t0, t1, color]) => {
           const c = document.querySelector('#trend-canvas'), p = c.plot, g = c.getContext('2d'), r = c.width / c.clientWidth;
           const x = t => p.left + (Math.min(Math.max(t, p.t0), p.now) - p.t0) / (p.now - p.t0) * (p.right - p.left);
           const a = Math.round((x(t0) + 3) * r), b = Math.round((x(t1) - 3) * r), q = p.panels[panel];
-          if (b <= a) return {cyan: -1, red: -1};
+          if (b <= a) return {line: -1, red: -1};
+          const [lr, lg, lb] = [1, 3, 5].map(k => parseInt((color || q.color).slice(k, k + 2), 16));
           const d = g.getImageData(a, Math.round(q.top * r), b - a, Math.round((q.bottom - q.top) * r)).data;
-          const out = {cyan: 0, red: 0};
+          const out = {line: 0, red: 0};
           for (let i = 0; i < d.length; i += 4) {
             const [R, G, B, A] = [d[i], d[i + 1], d[i + 2], d[i + 3]];
-            if (A > 200 && Math.abs(R - 115) < 45 && Math.abs(G - 188) < 45 && B > 200) out.cyan++;
+            if (A > 200 && Math.abs(R - lr) < 40 && Math.abs(G - lg) < 40 && Math.abs(B - lb) < 40) out.line++;
             else if (A > 200 && R > 220 && G < 150) out.red++;
           }
           return out;
         }""",
-        [panel, t0, t1],
+        [panel, t0, t1, color],
     )
 
 
@@ -71,8 +73,18 @@ def test_three_panels_share_one_time_axis_and_keep_their_own_units_axes_and_sign
     assert [p["id"] for p in got["panels"]] == ["load_mw", pair["delta"], pair["stress"]]
     assert [p["unit"] for p in got["panels"]] == ["MW", "℃", "MPa"], "one unit per panel, never mixed"
     assert got["now"] - got["t0"] == 300, "one time axis for all three"
-    ranges = [(round(p["lo"], 3), round(p["hi"], 3)) for p in got["panels"]]
-    assert len(set(ranges)) == 3, f"each panel has its own vertical axis, nothing normalised: {ranges}"
+    # Each panel's axis fits its own values (修复轮15: at least its least span, snapped to even steps).  Two of them may
+    # come out the same numbers - the difference and its proxy here - but a normalised or shared axis covers either too
+    # little of a panel's values or far more than them.
+    for panel, least in zip(got["panels"], (50, 10, 10)):
+        values = [q["v"] for q in panel["points"] if q["valid"]]
+        reach = max(values) - min(values) + least
+        assert min(values) - reach <= panel["lo"] <= min(values) and max(values) <= panel["hi"] <= max(values) + reach, panel["id"]
+        assert panel["hi"] - panel["lo"] >= least, "a steady reading is not stretched over the whole panel"
+    colors = [p["color"] for p in got["panels"]]
+    assert len(set(colors)) == 3, f"load, difference and stress each in a colour of their own (修复轮15): {colors}"
+    drawn = [line_and_red(page, i, got["t0"], got["now"])["line"] for i in range(3)]
+    assert all(n > 0 for n in drawn), f"every panel's line is drawn in that panel's colour: {drawn}"
     delta = [p["v"] for p in got["panels"][1]["points"] if p["valid"]]
     assert delta[-3:] == [50.0, 10.0, -20.0], "values and signs exactly as received"
     stress = [p["v"] for p in got["panels"][2]["points"] if p["valid"]]
@@ -120,8 +132,8 @@ def test_an_invalid_period_and_a_lost_connection_are_not_joined_by_a_line(page, 
         points = got["panels"][index]["points"]
         gap = next((i for i, p in enumerate(points) if not p["valid"]), None)
         assert gap is not None and points[gap + 1]["valid"], f"panel {index} records the invalid period"
-        inside = cyan_and_red(page, index, points[gap]["t"], points[gap + 1]["t"])
-        assert inside["cyan"] == 0 and inside["red"] > 0, f"panel {index}: nothing drawn through it, a mark instead: {inside}"
+        inside = line_and_red(page, index, points[gap]["t"], points[gap + 1]["t"])
+        assert inside["line"] == 0 and inside["red"] > 0, f"panel {index}: nothing drawn through it, a mark instead: {inside}"
     # the readings themselves: what happened while the page could not read is unknown.  The readings fail for a
     # while (修复轮05: in the browser, the backend is untouched) so that the unknown stretch is wide enough to look at.
     page.route(READING, lambda route: route.abort())
@@ -137,8 +149,8 @@ def test_an_invalid_period_and_a_lost_connection_are_not_joined_by_a_line(page, 
         cut = [i for i, p in enumerate(points) if not p["valid"]][-1]
         assert points[cut]["t"] > recovered, "the mark is the cut-off's own, not the earlier invalid period's"
         assert points[cut + 1]["valid"] and points[cut + 1]["t"] - points[cut]["t"] > 4, "the unknown stretch is real"
-        inside = cyan_and_red(page, index, points[cut]["t"], points[cut + 1]["t"])
-        assert inside["cyan"] == 0 and inside["red"] > 0, f"panel {index}: no line across the cut-off: {inside}"
+        inside = line_and_red(page, index, points[cut]["t"], points[cut + 1]["t"])
+        assert inside["line"] == 0 and inside["red"] > 0, f"panel {index}: no line across the cut-off: {inside}"
     assert [e for e in page.errors if not e.startswith("Failed to load resource")] == [], "only the injected failures"
 
 
@@ -242,3 +254,34 @@ def test_custom_history_is_only_on_page_five(page, rig):
     page.get_by_role("button", name="历史查询").click()
     page.locator("#replay-settings").wait_for()
     assert page.locator("input[type=datetime-local]").count() >= 3
+
+
+ALARM = "#ff9f43"
+
+
+def test_a_confirmed_fault_turns_its_curve_orange_and_only_while_it_lasts(page, rig, pair):
+    """修复轮15 (用户 11-01): an abnormal stretch stands out on the curve.  Orange follows the backend's confirmed fault,
+    not the bare value: a value beyond the limit is still drawn in the panel's colour until the fault is confirmed."""
+    open_trend(page, rig)
+    drive(rig, pair, 480.0, 450.0)  # -30 K: normal
+    drive(rig, pair, 400.0, 470.0, pause=0.1)  # -70 K: below the -55 K low limit; confirmed after the confirmation time
+    page.wait_for_function("document.querySelector('#trend-latest').textContent.includes('越限待确认')")
+    pending = plot(page)
+    assert line_and_red(page, 1, pending["now"] - 2, pending["now"], ALARM)["line"] == 0, "a pending one is not yet a fault"
+    page.wait_for_function("document.querySelector('#trend-latest').textContent.includes('故障已确认（低）')", timeout=15000)
+    page.wait_for_timeout(8000)  # 300 s span the chart's width: a stretch of a few seconds is only a few pixels wide
+    got = plot(page)
+    points = got["panels"][1]["points"]
+    confirmed = next(p["t"] for p in points if p.get("alarm"))
+    assert line_and_red(page, 1, confirmed, got["now"], ALARM)["line"] > 5, "the confirmed stretch is orange"
+    assert line_and_red(page, 1, got["t0"], confirmed - 1, ALARM)["line"] == 0, "before the confirmation it was not"
+    assert line_and_red(page, 0, got["t0"], got["now"], ALARM)["line"] == 0, "the load has no fault: never orange"
+    assert line_and_red(page, 2, got["t0"], got["now"], ALARM)["line"] == 0, "the stress proxy has no limit: never orange"
+    assert "橙色" in page.locator("#workspace").inner_text()
+    drive(rig, pair, 480.0, 450.0)  # back inside, beyond the hysteresis: the fault recovers and the colour goes back
+    page.wait_for_function("!document.querySelector('#trend-latest').textContent.includes('故障已确认')", timeout=15000)
+    page.wait_for_timeout(8000)
+    after = plot(page)
+    recovered = [p["t"] for p in after["panels"][1]["points"] if p["valid"] and not p.get("alarm")][-1]
+    assert line_and_red(page, 1, recovered, after["now"], ALARM)["line"] == 0, "after the recovery, the panel's own colour"
+    assert line_and_red(page, 1, recovered, after["now"])["line"] > 5

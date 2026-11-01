@@ -18,14 +18,15 @@ def test_defaults_cover_all_current_source_and_derived_channels():
         assert is_extreme(point.extreme_high + 1, point)
 
 
-@pytest.mark.parametrize("scenario", ["baseline", "thermal_step", "load_cycle"])
+@pytest.mark.parametrize("scenario", ["baseline", "load_ramp", "hotspot_01", "overload"])
 def test_nominal_simulation_and_thermal_transients_are_not_extreme(scenario):
-    """The defaults leave room: nothing the simulated plant does in these scenarios is flagged, and every result
-    is calculated (only the first strain change waits for a second round)."""
+    """The defaults leave room: nothing the simulated plant does in its process scenarios - the ordinary limits it
+    crosses included - is flagged as extreme, and every result is calculated (only the first strain change waits for
+    a second round)."""
     config = load_settings("config/research-sim.json")
     simulator = FieldSimulator(config)
     simulator.set_scenario(scenario)
-    if scenario == "load_cycle":
+    if scenario != "baseline":  # straight to the hold: the walls and flows then run through their lags meanwhile
         simulator.scenario_started -= simulator.scenario.duration / 2
     owner = Owner(config, 1000.0, 100.0, run_id="r")
     for source in ("mb_field", "ua_field"):

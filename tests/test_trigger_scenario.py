@@ -120,6 +120,6 @@ def test_a_wrong_token_is_reported(lab, monkeypatch):
 def test_list_shows_every_scenario_of_the_research_configuration(capsys):
     trig.main(["--list"])
     out = capsys.readouterr().out
-    for name in ("baseline", "thermal_step", "load_cycle", "extreme_temperature", "bad_quality", "freeze", "disconnect_modbus", "disconnect_opcua"):
+    for name in ("baseline", "load_ramp", "hotspot_01", "overload", "extreme_temperature", "bad_quality", "freeze", "disconnect_modbus", "disconnect_opcua"):
         assert name in out
-    assert "20 s" in out and "120 s" in out
+    assert "20 s" in out and "1200 s" in out
