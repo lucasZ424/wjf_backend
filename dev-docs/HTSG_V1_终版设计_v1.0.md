@@ -367,7 +367,7 @@ C2基线同时覆盖该源派生结果。已生成但未提交的故障记录另
 
 ### 17.2 应变分布
 
-保留原页面分布区域，用8个固定测点对应的分区色块与数值表达，标注“测点分布示意”；不作测点间空间插值，不虚构连续应变场。颜色按第8节有效性与越限状态映射，无效显示灰色及原因。模拟坐标只用于布局，不作为现场拓扑证据。
+保留原页面分布区域，每路电桥一个测点色块（个数等于接入的电桥数，最多8个；测点不与温度关联；修复轮16）与数值表达，标注“测点分布示意”；不作测点间空间插值，不虚构连续应变场。颜色按第8节有效性与越限状态映射，无效显示灰色及原因。模拟坐标只用于布局，不作为现场拓扑证据。
 
 ### 17.3 第四页图表
 
@@ -429,7 +429,7 @@ C2基线同时覆盖该源派生结果。已生成但未提交的故障记录另
 | `sources[]`的id/kind/endpoint/host/port及凭据字段 | 沿用协议地址与身份配置，部署核验实际点表 |
 | `sources[].interval/timeout` | interval=1；旧timeout统一值待改写为Modbus0.8秒、OPC UA服务5秒 |
 | 第11节其余订阅/健康时限 | 以参数表为准；JSON未完整表达，实施时新增明确字段及校验，不沿用库默认值 |
-| `points[]`的id/source/unit/address/node_id及解码字段 | 研究208路点表可沿用；现场替换地址；scale/offset保留工程单位语义 |
+| `points[]`的id/source/unit/address/node_id及解码字段 | 现场点表按类别与温度对号填写，内部编号、派生量与测站由点表工具生成（修复轮16）；scale/offset保留工程单位语义 |
 | `points[].extreme_low`、`points[].extreme_high`、`derived[].extreme_low`、`derived[].extreme_high` | 研究417路已配置；精确默认值见极值表 |
 | `points[]`、`derived[]`的low/high/hysteresis_low/hysteresis_high | 按304路表补齐；双侧回差及派生阈值模型待实现 |
 | `derived[]`的operation/inputs/model_id | 当前209路及引用关系沿用；change改用连续计划轮次；derivative及其样例移除 |
