@@ -1,13 +1,12 @@
-"""tools/pointsheet: the points table in Excel, turned into the deployment configuration (2026-10-30, user request).
+"""tools/pointsheet: the site's points table in Excel, turned into the deployment configuration (修复轮16, user 2026-11-01).
 
-Why it matters: the site's tag names and the number of OPC UA points are not known yet - maybe 40 of the 200, the rest
-kept as headroom.  The internal ids stay fixed, so the derived values, the stations and the fault templates keep their
-references; a row whose address is left empty is simply not connected, and what depends on it goes with it - named, never
-silently.  A table with a mistake in a connected row produces no configuration at all: what reaches the backend has passed
-the same rules as `htsg check`.
+Why it matters: the site engineer knows what each point is and where to subscribe it, not our internal naming.  The table
+therefore carries site facts only - a category, the pair number of a wall temperature, a tag, an address - and the tool
+gives every point its internal id and builds the temperature differences, the stress proxies, the strains, the stations
+and the peak from them.  Nothing is pre-filled: a point that is not in the table is not in the configuration.  A table with
+a mistake produces no configuration at all, and what reaches the backend has passed the same rules as `htsg check`.
 """
 
-import json
 import sys
 from pathlib import Path
 
@@ -20,146 +19,168 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools" / "pointsheet"))
 import pointsheet  # noqa: E402
 
+BASE = pointsheet.load_json(ROOT / "config/production.base.json")
 RESEARCH = pointsheet.load_json(ROOT / "config/research-sim.json")
-EXAMPLE = pointsheet.load_json(ROOT / "config/production.example.json")
 
 
-def make(tmp_path, base=RESEARCH, keep=True):
+def blank(tmp_path, base=BASE):
     path = tmp_path / "点表.xlsx"
-    pointsheet.template(base, path, keep_addresses=keep)
+    pointsheet.template(base, path)
+    book = load_workbook(path)
+    sources = book["数据源"]
+    heads = [c.value for c in sources[1]]
+    for row in sources.iter_rows(min_row=2):
+        cells = dict(zip(heads, row))
+        cells["启用"].value = "是"
+        if cells["类型"].value == "modbus":
+            cells["主机"].value, cells["端口"].value = "127.0.0.1" if base is RESEARCH else "192.168.1.10", 15020 if base is RESEARCH else 502
+        else:
+            cells["端点"].value = "opc.tcp://127.0.0.1:14840/htsg/" if base is RESEARCH else "opc.tcp://192.168.1.20:4840/"
+    book.save(path)
     return path
 
 
-def edit(path, title, change):
-    """change(header_index, row_values_by_header) -> dict of header: new value, for each data row."""
+def add(path, title, **values):
     book = load_workbook(path)
     ws = book[title]
-    headers = [c.value for c in ws[1]]
-    for row in ws.iter_rows(min_row=2):
-        values = {h: c.value for h, c in zip(headers, row)}
-        for header, value in (change(values) or {}).items():
-            row[headers.index(header)].value = value
+    heads = [c.value for c in ws[1]]
+    ws.append([values.get(h) for h in heads])
     book.save(path)
 
 
-def append(path, title, values: dict):
-    book = load_workbook(path)
-    ws = book[title]
-    headers = [c.value for c in ws[1]]
-    ws.append([values.get(h) for h in headers])
-    book.save(path)
+def bridge(path, n, **extra):
+    add(path, "Modbus点", 类别="电桥", 显示名称=f"SG-{n:02d}", 数据源="mb_field", 从站号=1, 地址=2 * (n - 1), 数据类型="float32", **extra)
 
 
-def test_a_table_filled_from_the_configuration_gives_back_the_very_same_configuration(tmp_path):
-    """Nothing is lost on the way: the configuration id - a hash of all of it - is the same."""
-    config, report = pointsheet.convert(RESEARCH, make(tmp_path))
-    assert Settings.model_validate(config).config_id == Settings.model_validate(RESEARCH).config_id
-    assert report == ["接入 208 个点（Modbus 8，OPC UA 200）；未接入 0 个"]
+def wall(path, side, pair, **extra):
+    tag = f"TE-{pair:02d}{'A' if side == '内壁温度' else 'B'}"
+    values = {"类别": side, "温度对号": pair, "显示名称": tag, "数据源": "ua_field", "NodeId": f"ns=2;s={tag}", **extra}
+    add(path, "OPC UA点", **values)
 
 
-def test_forty_opcua_points_and_seven_bridges_connected_the_rest_is_headroom(tmp_path):
-    """16 temperature pairs and the 8 process points (40 OPC UA points); bridge 8 left out.  Before, the derived values and
-    the stations written for 208 inputs refused any smaller table."""
-    path = make(tmp_path)
-    wanted = {f"temp_{side}_{n:02d}" for side in ("inner", "outer") for n in range(1, 17)} | set(RESEARCH["ui"]["process_points"])
-    edit(path, "OPC UA点", lambda v: None if v["内部编号"] in wanted else {"NodeId": None})
-    edit(path, "Modbus点", lambda v: {"地址": None} if v["内部编号"] == "bridge_mvv_08" else None)
-    config, report = pointsheet.convert(RESEARCH, path)
+def site(tmp_path, pairs=(1, 2), bridges=2):
+    path = blank(tmp_path)
+    for n in range(1, bridges + 1):
+        bridge(path, n)
+    for pair in pairs:
+        wall(path, "内壁温度", pair)
+        wall(path, "外壁温度", pair)
+    add(path, "OPC UA点", 类别="机组负荷", 显示名称="LOAD", 数据源="ua_field", NodeId="ns=2;s=LOAD")
+    return path
+
+
+def test_the_blank_table_carries_no_point_and_offers_the_categories(tmp_path):
+    """用户 11-01: no default points.  The sources are named, the point sheets are only headers and choices."""
+    assert BASE["points"] == [] and BASE["derived"] == [] and BASE["ui"]["stations"] == [], "the base has no default points"
+    book = load_workbook(blank(tmp_path))
+    for title in ("Modbus点", "OPC UA点"):
+        ws = book[title]
+        heads = [c.value for c in ws[1]]
+        assert ws.max_row == 1, f"{title} has no pre-filled row"
+        assert heads[:2] == ["类别", "温度对号"] and "内部编号" not in heads, "the internal id is not the site's business"
+        choices = [v.formula1 for v in ws.data_validations.dataValidation if "内壁温度" in (v.formula1 or "")]
+        assert choices and all(c in choices[0] for c in pointsheet.CATEGORIES)
+    assert [c.value for c in book["数据源"]["A"][1:]] == ["mb_field", "ua_field"]
+
+
+def test_ids_derived_values_stations_and_labels_come_from_the_site_facts(tmp_path):
+    config, report = pointsheet.convert(BASE, site(tmp_path, pairs=(3, 7)))
     settings = Settings.model_validate(config)
-    ua = [p for p in settings.points if p.source == "ua_field"]
-    assert len(ua) == 40 and len(settings.points) == 47
-    ids = {d.id for d in settings.derived}
-    assert {f"delta_t_{n:02d}" for n in range(1, 17)} <= ids and "delta_t_17" not in ids and "stress_96" not in ids
-    assert "strain_08" not in ids and "strain_change_08" not in ids and "strain_07" in ids
-    peak = next(d for d in settings.derived if d.id == "thermal_stress_peak")
-    assert peak.inputs == tuple(f"stress_{n:02d}" for n in range(1, 17)), "the peak of what is there, not dropped"
-    assert [s.id for s in settings.ui.stations] == [f"S0{n}" for n in range(1, 8)], "station 8 needs bridge 8"
-    assert {s.point for s in settings.simulation.signals} == {p.id for p in settings.points}
-    assert any("去掉界面测站（引用了未接入的点）：S08" == line for line in report)
-    assert any(line.startswith("去掉 ") and "delta_t_17" in line for line in report), "what goes is named"
-    assert set(settings.ui.point_labels) <= {p.id for p in settings.points} | ids
+    assert [p.id for p in settings.points] == ["bridge_mvv_01", "bridge_mvv_02", "temp_inner_03", "temp_outer_03",
+                                               "temp_inner_07", "temp_outer_07", "load_mw"]  # fmt: skip
+    derived = {d.id: d for d in settings.derived}
+    assert derived["delta_t_07"].inputs == ("temp_inner_07", "temp_outer_07"), "inner minus outer, as the pages read it"
+    assert derived["stress_03"].operation == "thermal_stress" and derived["stress_03"].model_id == settings.models[0].id
+    assert derived["strain_change_02"].inputs == ("strain_02",) and derived["strain_02"].inputs == ("bridge_mvv_02",)
+    assert derived["thermal_stress_peak"].operation == "absolute_peak"
+    assert derived["thermal_stress_peak"].inputs == ("stress_03", "stress_07")
+    stations = settings.ui.stations
+    assert [(s.id, s.label, s.strain) for s in stations] == [("S01", "SG-01", "strain_01"), ("S02", "SG-02", "strain_02")]
+    assert all(s.temperature is None and s.delta_temperature is None for s in stations), "a bridge is not tied to a pair"
+    labels = settings.ui.point_labels
+    assert labels["temp_inner_07"] == "TE-07A" and labels["delta_t_07"] == "温度对07 内外壁温差"
+    assert settings.ui.process_points == ("load_mw",)
+    assert report[-1].startswith("生成：温差与热应力 2 对，换算应变与应变变化量 2 路，测站 2 个，热应力峰值 1 个")
+
+
+def test_an_empty_cell_takes_the_category_default_and_none_takes_it_away(tmp_path):
+    """用户 11-01: a threshold left empty is the category's default; “无” removes it, with its hysteresis."""
+    path = site(tmp_path, pairs=(1,))
+    wall(path, "内壁温度", 2, 上限="无")
+    wall(path, "外壁温度", 2, 上限=500)
+    add(path, "OPC UA点", 类别="其他", 显示名称="汽包水位", 数据源="ua_field", 单位="mm", NodeId="ns=2;s=LT101")
+    config, report = pointsheet.convert(BASE, path)
+    points = {p["id"]: p for p in config["points"]}
+    assert points["temp_inner_01"]["high"] == 490 and points["temp_inner_01"]["unit"] == "degC"
+    assert "high" not in points["temp_inner_02"] and "hysteresis_high" not in points["temp_inner_02"]
+    assert points["temp_outer_02"]["high"] == 500 and points["temp_outer_02"]["hysteresis_high"] == 3
+    assert points["other_01"] == {"id": "other_01", "source": "ua_field", "unit": "mm", "node_id": "ns=2;s=LT101"}, "no default"
+    assert any(line.startswith("内壁温度按类别默认值补了：单位、上限") for line in report)
+
+
+def test_a_row_without_address_is_not_connected_and_a_half_pair_gets_no_derived_value(tmp_path):
+    path = site(tmp_path, pairs=(1,))
+    wall(path, "内壁温度", 2)
+    wall(path, "外壁温度", 2, NodeId=None)
+    config, report = pointsheet.convert(BASE, path)
+    ids = {p["id"] for p in config["points"]} | {d["id"] for d in config["derived"]}
+    assert "temp_inner_02" in ids and "temp_outer_02" not in ids and "delta_t_02" not in ids and "stress_02" not in ids
+    assert any("OPC UA点 第" in line and "TE-02B" in line for line in report), "what is not connected is named"
+    assert "温度对02 只接入了内壁：照常接入，不生成温差与热应力" in report
 
 
 @pytest.mark.parametrize(
-    ("title", "pid", "change", "message"),
+    "rows, message",
     [
-        ("OPC UA点", "temp_inner_01", {"NodeId": "ns=x;s=T01"}, "OPC UA点 第3行 temp_inner_01：NodeId"),
-        ("OPC UA点", "temp_inner_01", {"单位": None}, "OPC UA点 第3行 temp_inner_01：单位"),
-        ("Modbus点", "bridge_mvv_02", {"数据类型": "float"}, "Modbus点 第3行 bridge_mvv_02：数据类型"),
-        ("Modbus点", "bridge_mvv_02", {"地址": "4x0002"}, "Modbus点 第3行 地址：应为整数"),
-        ("Modbus点", "bridge_mvv_02", {"上限": 1.0, "下限": 2.0}, "low must be less than high"),
-        ("Modbus点", "bridge_mvv_02", {"数据源": "ua_field"}, "数据源 ua_field 是 opcua"),
-        ("OPC UA点", "temp_inner_01", {"内部编号": "temp_outer_01"}, "内部编号与 OPC UA点 第2行 重复"),
+        ([("OPC UA点", {"类别": "壁温", "数据源": "ua_field", "NodeId": "ns=2;s=x"})], "类别：不认识“壁温”"),
+        ([("OPC UA点", {"类别": "内壁温度", "数据源": "ua_field", "NodeId": "ns=2;s=x"})], "温度对号：内壁温度要填温度对号"),
+        ([("OPC UA点", {"类别": "机组负荷", "温度对号": 1, "数据源": "ua_field", "NodeId": "ns=2;s=x"})], "只给内壁、外壁温度填"),
+        ([("OPC UA点", {"类别": "外壁温度", "温度对号": 1, "数据源": "ua_field", "NodeId": "ns=2;s=x"})], "温度对 01 的外壁温度已经在"),
+        ([("OPC UA点", {"类别": "机组负荷", "数据源": "ua_field", "NodeId": "ns=2;s=y"})], "机组负荷已经在"),
+        ([("OPC UA点", {"类别": "其他", "数据源": "ua_field", "NodeId": "ns=2;s=z"})], "其他"),
+        ([("OPC UA点", {"类别": "工质温度", "数据源": "nowhere", "NodeId": "ns=2;s=w"})], "数据源：'nowhere' 不在"),
     ],
-    ids=["nodeid", "unit-missing", "data-type", "address-text", "limits", "wrong-sheet", "duplicate"],
 )
-def test_a_mistake_in_a_connected_row_names_the_sheet_row_and_column_and_writes_nothing(tmp_path, title, pid, change, message):
-    path = make(tmp_path)
-    edit(path, title, lambda v: change if v["内部编号"] == pid else None)
-    out = tmp_path / "site.json"
-    code = pointsheet.main(["convert", "--base", str(ROOT / "config/research-sim.json"), "--sheet", str(path), "--out", str(out)])
-    assert code == 1 and not out.exists(), "no configuration from a table with a mistake"
-    with pytest.raises(pointsheet.SheetError) as raised:
-        pointsheet.convert(RESEARCH, path)
-    assert any(message in line for line in raised.value.problems), raised.value.problems
+def test_a_mistake_names_the_sheet_and_row_and_produces_nothing(tmp_path, rows, message):
+    path = site(tmp_path, pairs=(1,))
+    for title, values in rows:
+        add(path, title, **values)
+    with pytest.raises(pointsheet.SheetError) as error:
+        pointsheet.convert(BASE, path)
+    assert any("OPC UA点 第" in line and message in line for line in error.value.problems), error.value.problems
 
 
-def test_an_empty_template_of_the_site_gives_a_valid_configuration_with_the_unused_sources_switched_off(tmp_path):
-    """The production example with no address filled in: nothing connected is a valid state, and a source with no point is
-    not left enabled to poll nothing."""
-    path = make(tmp_path, EXAMPLE, keep=False)
-    edit(path, "数据源", lambda v: {"启用": "是"})
-    config, report = pointsheet.convert(EXAMPLE, path)
-    settings = Settings.model_validate(config)
-    assert settings.points == () and not any(s.enabled for s in settings.sources)
-    assert [d.id for d in settings.derived] == ["thermal_stress"], "the unconfigured placeholder needs no input"
-    assert "数据源 bridge 没有接入的点：改为不启用" in report
+def test_an_old_table_with_internal_ids_is_refused_with_a_hint(tmp_path):
+    path = blank(tmp_path)
+    book = load_workbook(path)
+    book["OPC UA点"].cell(1, 1).value = "内部编号"
+    book.save(path)
+    with pytest.raises(pointsheet.SheetError, match="旧版点表"):
+        pointsheet.convert(BASE, path)
 
 
-def test_a_point_added_below_the_template_is_connected_and_the_simulated_site_sends_it(tmp_path):
-    path = make(tmp_path)
-    edit(path, "OPC UA点", lambda v: {"NodeId": None} if v["内部编号"] == "furnace_pressure" else None)  # 200 at most
-    append(path, "OPC UA点", {"内部编号": "drum_level", "数据源": "ua_field", "单位": "mm", "显示名称": "汽包水位 LT-101",
-                             "NodeId": "ns=2;s=drum_level", "极小值": -300, "极大值": 300})  # fmt: skip
+def test_an_unused_source_is_switched_off_and_named(tmp_path):
+    path = blank(tmp_path)
+    wall(path, "内壁温度", 1)
+    wall(path, "外壁温度", 1)
+    config, report = pointsheet.convert(BASE, path)
+    assert {s["id"]: s["enabled"] for s in config["sources"]} == {"mb_field": False, "ua_field": True}
+    assert "数据源 mb_field 没有接入的点：改为不启用" in report
+    assert Settings.model_validate(config).ui.stations == ()
+
+
+def test_a_research_base_gives_the_simulated_field_a_signal_for_every_point(tmp_path):
+    """The same table drives a simulated site: points the research configuration knows keep their signals, the rest send
+    a constant, and the simulator's plant model recognises the ids the tool gives (temp_inner_NN, bridge_mvv_NN ...)."""
+    path = blank(tmp_path, RESEARCH)
+    bridge(path, 1)
+    wall(path, "内壁温度", 1)
+    wall(path, "外壁温度", 1)
+    add(path, "OPC UA点", 类别="其他", 显示名称="汽包水位", 数据源="ua_field", 单位="mm", NodeId="ns=2;s=drum")
     config, report = pointsheet.convert(RESEARCH, path)
     settings = Settings.model_validate(config)
-    assert settings.points[-1].id == "drum_level" and settings.ui.point_labels["drum_level"] == "汽包水位 LT-101"
-    signal = next(s for s in settings.simulation.signals if s.point == "drum_level")
-    assert signal.base == 0.0 and any("drum_level" in line for line in report)
-
-
-def test_the_display_name_column_becomes_the_page_label_and_the_meaning_column_goes_nowhere(tmp_path):
-    path = make(tmp_path)
-    edit(path, "OPC UA点", lambda v: {"显示名称": "TE-1001A", "含义": "随便写"} if v["内部编号"] == "temp_inner_01" else None)
-    config, _ = pointsheet.convert(RESEARCH, path)
-    assert config["ui"]["point_labels"]["temp_inner_01"] == "TE-1001A"
-    assert "随便写" not in json.dumps(config, ensure_ascii=False)
-
-
-PRODUCTION_BASE = pointsheet.load_json(ROOT / "config/production.base.json")
-
-
-def test_the_production_base_carries_the_same_derived_values_stations_and_model_as_the_simulated_site():
-    """The platform at the site computes what the drill computes: only the mode, the addresses, the simulation and the
-    storage differ.  A derived value or a station changed in one and not in the other fails here."""
-    research = Settings.model_validate(RESEARCH)
-    base = Settings.model_validate(PRODUCTION_BASE)
-    assert base.mode == "production" and not base.simulation.enabled and not any(s.enabled for s in base.sources)
-    assert base.derived == research.derived and base.models == research.models and base.ui == research.ui
-    strip = lambda p: p.model_copy(update={"address": None, "node_id": ""})  # noqa: E731
-    assert [strip(p) for p in base.points] == [strip(p) for p in research.points]
-    assert all(p.address is None and p.node_id == "" for p in base.points), "the site's addresses come from its points table"
-
-
-def test_one_points_table_gives_the_platform_and_the_simulated_site_the_same_points_and_derived_values(tmp_path):
-    """The drill: one table, converted on the production base for the platform and on the research base for the simulated
-    site.  The two must agree on every point and derived value, or the platform would wait for data the site never sends."""
-    path = make(tmp_path)
-    wanted = {f"temp_{side}_{n:02d}" for side in ("inner", "outer") for n in range(1, 17)} | set(RESEARCH["ui"]["process_points"])
-    edit(path, "OPC UA点", lambda v: None if v["内部编号"] in wanted else {"NodeId": None})
-    platform, _ = pointsheet.convert(PRODUCTION_BASE, path)
-    site, _ = pointsheet.convert(RESEARCH, path)
-    platform, site = Settings.model_validate(platform), Settings.model_validate(site)
-    assert platform.mode == "production" and not platform.simulation.enabled
-    assert platform.points == site.points and platform.derived == site.derived and platform.sources == site.sources
-    assert platform.ui.stations == site.ui.stations
+    signals = {s.point: s for s in settings.simulation.signals}
+    assert set(signals) == {p.id for p in settings.points}
+    known = next(s for s in RESEARCH["simulation"]["signals"] if s["point"] == "temp_inner_01")
+    assert (signals["temp_inner_01"].base, signals["temp_inner_01"].amplitude) == (known["base"], known["amplitude"])
+    assert signals["other_01"].base == 0.0 and any("other_01" in line for line in report)

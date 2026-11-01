@@ -96,7 +96,7 @@ def test_an_interrupted_copy_is_redone_and_another_installed_version_is_never_ov
     installer(tmp_path, package).program()
     assert not partial.exists() and not (tmp_path / "HTSG" / "app" / "half-copied").exists()
     newer = make_package(tmp_path / "newer", commit="def456")
-    with pytest.raises(Stop, match="第7节"):
+    with pytest.raises(Stop, match="第6节"):
         installer(tmp_path, newer).program()
     assert json.loads((tmp_path / "HTSG" / "app" / "VERSION.json").read_text(encoding="utf-8"))["commit"] == "abc123"
 
@@ -146,12 +146,20 @@ def test_the_point_sheet_launcher_never_overwrites_a_sheet_and_keeps_the_old_con
 
     monkeypatch.setattr(launch, "SHEET", tmp_path / "点表.xlsx")
     monkeypatch.setattr(launch, "OUT", tmp_path / "production.json")
+    monkeypatch.setattr(launch, "BASE", ROOT / "config" / "production.base.json")  # beside launch.py only in the package
     launch.SHEET.write_bytes(b"filled in")
     with pytest.raises(SystemExit, match="不覆盖"):
         launch.template()
     assert launch.SHEET.read_bytes() == b"filled in"
     launch.OUT.write_text('{"old": 1}', encoding="utf-8")
-    monkeypatch.setattr(launch.pointsheet, "main", lambda argv: 1)  # the sheet has errors
+    def bad_sheet(base, sheet):
+        raise launch.pointsheet.SheetError(["Modbus点 第2行 类别：未填"])
+
+    monkeypatch.setattr(launch.pointsheet, "convert", bad_sheet)
     with pytest.raises(SystemExit, match="没有动"):
         launch.convert(str(launch.SHEET))
     assert launch.OUT.read_text(encoding="utf-8") == '{"old": 1}'
+    monkeypatch.setattr(launch.pointsheet, "convert", lambda base, sheet: ({"new": 1}, ["接入 1 个点"]))
+    launch.convert(str(launch.SHEET))  # a good sheet: the old file is kept aside, the new one is written in its place
+    assert json.loads(launch.OUT.read_text(encoding="utf-8")) == {"new": 1}
+    assert [p.read_text(encoding="utf-8") for p in tmp_path.glob("production.*.json")] == ['{"old": 1}']

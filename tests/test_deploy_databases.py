@@ -91,7 +91,7 @@ def test_two_roles_on_one_disk_are_refused_because_the_emergency_database_would_
     (tmp_path / "a").mkdir()
     (tmp_path / "b").mkdir()
     _, _, problems, _ = deploy.plan(site(tmp_path, {"primary": str(tmp_path / "a"), "emergency": str(tmp_path / "b")}))
-    assert any("same volume" in p for p in problems), problems
+    assert any("在同一块盘上" in p for p in problems), problems
 
 
 def test_a_disk_that_is_not_there_a_folder_with_other_data_and_a_foreign_connection_file_are_refused(tmp_path):
@@ -101,9 +101,9 @@ def test_a_disk_that_is_not_there_a_folder_with_other_data_and_a_foreign_connect
     volumes = {"primary": "Q:", "emergency": str(tmp_path / "b")}
     _, _, problems, _ = deploy.plan(site(tmp_path, volumes), distinct_volumes)
     text = "\n".join(problems)
-    assert "Q:\\ does not exist" in text, text
-    assert "is not empty and holds no cluster" in text, text
-    assert "names other databases" in text, text
+    assert "Q:\\ 不存在" in text, text
+    assert "不是空的，里面也不是本程序的数据库实例" in text, text
+    assert "指向别的数据库" in text, text
     assert (tmp_path / "b" / "HTSG" / "emergency" / "pgdata" / "someone-elses.txt").read_text() == "keep me"
 
 

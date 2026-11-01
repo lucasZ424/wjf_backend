@@ -146,7 +146,7 @@ def test_launcher_keeps_same_deployment_lock_through_backend_start(isolated_lab,
     observed = []
 
     def run(*_):
-        with pytest.raises(SystemExit, match="Another backend"):
+        with pytest.raises(SystemExit, match="已有另一个后端"):
             with deployment_lock(lock_path):
                 pytest.fail("The running experiment must exclude new-lab")
         observed.append(True)

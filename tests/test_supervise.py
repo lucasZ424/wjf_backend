@@ -127,7 +127,7 @@ def test_a_backend_that_never_becomes_ready_is_stopped_after_the_start_up_limit_
     began = time.monotonic()
     assert sup.supervise(LONG, [], None, max_runs=2, ready_url=f"http://127.0.0.1:{free_port()}/live", **files) == 2
     assert time.monotonic() - began < 30, "each hung start was ended, not waited out"
-    assert sum("not ready after" in r.getMessage() for r in caplog.records) == 2 and pauses, "said so, then the pause"
+    assert sum("仍未就绪" in r.getMessage() for r in caplog.records) == 2 and pauses, "said so, then the pause"
 
 
 def test_a_backend_that_answers_in_time_is_left_running_however_long_it_runs(fast, monkeypatch, caplog):
@@ -147,8 +147,8 @@ def test_a_backend_that_answers_in_time_is_left_running_however_long_it_runs(fas
         "time.sleep(3); sys.exit(3)\n"
     )
     assert sup.supervise([sys.executable, "-c", serve], [], None, max_runs=1, ready_url=f"http://127.0.0.1:{port}/live", **files) == 1
-    assert not any("not ready after" in r.getMessage() for r in caplog.records)
-    assert any("ended with code 3" in r.getMessage() for r in caplog.records), "it ran to its own end"
+    assert not any("仍未就绪" in r.getMessage() for r in caplog.records)
+    assert any("退出码 3" in r.getMessage() for r in caplog.records), "it ran to its own end"
 
 
 def test_a_hung_start_that_ignores_the_normal_stop_is_ended_after_the_grace_and_started_again_with_growing_pauses(
@@ -206,5 +206,5 @@ def test_a_hung_start_that_ignores_the_normal_stop_is_ended_after_the_grace_and_
         interpreter = int((marks / f"{started}.ready").read_text())
         listing = subprocess.run(["tasklist", "/FI", f"PID eq {interpreter}", "/NH"], capture_output=True, text=True).stdout
         assert str(interpreter) not in listing, "the interpreter the launcher ran is gone with it"
-    assert sum("not ready after" in r.getMessage() for r in caplog.records) == 3
+    assert sum("仍未就绪" in r.getMessage() for r in caplog.records) == 3
     assert pauses == [1.0, 2.0], "started again each time, the pause doubling while the starts keep failing"
