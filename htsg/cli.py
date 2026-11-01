@@ -25,7 +25,7 @@ def deployment_lock(path=Path(".local/backend.lock")):
             lock.seek(0)
             msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
         except OSError:
-            raise SystemExit("Another backend already owns this deployment directory") from None
+            raise SystemExit("已有另一个后端在用这个程序目录") from None
         try:
             yield
         finally:
@@ -104,7 +104,7 @@ def main(*, deployment_locked=False):
     args = parser.parse_args()
     config = load_settings(args.config)
     if args.command == "check":
-        print(f"Valid {config.mode} configuration: {len(config.points)} points; {config.config_id}")
+        print(f"配置有效（{'正式' if config.mode == 'production' else '开发'}模式）：{len(config.points)} 个点；配置编号 {config.config_id}")
     elif args.command == "capacity":
         print(json.dumps(capacity(config, args.disk_bytes, args.cleanup_stop)))
     elif args.command == "init-accounts":
@@ -114,14 +114,12 @@ def main(*, deployment_locked=False):
             saved = init_accounts(Path(args.accounts), json.loads(Path(args.database).read_text())["primary"], config.timing)
         except psycopg.Error as error:
             raise SystemExit(
-                f"The primary database cannot be used ({type(error).__name__}): the administrator goes into it and the account file together"
+                f"正常库不能用（{type(error).__name__}）：管理员账户要同时写进正常库和账户文件"
             ) from None
         if saved:
-            print(f"Administrator created; its credential is in {saved}: hand it to the owner, who keeps it off this computer - "
-                  "the initial password stays the fallback for good; never commit this file.")
+            print(f"管理员账户已建：初始口令在 {saved}，交给业主离线保管后从这台电脑上删掉该文件；初始口令永久有效，是兜底凭据。")
         else:
-            print("The administrator or its fallback already exists; no changes.  A lost account file: sign in with the "
-                  "initial password and set a password on the page.")
+            print("管理员账户或其兜底凭据已经有了，没有改动。账户文件丢了的话：用初始口令登录，再在页面上设口令。")
     else:
         with nullcontext() if deployment_locked else deployment_lock():
             _run(args, config)
@@ -137,7 +135,7 @@ def _run(args, config):
 
     databases = json.loads(Path(args.database).read_text())
     if "external" in databases:  # 修复轮08: the removable database is gone; a file naming it is out of date, not ignored
-        raise SystemExit(f'{args.database} still names an "external" database; the removable database is no longer supported')
+        raise SystemExit(f'{args.database} 里还写着已经取消的移动库（"external"）：删掉这一项')
     accounts = Accounts(Path(args.accounts))  # unreadable or empty stops nothing: the runtime settles it
     stores = {name: ArchiveStore(databases[name], config.timing) for name in ("primary", "emergency")}
     router = ArchiveRouter(config, stores["primary"], stores["emergency"])
@@ -171,7 +169,7 @@ def _run(args, config):
         if failed in done:
             server.should_exit = True
             await serving
-            raise SystemExit("Core worker failed; supervisor should restart backend")
+            raise SystemExit("后端核心任务出错退出；看守程序会重新启动后端")
         failed.cancel()
         await serving
 

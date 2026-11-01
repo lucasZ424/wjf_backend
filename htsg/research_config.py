@@ -80,10 +80,12 @@ class Station(ResearchModel):
     y: float = Field(ge=0, le=100)
     strain: str
     strain_change: str | None = None
-    temperature: str
-    inner_temperature: str
-    stress: str
-    delta_temperature: str
+    # 修复轮16: no page shows a station's temperature pair, and a bridge may sit among several pairs: optional, and the
+    # point-sheet tool leaves them out
+    temperature: str | None = None
+    inner_temperature: str | None = None
+    stress: str | None = None
+    delta_temperature: str | None = None
 
 
 class UI(ResearchModel):
@@ -116,14 +118,13 @@ def validate_research(config):
     for station in config.ui.stations:
         refs = (
             station.strain,
+            station.strain_change,
             station.temperature,
             station.inner_temperature,
             station.stress,
             station.delta_temperature,
         )
-        if station.strain_change is not None:
-            refs = (*refs, station.strain_change)
-        if not set(refs) <= known:
+        if not {r for r in refs if r is not None} <= known:
             raise ValueError("UI station references unknown points")
     if not set(config.ui.process_points) <= known:
         raise ValueError("invalid UI process points")

@@ -55,6 +55,18 @@ PG_MAJOR = 18  # the PostgreSQL the archive was developed and tested with
 MIN_FREE = 20 * 1024**3
 SERVICE_ACCOUNT = r"NT AUTHORITY\NetworkService"
 SERVICE_SID = "*S-1-5-20"  # NetworkService under any language edition of Windows
+# What the site reads (修复轮16): the roles, states and volume kinds in Chinese; the values compared in the code stay as they are.
+ROLE_TEXT = {"primary": "正常库", "emergency": "应急库"}
+STATE_TEXT = {"existing cluster": "已有实例", "new cluster": "新建实例", "not registered": "未注册", "registered": "已注册",
+              "RUNNING": "运行中", "STOPPED": "已停止", "START_PENDING": "正在启动", "STOP_PENDING": "正在停止",
+              "Ready": "就绪", "Running": "运行中", "Disabled": "已禁用"}  # fmt: skip
+KIND_TEXT = {"removable": "可移动盘", "fixed": "本地硬盘", "network": "网络盘", "cd-rom": "光驱", "ram disk": "内存盘", "unknown": "类型不明"}
+
+
+def zh(word: str) -> str:
+    return ROLE_TEXT.get(word) or STATE_TEXT.get(word) or KIND_TEXT.get(word) or word
+
+
 TASK = "HTSG-Backend"  # the name the superseded scripts/history/register_task.ps1 used: registering here replaces that task
 # Appended to postgresql.conf of a new cluster.  max_connections: the backend keeps one connection per worker thread that has read the
 # history (up to the size of the default thread pool, 20 on a 16-thread CPU) plus the writer's; 60 leaves room for maintenance.
@@ -104,7 +116,7 @@ def normalize(text) -> str:
         return value[0].upper() + ":\\"
     drive, tail = ntpath.splitdrive(value)
     if not re.fullmatch(r"[A-Za-z]:", drive) or not tail.startswith("\\"):
-        raise ValueError(f"{text!r} is neither a drive letter nor an absolute local folder (network paths are not accepted)")
+        raise ValueError(f"{text!r} 既不是盘符也不是本机的绝对路径（不接受网络路径）")
     return drive.upper() + ntpath.normpath(tail)
 
 
@@ -114,7 +126,7 @@ def volume(path: str) -> dict:
     kernel = ctypes.windll.kernel32
     mount = ctypes.create_unicode_buffer(261)
     if not kernel.GetVolumePathNameW(path, mount, 261):
-        raise OSError(f"no volume found for {path}")
+        raise OSError(f"找不到 {path} 所在的卷")
     guid = ctypes.create_unicode_buffer(64)
     ident = guid.value if kernel.GetVolumeNameForVolumeMountPointW(mount.value, guid, 64) else mount.value
     kind = {2: "removable", 3: "fixed", 4: "network", 5: "cd-rom", 6: "ram disk"}.get(kernel.GetDriveTypeW(mount.value), "unknown")
@@ -151,14 +163,14 @@ def read_input(path: Path) -> dict:
     try:
         raw = json.loads(path.read_text(encoding="utf-8-sig"))
     except FileNotFoundError:
-        raise SystemExit(f"No deployment file at {path}; see the top of scripts/deploy_databases.py for its form.") from None
+        raise SystemExit(f"没有部署文件 {path}：写法见 scripts/deploy_databases.py 开头（一键安装会自动写它）。") from None
     except json.JSONDecodeError as error:
-        raise SystemExit(f"{path} is not valid JSON: {error}") from None
+        raise SystemExit(f"{path} 不是有效的 JSON：{error}") from None
     if not isinstance(raw, dict) or set(raw) - {"volumes", "pg_bin", "config", "database_file", "folder", "ports"}:
-        raise SystemExit(f"{path}: unknown keys; allowed are volumes, pg_bin, config, database_file, folder, ports")
+        raise SystemExit(f"{path}：有不认识的键；只能有 volumes、pg_bin、config、database_file、folder、ports")
     volumes = raw.get("volumes")
     if not isinstance(volumes, dict) or set(volumes) != set(ROLES):
-        raise SystemExit(f'{path}: "volumes" takes exactly "primary" and "emergency" (a removable "external" disk is no longer supported)')
+        raise SystemExit(f'{path}："volumes" 只能且必须有 "primary"（正常库）和 "emergency"（应急库）')
     for key in ("pg_bin", "config"):
         if not isinstance(raw.get(key), str) or not raw[key].strip():
             raise SystemExit(f'{path}: "{key}" is required')
@@ -186,70 +198,70 @@ def plan(inp: dict, volume_of=volume) -> tuple[list[Role], dict, list[str], list
         try:
             root = normalize(inp["volumes"][name])
         except ValueError as error:
-            problems.append(f"{name}: {error}")
+            problems.append(f"{zh(name)}：{error}")
             continue
         role = Role(name, root, ntpath.join(root, inp["folder"], name), inp["ports"][name])
         roles.append(role)
         if not os.path.isdir(root):
-            problems.append(f"{name}: {root} does not exist - is the disk attached, is the letter right?")
+            problems.append(f"{zh(name)}：{root} 不存在——盘接上了吗？盘符对吗？")
             continue
         if not role.folder.isascii():
-            problems.append(f"{name}: {role.folder} has non-ASCII characters; PostgreSQL on Windows does not reliably accept them")
+            problems.append(f"{zh(name)}：{role.folder} 含中文或其他非英文字符，PostgreSQL 在 Windows 上不能可靠处理")
         try:
             info = facts[name] = volume_of(root)
         except OSError as error:
-            problems.append(f"{name}: the volume of {root} cannot be read ({error})")
+            problems.append(f"{zh(name)}：读不出 {root} 所在的卷（{error}）")
             continue
         if info["kind"] == "network":
-            problems.append(f"{name}: {root} is a network drive; the archive needs a local disk")
+            problems.append(f"{zh(name)}：{root} 是网络盘；归档要用本机硬盘")
         data = Path(role.data)
         if (data / "PG_VERSION").exists():
             info["state"] = "existing cluster"
             if cluster_port(role.data) != role.port:
-                problems.append(f"{name}: the cluster in {role.data} is configured for port {cluster_port(role.data)}, not {role.port}")
+                problems.append(f"{zh(name)}：{role.data} 里已有的实例端口是 {cluster_port(role.data)}，不是 {role.port}")
         elif data.exists() and any(data.iterdir()):
-            problems.append(f"{name}: {role.data} is not empty and holds no cluster; it is left alone")
+            problems.append(f"{zh(name)}：{role.data} 不是空的，里面也不是本程序的数据库实例；不动它")
         else:
             info["state"] = "new cluster"
             if not port_free(role.port):
-                problems.append(f"{name}: port {role.port} is in use; choose another under \"ports\"")
+                problems.append(f"{zh(name)}：端口 {role.port} 已被占用；在部署文件的 \"ports\" 里换一个")
         if info["free"] < MIN_FREE:
-            notes.append(f"{name}: only {info['free'] / 1024**3:.1f} GiB free on {info['mount']}")
+            notes.append(f"{zh(name)}：{info['mount']} 只剩 {info['free'] / 1024**3:.1f} GiB")
     seen = {}
     for role in roles:
         ident = facts.get(role.name, {}).get("id")
         if ident is not None and ident in seen:
-            problems.append(f"{seen[ident]} and {role.name} are on the same volume ({facts[role.name]['mount']}): each role needs its own disk")
+            problems.append(f"{zh(seen[ident])}和{zh(role.name)}在同一块盘上（{facts[role.name]['mount']}）：两个库要各用一块盘")
         seen.setdefault(ident, role.name)
     for tool in ("initdb.exe", "pg_ctl.exe"):
         if not (inp["pg_bin"] / tool).exists():
-            problems.append(f"pg_bin: no {tool} in {inp['pg_bin']}")
+            problems.append(f"数据库软件：{inp['pg_bin']} 里没有 {tool}")
     if (inp["pg_bin"] / "initdb.exe").exists():
         out = subprocess.run([str(inp["pg_bin"] / "initdb.exe"), "--version"], capture_output=True, text=True).stdout
         found = re.search(r"\)\s*(\d+)\.", out)
         if not found or int(found.group(1)) != PG_MAJOR:
-            problems.append(f"pg_bin: PostgreSQL {PG_MAJOR} is required (tested); found {out.strip() or 'nothing'}")
+            problems.append(f"数据库软件：要 PostgreSQL {PG_MAJOR}（测试过的版本），找到的是 {out.strip() or '（无）'}")
     reserve = None
     try:
         checked = Settings.model_validate(with_storage(json.loads(inp["config"].read_text(encoding="utf-8-sig")), roles))
         reserve = checked.storage.emergency_reserve_bytes
     except FileNotFoundError:
-        problems.append(f"config: {inp['config']} does not exist")
+        problems.append(f"配置：{inp['config']} 不存在")
     except ValueError as error:  # JSON or validation
-        problems.append(f"config: {inp['config']} with these storage paths is not valid: {str(error).splitlines()[0][:160]}")
+        problems.append(f"配置：{inp['config']} 加上这两个存储路径后不能通过校验：{str(error).splitlines()[0][:160]}")
     existing = read_connections(inp["database_file"])
     if existing is not None:
         password = existing.get("password", "")
         wanted = {role.name: role.dsn(password) for role in roles}
         if {k: v for k, v in existing.items() if k != "password"} != wanted:
-            problems.append(f"database_file: {inp['database_file']} exists and names other databases; it is not replaced")
+            problems.append(f"连接文件：{inp['database_file']} 已存在且指向别的数据库；不替换它")
     elif any(facts.get(r.name, {}).get("state") == "existing cluster" for r in roles):
-        problems.append(f"database_file: a cluster exists but {inp['database_file']} (which holds its password) does not; restore it")
+        problems.append(f"连接文件：数据库实例已有，但存放其口令的 {inp['database_file']} 不在了；先把它恢复回来")
     emergency = facts.get("emergency")
     if emergency and reserve is not None and emergency["free"] < reserve:
         notes.append(
-            f"emergency: {emergency['free'] / 1024**3:.0f} GiB free is less than the emergency reserve of {reserve / 1024**3:.0f} GiB: "
-            "the emergency route would refuse every group"
+            f"应急库：所在盘剩 {emergency['free'] / 1024**3:.0f} GiB，少于应急库要预留的 {reserve / 1024**3:.0f} GiB："
+            "转到应急库时数据会写不进去"
         )
     return roles, facts, problems, notes
 
@@ -274,13 +286,13 @@ def read_connections(path: Path) -> dict | None:
 def show(roles, facts, problems, notes):
     for role in roles:
         info = facts.get(role.name, {})
-        where = f"{info['mount']} {info['kind']}, {info['free'] / 1024**3:.0f} GiB free" if info else "volume unknown"
-        print(f"{role.name:<10} {role.folder:<28} port {role.port}  {info.get('state', '-'):<17} ({where})")
+        where = f"{info['mount']} {zh(info['kind'])}，剩 {info['free'] / 1024**3:.0f} GiB" if info else "卷不明"
+        print(f"{zh(role.name)}  {role.folder}  端口 {role.port}  {zh(info.get('state', '-'))}（{where}）")
     for note in notes:
-        print("note:", note)
+        print("提示：", note)
     for problem in problems:
-        print("PROBLEM:", problem)
-    print("Nothing stands in the way." if not problems else f"{len(problems)} problem(s): nothing was changed.")
+        print("问题：", problem)
+    print("检查通过，可以安装。" if not problems else f"有 {len(problems)} 个问题：什么都没有改动。")
 
 
 # ------------------------------------------------------------------------------------------------------ the actions
@@ -290,7 +302,7 @@ def run(args, what):
     done = subprocess.run([str(a) for a in args], capture_output=True)
     if done.returncode:
         text = (done.stdout + done.stderr).decode("utf-8", errors="replace").strip()
-        raise SystemExit(f"{what} failed ({done.returncode}): {text[-600:]}")
+        raise SystemExit(f"{what}失败（{done.returncode}）：{text[-600:]}")
     return done
 
 
@@ -315,7 +327,7 @@ def start(inp, role):
     )  # fmt: skip
     if done.returncode:
         tail = log.read_text(encoding="utf-8", errors="replace")[-600:] if log.exists() else ""
-        raise SystemExit(f"start {role.name} failed ({done.returncode}): {tail}")
+        raise SystemExit(f"启动{zh(role.name)}失败（{done.returncode}）：{tail}")
 
 
 def running(inp, role) -> bool:
@@ -347,13 +359,13 @@ def install(inp: dict, volume_of=volume):
                 try:
                     secret.write_text(password, encoding="utf-8")
                     run([inp["pg_bin"] / "initdb.exe", "-D", role.data, "-U", "htsg", "--pwfile", secret,
-                         "--auth=scram-sha-256", "--encoding=UTF8", "--locale=C"], f"initdb {role.name}")  # fmt: skip
+                         "--auth=scram-sha-256", "--encoding=UTF8", "--locale=C"], f"创建{zh(role.name)}实例")  # fmt: skip
                 finally:
                     secret.unlink(missing_ok=True)
                     secret.parent.rmdir()
                 with open(Path(role.data) / "postgresql.conf", "a", encoding="utf-8") as f:
                     f.write(SETTINGS.format(port=role.port))
-                print(f"{role.name}: cluster created in {role.data}")
+                print(f"{zh(role.name)}：实例已建在 {role.data}")
             if not running(inp, role):
                 start(inp, role)
                 started.append(role)
@@ -364,27 +376,27 @@ def install(inp: dict, volume_of=volume):
             try:
                 store.initialize(settings)
             except SchemaError as error:
-                raise SystemExit(f"{role.name}: database htsg cannot be used ({error}); nothing more was changed") from error
+                raise SystemExit(f"{zh(role.name)}：数据库 htsg 不能用（{error}）；之后的步骤都没有做") from error
             finally:
                 store.close()
-            print(f"{role.name}: database htsg is at the current archive generation")
+            print(f"{zh(role.name)}：数据库 htsg 已是当前归档版本")
         connections = {role.name: role.dsn(password) for role in roles} | {"password": password}
         if existing != connections:
             write_atomically(inp["database_file"], json.dumps(connections))
-            print(f"connections written to {inp['database_file']} (not printed)")
+            print(f"连接信息已写入 {inp['database_file']}（不显示）")
         # 修复轮02: the deployment never reaches its first start without an account; read-only users are added on the page
         saved = init_accounts(inp["database_file"].with_name("accounts.json"), connections["primary"], settings.timing)
-        print(f"administrator created: its credential is in {saved} - hand it to the owner, who keeps it off this computer;"
-              " the initial password stays the fallback (not printed)" if saved else "administrator: already there")
+        print(f"管理员账户已建：初始口令在 {saved}，交给业主离线保管后从这台电脑上删掉该文件；初始口令永久有效，是兜底凭据（不显示）"
+              if saved else "管理员账户：已经有了")
         if updated != config_raw:
             backup = inp["config"].with_name(f"{inp['config'].name}.bak-{time.strftime('%Y%m%d-%H%M%S')}")
             shutil.copy2(inp["config"], backup)
             write_atomically(inp["config"], json.dumps(updated, ensure_ascii=False, indent=2) + "\n")
-            print(f"storage paths written into {inp['config']} (previous version kept as {backup.name})")
+            print(f"存储路径已写入 {inp['config']}（原文件留底为 {backup.name}）")
     finally:
         for role in started:  # the services take over from here; a cluster this run did not start is left running
             subprocess.run([str(inp["pg_bin"] / "pg_ctl.exe"), "-D", role.data, "-w", "-m", "fast", "stop"], capture_output=True)
-    print("Next, in an elevated PowerShell: python scripts/deploy_databases.py register")
+    print("下一步：注册数据库服务与开机任务（一键安装会接着自动做；手动做时在管理员 PowerShell 里运行 deploy_databases.py register）")
 
 
 def service_state(name: str) -> str:
@@ -399,45 +411,44 @@ def register(inp: dict):
     import psycopg
 
     if not ctypes.windll.shell32.IsUserAnAdmin():
-        raise SystemExit("Registering services needs an elevated PowerShell (Run as administrator).")
+        raise SystemExit("注册服务需要管理员权限：用“以管理员身份运行”的 PowerShell，或双击“安装.cmd”。")
     roles, _, _, _ = plan(inp)
     connections = read_connections(inp["database_file"])
     missing = [r.name for r in roles if not (Path(r.data) / "PG_VERSION").exists()]
     if missing or not connections:
-        raise SystemExit(f"Run install first (no cluster for: {', '.join(missing) or '-'}; connections: {bool(connections)}).")
+        raise SystemExit(f"先做 install（没有实例的：{'、'.join(zh(m) for m in missing) or '无'}；连接文件：{'有' if connections else '没有'}）。")
     for role in roles:
         if service_state(role.service) == "not registered":
             if running(inp, role):
-                raise SystemExit(f"{role.name}: the cluster is running outside a service; stop it first (pg_ctl -D {role.data} stop)")
-            run(["icacls", role.folder, "/grant", f"{SERVICE_SID}:(OI)(CI)M", "/T", "/Q"], f"permissions {role.name}")
+                raise SystemExit(f"{zh(role.name)}：实例正在服务之外运行；先停掉它（pg_ctl -D {role.data} stop）")
+            run(["icacls", role.folder, "/grant", f"{SERVICE_SID}:(OI)(CI)M", "/T", "/Q"], f"设置{zh(role.name)}目录权限")
             run([inp["pg_bin"] / "pg_ctl.exe", "register", "-N", role.service, "-D", role.data, "-S", "auto",
-                 "-U", SERVICE_ACCOUNT], f"register {role.name}")  # fmt: skip
+                 "-U", SERVICE_ACCOUNT], f"注册{zh(role.name)}服务")  # fmt: skip
             run(["sc", "failure", role.service, "reset=", "86400", "actions=", "restart/60000/restart/60000/restart/60000"],
-                f"restart policy {role.name}")  # fmt: skip
-            print(f"{role.name}: service {role.service} registered (automatic start, restart one minute after it stops by itself)")
+                f"设置{zh(role.name)}服务的自动重启")  # fmt: skip
+            print(f"{zh(role.name)}：服务 {role.service} 已注册（开机自动启动，意外停止后一分钟自动重启）")
         if service_state(role.service) != "RUNNING":
             subprocess.run(["sc", "start", role.service], capture_output=True)
         deadline = time.monotonic() + 60
         while True:
             try:
                 psycopg.connect(connections[role.name], connect_timeout=3).close()
-                print(f"{role.name}: service {role.service} is running and accepts connections")
+                print(f"{zh(role.name)}：服务 {role.service} 已运行，可以连接")
                 break
             except psycopg.Error:
                 if time.monotonic() > deadline:  # e.g. its disk is not ready yet: the supervisor keeps trying
-                    print(f"WARNING {role.name}: service {role.service} did not accept connections within 60 s")
+                    print(f"注意：{zh(role.name)}服务 {role.service} 60 秒内没能连上（看守程序会继续重试）")
                     break
                 time.sleep(1)
     xml = Path(tempfile.mkdtemp(prefix="htsg-task-")) / "task.xml"
     try:
         xml.write_text(task_xml(sys.executable, inp["input"]), encoding="utf-16")  # schtasks reads the encoding the XML declares
-        run(["schtasks", "/Create", "/TN", TASK, "/XML", xml, "/F"], "register the backend task")
+        run(["schtasks", "/Create", "/TN", TASK, "/XML", xml, "/F"], "注册后端开机任务")
     finally:
         xml.unlink(missing_ok=True)
         xml.parent.rmdir()
-    run(["schtasks", "/Run", "/TN", TASK], "start the backend task")
-    print(f"task {TASK} registered and started: the supervisor runs as SYSTEM at boot and every five minutes; "
-          "create .local/STOP to stop the backend for maintenance")  # fmt: skip
+    run(["schtasks", "/Run", "/TN", TASK], "启动后端任务")
+    print(f"开机任务 {TASK} 已注册并启动：看守程序开机时、并每 5 分钟运行一次；停机维护时在 .local 下建 STOP 文件")  # fmt: skip
 
 
 def task_xml(python: str, deploy_file: Path) -> str:
@@ -502,17 +513,17 @@ def status(inp: dict):
     connections = read_connections(inp["database_file"]) or {}
     for role in roles:
         cluster = (Path(role.data) / "PG_VERSION").exists()
-        answer = "no connection configured"
+        answer = "没有配置连接"
         if role.name in connections:
             try:
                 with psycopg.connect(connections[role.name], connect_timeout=3) as conn:
                     row = conn.execute("SELECT value FROM htsg_meta WHERE key='schema_generation'").fetchone()
-                    answer = f"accepts connections, archive generation {row[0] if row else 'none'}"
+                    answer = f"可以连接，归档版本 {row[0] if row else '无'}"
             except psycopg.Error as error:
-                answer = f"no connection ({type(error).__name__})"
-        print(f"{role.name:<10} {role.folder:<28} cluster {'yes' if cluster else 'NO':<4} service {service_state(role.service):<15} {answer}")
+                answer = f"连不上（{type(error).__name__}）"
+        print(f"{zh(role.name)}  {role.folder}  实例{'有' if cluster else '【没有】'}  服务{zh(service_state(role.service))}  {answer}")
     stop = ROOT / ".local/STOP"
-    print(f"task {TASK}: {task_state()}" + ("; .local/STOP is present: the supervisor starts nothing" if stop.exists() else ""))
+    print(f"开机任务 {TASK}：{zh(task_state())}" + ("；.local/STOP 存在：看守程序什么都不启动" if stop.exists() else ""))
 
 
 def main(argv=None):

@@ -112,7 +112,7 @@ def wait_for_database(dsn: str | None, stop_file: Path):
     deadline = time.monotonic() + WAIT_DB
     while not database_answers(dsn):
         if time.monotonic() >= deadline:
-            log.warning("the normal database did not answer within %.0f s; the backend starts without it", WAIT_DB)
+            log.warning("正常库 %.0f 秒内没有响应；后端先不等它，照常启动", WAIT_DB)
             return
         if stop_file.exists():
             return
@@ -153,11 +153,11 @@ def watch(proc: subprocess.Popen, services, seen: dict, stop_file: Path, ready_u
         if not ready:
             ready = answers(ready_url)
             if not ready and time.monotonic() - started >= STARTUP_READY:
-                log.warning("backend not ready after %.0f s (no answer on %s): stopping it", STARTUP_READY, ready_url)
+                log.warning("后端启动 %.0f 秒后仍未就绪（%s 没有响应）：停掉它", STARTUP_READY, ready_url)
                 stop_backend(proc)
                 return proc.returncode
         if stop_file.exists():
-            log.info("STOP found: stopping the backend")
+            log.info("发现 STOP 文件：正常停止后端")
             stop_backend(proc)
             return None
         if time.monotonic() - last_check >= SERVICE_CHECK:
@@ -174,7 +174,7 @@ def supervise(command: list[str], services, primary_dsn: str | None, *, stop_fil
         ensure_services(services, seen)
         if held_elsewhere(backend_lock):  # a backend nobody supervises: let it be, look again later
             if not waiting_logged:
-                log.warning("another backend owns %s; waiting for it to end", backend_lock)
+                log.warning("另一个后端占着 %s；等它结束", backend_lock)
                 waiting_logged = True
             pause(SERVICE_CHECK, stop_file)
             continue
@@ -189,18 +189,18 @@ def supervise(command: list[str], services, primary_dsn: str | None, *, stop_fil
                 creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
             )  # fmt: skip
             runs += 1
-            log.info("backend started (pid %s, start %s)", proc.pid, runs)
+            log.info("后端已启动（进程 %s，第 %s 次启动）", proc.pid, runs)
             code = watch(proc, services, seen, stop_file, ready_url)
         if code is None:
             break
         ran = time.monotonic() - started
         delay = FIRST_DELAY if ran >= STABLE else next_delay
         next_delay = min(delay * 2, MAX_DELAY)
-        log.warning("backend ended with code %s after %.0f s; next start in %.0f s", code, ran, delay)
+        log.warning("后端退出，退出码 %s，运行了 %.0f 秒；%.0f 秒后再启动", code, ran, delay)
         if max_runs is not None and runs >= max_runs:
             break
         pause(delay, stop_file)
-    log.info("supervisor ends (STOP present: %s)", stop_file.exists())
+    log.info("看守程序结束（STOP 文件%s）", "存在" if stop_file.exists() else "不存在")
     return runs
 
 
@@ -221,7 +221,7 @@ def main(argv=None):
         return  # another supervisor is at work
     stop_file = LOCAL / "STOP"
     if stop_file.exists():
-        log.info("STOP present: nothing is started")
+        log.info("STOP 文件存在：什么都不启动")
         return
     inp = read_input(args.input)
     services = [f"HTSG-PostgreSQL-{role}" for role in inp["volumes"]]
@@ -232,7 +232,7 @@ def main(argv=None):
         sys.executable, "-m", "htsg.cli", "run", "--config", str(inp["config"]), "--database", str(inp["database_file"]),
         "--accounts", str(args.accounts), "--port", str(args.port),
     ]  # fmt: skip
-    log.info("supervisor starts: services %s", ", ".join(services))
+    log.info("看守程序启动：数据库服务 %s", "、".join(services))
     supervise(command, services, primary, stop_file=stop_file, backend_lock=LOCAL / "backend.lock", console=LOCAL / "backend-console.log",
               ready_url=f"http://127.0.0.1:{args.port}/live")  # fmt: skip
 
