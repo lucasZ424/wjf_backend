@@ -177,3 +177,46 @@ def test_the_password_folder_keeps_the_access_initdb_needs_after_dropping_admini
         assert "(I)" in acl, f"inherited from the temporary folder, not a protected list of its own: {acl}"
     finally:
         folder.rmdir()
+
+
+@pytest.mark.skipif(not (PG_BIN / "initdb.exe").exists(), reason="needs the PostgreSQL 18 binaries of the development machine")
+def test_a_run_stopped_after_the_first_cluster_keeps_its_password_and_the_next_run_finishes(tmp_path, monkeypatch):
+    """Site test 2026-11-01: on a slow disk one statement of the schema went past the backend's 3 s limit after the normal
+    database's cluster had been made with a fresh password.  The password was to be saved only once both were done, so it was
+    lost, and every later run stopped at "the connection file is missing".  Now the password is on disk before the first
+    cluster, the next run opens what is there and finishes, and laying down the schema has the install's own limit."""
+    from htsg import archive
+
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    primary_port, emergency_port = free_ports(2)
+    inp = site(
+        tmp_path, {"primary": str(tmp_path / "a"), "emergency": str(tmp_path / "b")},
+        ports={"primary": primary_port, "emergency": emergency_port},
+    )  # fmt: skip
+    folders = {"primary": tmp_path / "a" / "HTSG" / "primary", "emergency": tmp_path / "b" / "HTSG" / "emergency"}
+    limits, real = [], archive.ArchiveStore.initialize
+
+    def slow_disk(self, config):
+        limits.append(self.timing.db_statement_timeout)
+        if f":{emergency_port}/" in self.dsn and len(limits) == 2:  # the first run, the second database
+            raise psycopg.errors.QueryCanceled("canceling statement due to statement timeout")
+        return real(self, config)
+
+    monkeypatch.setattr(archive.ArchiveStore, "initialize", slow_disk)
+    try:
+        with pytest.raises(psycopg.errors.QueryCanceled):
+            deploy.install(inp, distinct_volumes)
+        saved = json.loads((tmp_path / "database.json").read_text(encoding="utf-8"))
+        assert saved["password"] and (folders["primary"] / "pgdata" / "PG_VERSION").exists(), "the cluster and its password"
+        _, _, problems, _ = deploy.plan(inp, distinct_volumes)
+        assert problems == [], "nothing stands in the way of the next run"
+        deploy.install(inp, distinct_volumes)
+        assert json.loads((tmp_path / "database.json").read_text(encoding="utf-8")) == saved, "the same password, kept"
+        assert (tmp_path / "initial-credentials.json").exists(), "the run went on to the end"
+        assert len(limits) == 4 and min(limits) >= 300, f"the install's own limit, not the backend's 3 s: {limits}"
+    finally:
+        for folder in folders.values():
+            if (folder / "pgdata" / "PG_VERSION").exists():
+                subprocess.run([str(PG_BIN / "pg_ctl.exe"), "-D", str(folder / "pgdata"), "-w", "-m", "fast", "stop"],
+                               capture_output=True)  # fmt: skip

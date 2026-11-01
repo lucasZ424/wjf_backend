@@ -53,6 +53,8 @@ ROLES = ("primary", "emergency")
 PORTS = {"primary": 55440, "emergency": 55441}
 PG_MAJOR = 18  # the PostgreSQL the archive was developed and tested with
 MIN_FREE = 20 * 1024**3
+INSTALL_STATEMENT_SECONDS = 600  # laying down the schema once, on a disk that may be slow at first (修复轮17)
+INSTALL_LOCK_SECONDS = 60  # nothing else uses the new databases during install
 SERVICE_ACCOUNT = r"NT AUTHORITY\NetworkService"
 SERVICE_SID = "*S-1-5-20"  # NetworkService under any language edition of Windows
 # What the site reads (修复轮16): the roles, states and volume kinds in Chinese; the values compared in the code stay as they are.
@@ -359,6 +361,15 @@ def install(inp: dict, volume_of=volume):
     config_raw = json.loads(inp["config"].read_text(encoding="utf-8-sig"))
     updated = with_storage(config_raw, roles)
     settings = Settings.model_validate(updated)
+    # 修复轮17 (site test 2026-11-01): the schema is laid down once, on a disk that may be slow on its first writes, with
+    # nothing else running - the backend's 3 s statement limit would cancel it there.  Install has limits of its own.
+    timing = settings.timing.model_copy(update={"db_statement_timeout": INSTALL_STATEMENT_SECONDS, "db_lock_timeout": INSTALL_LOCK_SECONDS})
+    connections = {role.name: role.dsn(password) for role in roles} | {"password": password}
+    if existing != connections:
+        # The password is on disk before any cluster is made with it: a run that stops half way leaves clusters the next run
+        # opens and goes on with, never one whose password nobody knows (site test 2026-11-01).
+        write_atomically(inp["database_file"], json.dumps(connections))
+        print(f"连接信息已写入 {inp['database_file']}（不显示）")
     started = []
     try:
         for role in roles:
@@ -381,7 +392,7 @@ def install(inp: dict, volume_of=volume):
             with psycopg.connect(role.dsn(password, "postgres"), autocommit=True, connect_timeout=10) as conn:
                 if not conn.execute("SELECT 1 FROM pg_database WHERE datname='htsg'").fetchone():
                     conn.execute("CREATE DATABASE htsg")
-            store = ArchiveStore(role.dsn(password))
+            store = ArchiveStore(role.dsn(password), timing)
             try:
                 store.initialize(settings)
             except SchemaError as error:
@@ -389,12 +400,8 @@ def install(inp: dict, volume_of=volume):
             finally:
                 store.close()
             print(f"{zh(role.name)}：数据库 htsg 已是当前归档版本")
-        connections = {role.name: role.dsn(password) for role in roles} | {"password": password}
-        if existing != connections:
-            write_atomically(inp["database_file"], json.dumps(connections))
-            print(f"连接信息已写入 {inp['database_file']}（不显示）")
         # 修复轮02: the deployment never reaches its first start without an account; read-only users are added on the page
-        saved = init_accounts(inp["database_file"].with_name("accounts.json"), connections["primary"], settings.timing)
+        saved = init_accounts(inp["database_file"].with_name("accounts.json"), connections["primary"], timing)
         print(f"管理员账户已建：初始口令在 {saved}，交给业主离线保管后从这台电脑上删掉该文件；初始口令永久有效，是兜底凭据（不显示）"
               if saved else "管理员账户：已经有了")
         if updated != config_raw:
