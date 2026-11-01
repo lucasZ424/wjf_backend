@@ -172,7 +172,7 @@ class Lab:
 
     async def __aenter__(self):
         self.config = make_config(self.stats_interval, self.outage, self.quiet)
-        self.field = FieldSimulator(self.config)
+        self.field = FieldSimulator(self.config, write_ceiling=True)  # the write ceiling, as measured before 修复轮15
         await self.field.start()
         stores = [self.databases.make(i, self.config.timing) for i in ("primary", "emergency")]
         extra = {"disk_usage": self.disk_usage} if self.disk_usage else {}

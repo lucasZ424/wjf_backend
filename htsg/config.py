@@ -116,6 +116,7 @@ class Derived(StrictModel):
         "mean",
         "change",
         "maximum",
+        "absolute_peak",
         "unconfigured",
         "bridge_strain",
         "thermal_stress",
@@ -322,12 +323,12 @@ class Settings(StrictModel):
                 raise ValueError("operation needs two inputs")
             if derived.operation == "change" and len(derived.inputs) != 1:
                 raise ValueError("change needs one input")
-            if derived.operation in ("change", "maximum") and any(
+            if derived.operation in ("change", "maximum", "absolute_peak") and any(
                 units.get(x) != derived.unit for x in derived.inputs
             ):
-                raise ValueError("change/maximum requires matching input and output units")
+                raise ValueError("change/maximum/absolute_peak requires matching input and output units")
             if (
-                derived.operation in ("sum", "mean", "difference", "maximum")
+                derived.operation in ("sum", "mean", "difference", "maximum", "absolute_peak")
                 and len({units[x] for x in derived.inputs}) > 1
             ):
                 raise ValueError("additive calculation requires consistent input units")

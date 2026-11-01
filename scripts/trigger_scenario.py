@@ -4,7 +4,7 @@
     python scripts/trigger_scenario.py                 trigger the scenario named in .local/research/trigger.json
     python scripts/trigger_scenario.py --config FILE   ... or in another trigger file
 
-The trigger file is JSON with the scenario to start, e.g.  {"scenario": "thermal_step"}  (and, only when the research
+The trigger file is JSON with the scenario to start, e.g.  {"scenario": "freeze"}  (and, only when the research
 configuration is not config/research-sim.json, "research_config": "<path>").  One run starts one scenario: there is no sequence;
 to try the next one edit the file and run again.  The scenario starts with the simulator's next generation step and lasts its
 `duration`, then the simulator returns to `baseline`; starting one while another runs replaces it.
@@ -27,7 +27,7 @@ ROOT = Path(__file__).resolve().parents[1]
 LOCAL = ROOT / ".local/research"
 DEFAULT_TRIGGER = LOCAL / "trigger.json"
 DEFAULT_CONFIG = "config/research-sim.json"
-EXAMPLE = '{"scenario": "thermal_step"}'
+EXAMPLE = '{"scenario": "freeze"}'
 
 
 def read_choice(path) -> dict:

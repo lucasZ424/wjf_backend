@@ -32,6 +32,175 @@ def signal_value(signal, seed, step, interval):
     )
 
 
+# The low-order unit model (修复轮15).  A 660 MW once-through unit around its 600 MW reference point: every value below is
+# written for that point, and the relations hold for mid and high loads only, not for start-up or deep low load.  The wall
+# stations are taken as heated waterwall tube sections: the flue gas heats the outer wall and the tube passes the heat to
+# the fluid inside, so the outer wall is the hotter one.  Demonstration figures, not the guaranteed values of a real unit.
+REFERENCE_MW = 600.0
+REFERENCE = {
+    "waterwall_flow": 1850.0,  # t/h, proportional to the load
+    "main_steam_flow": 2117.0,  # t/h, proportional to the load
+    "main_steam_pressure": 28.7,  # MPa, sliding 0.02 MPa per MW
+    "feedwater_temperature": 309.0,  # degC, 0.1 K per MW
+    "working_fluid_temperature": 435.0,  # degC, a few degrees away while the load moves
+    "reheat_temperature": 623.0,  # degC, likewise
+    "furnace_pressure": -0.05,  # kPa, turbulence only
+}
+MINIMUM_WATERWALL_FLOW = 0.55  # of the reference flow: a once-through boiler keeps a minimum waterwall flow
+SEGMENT_HEAT = (0.55, 0.8, 1.0, 1.0, 0.9, 0.75, 0.6, 0.45)  # relative heat of H1 (bottom) … H8 (top); burners at H3-H4
+INLET_RISE = 51.0  # K: the fluid enters the waterwall this much above the feedwater temperature (360 degC at reference)
+FILM_K = 40.0  # K: inner wall above the fluid at relative heat 1 and reference flow
+WALL_K = 30.0  # K: outer wall above the inner wall at relative heat 1
+STRAIN_PER_K = 20.0  # με per K that a station's wall difference moves from its reference (demonstration coupling)
+STRAIN_PER_MPA = 24.0  # με per MPa that the main steam pressure moves from its reference (demonstration coupling)
+TAU = {"load": 10, "flow": 20, "pressure": 60, "feedwater": 300, "fluid": 120, "wall": 90}  # first-order time constants, s
+
+
+PROCESS_KINDS = ("load_ramp", "hotspot")  # the scenarios that act through the plant model
+# How each quantity is sent: (demonstration: noise spread, noise memory, resolution) and (steady: noise spread, noise memory,
+# dead band).  A resolution of 0 sends the value as it is (a bridge in mV/V); a dead band of 0.0006 mV/V is 0.1 με.
+NOISE = {
+    "load_mw": ((0.3, 0.95, 0.1), (0.3, 0.95, 0.5)),
+    "waterwall_flow": ((2.0, 0.95, 0.1), (1.5, 0.95, 2.0)),
+    "main_steam_flow": ((2.0, 0.95, 0.1), (1.5, 0.95, 2.0)),
+    "main_steam_pressure": ((0.01, 0.95, 0.001), (0.004, 0.95, 0.01)),
+    "feedwater_temperature": ((0.1, 0.95, 0.1), (0.04, 0.99, 0.1)),
+    "working_fluid_temperature": ((0.2, 0.95, 0.1), (0.04, 0.99, 0.1)),
+    "reheat_temperature": ((0.2, 0.95, 0.1), (0.04, 0.99, 0.1)),
+    "furnace_pressure": ((0.02, 0.7, 0.001), (0.01, 0.9, 0.005)),
+    "temp_inner": ((0.15, 0.95, 0.1), (0.04, 0.99, 0.1)),
+    "temp_outer": ((0.15, 0.95, 0.1), (0.04, 0.99, 0.1)),
+    "bridge_mvv": ((0.0006, 0.95, 0), (0.0002, 0.99, 0.0006)),
+}
+
+
+def lag(state, target, tau):
+    """One second of a first-order lag: a step reaches 63 % after `tau` seconds, never a delay and then a jump."""
+    return state + (target - state) * (1 - math.exp(-1 / tau))
+
+
+def pair_heat(index):
+    """The relative heat at temperature pair `index` (1-96) at the reference load: its segment's share and a fixed
+    unevenness of up to 3 % around the furnace (segment (i-1)%8+1, group (i-1)//8+1, as in 模拟通道分配)."""
+    segment, group = (index - 1) % 8, (index - 1) // 8
+    return SEGMENT_HEAT[segment] * (1 + 0.03 * math.sin(2.4 * group + 0.7 * segment))
+
+
+class Plant:
+    """Every modelled value follows the load or the local heat through a first-order lag, plus small correlated noise."""
+
+    def __init__(self, seed, steady=False):
+        self.random = random.Random(f"{seed}:plant")
+        self.steady = steady
+        self.noise = {}
+        self.sent = {}
+        self.state = None
+        self.command = None
+
+    def wobble(self, key, sigma, rho=0.95):
+        """Correlated noise: each second keeps `rho` of the last one, with a steady spread of `sigma`."""
+        value = rho * self.noise.get(key, 0.0) + sigma * math.sqrt(1 - rho * rho) * self.random.gauss(0, 1)
+        self.noise[key] = value
+        return value
+
+    def base_load(self, step):
+        """Slow swings of tens of minutes and a little drift around the reference: about 588-612 MW."""
+        return (
+            REFERENCE_MW
+            + 8 * math.sin(2 * math.pi * step / 2400)
+            + 3 * math.sin(2 * math.pi * step / 900 + 1)
+            + self.wobble("load-drift", 1.0, 0.995)
+        )
+
+    def targets(self, load, flow, feedwater, fluid, heat):
+        """Where every quantity heads at this load: the process values, then the 96 wall pairs."""
+        ratio = load / REFERENCE_MW
+        out = {
+            "waterwall_flow": REFERENCE["waterwall_flow"] * max(ratio, MINIMUM_WATERWALL_FLOW),
+            "main_steam_flow": REFERENCE["main_steam_flow"] * ratio,
+            "main_steam_pressure": REFERENCE["main_steam_pressure"] + 0.02 * (load - REFERENCE_MW),
+            "feedwater_temperature": REFERENCE["feedwater_temperature"] + 0.1 * (load - REFERENCE_MW),
+        }
+        cooling = (flow / REFERENCE["waterwall_flow"]) ** 0.8  # more fluid takes more heat away from the inner wall
+        inlet = feedwater + INLET_RISE
+        for i in range(1, 97):
+            q = pair_heat(i) * ratio * (1 + heat.get(i, 0.0))
+            inner = inlet + (fluid - inlet) * ((i - 1) % 8) / 7 + FILM_K * q / cooling
+            out[f"temp_inner_{i:02d}"] = inner
+            out[f"temp_outer_{i:02d}"] = inner + WALL_K * q
+        return out
+
+    def advance(self, step, command, heat):
+        """One second toward the load `command` (MW), with `heat` mapping a pair index to its added local heat."""
+        rate = 0.0 if self.command is None else (command - self.command) * 60  # MW per minute
+        self.command = command
+        if self.state is None:  # start settled at the first load
+            s = {"load": command}
+            s["working_fluid_temperature"] = REFERENCE["working_fluid_temperature"]
+            s["reheat_temperature"] = REFERENCE["reheat_temperature"]
+            flow = REFERENCE["waterwall_flow"] * max(command / REFERENCE_MW, MINIMUM_WATERWALL_FLOW)
+            feedwater = REFERENCE["feedwater_temperature"] + 0.1 * (command - REFERENCE_MW)
+            s.update(self.targets(command, flow, feedwater, s["working_fluid_temperature"], heat))
+            self.state = s
+        s = self.state
+        s["load"] = lag(s["load"], command, TAU["load"])
+        fluid = REFERENCE["working_fluid_temperature"] + 0.3 * rate
+        s["working_fluid_temperature"] = lag(s["working_fluid_temperature"], fluid, TAU["fluid"])
+        reheat = REFERENCE["reheat_temperature"] + 0.2 * rate
+        s["reheat_temperature"] = lag(s["reheat_temperature"], reheat, TAU["fluid"])
+        target = self.targets(s["load"], s["waterwall_flow"], s["feedwater_temperature"], s["working_fluid_temperature"], heat)
+        for name in ("waterwall_flow", "main_steam_flow"):
+            s[name] = lag(s[name], target[name], TAU["flow"])
+        s["main_steam_pressure"] = lag(s["main_steam_pressure"], target["main_steam_pressure"], TAU["pressure"])
+        s["feedwater_temperature"] = lag(s["feedwater_temperature"], target["feedwater_temperature"], TAU["feedwater"])
+        for i in range(1, 97):
+            for side in ("inner", "outer"):
+                name = f"temp_{side}_{i:02d}"
+                s[name] = lag(s[name], target[name], TAU["wall"])
+        return self.readings()
+
+    def send(self, name, value, band):
+        """A dead band, as a DCS sends on: the reading moves only once the quantity is a whole step away from the last one
+        sent, so a slow quantity holds its value for tens of seconds instead of flickering in its last digit."""
+        last = self.sent.get(name)
+        if last is None or abs(value - last) >= band:
+            last = self.sent[name] = round(round(value / band) * band, 6)
+        return last
+
+    def readings(self):
+        """What is sent.  Demonstration: the state with visible noise at the resolution a DCS shows, so the curves move.
+        Steady: the state with a little slow noise through a dead band, so a wall holds its reading for tens of seconds, as a
+        real plant at steady load does (用户 11-01: the steady field for the tests, the demonstration one for showing)."""
+        s, out = self.state, {}
+        values = {"load_mw": s["load"], "furnace_pressure": REFERENCE["furnace_pressure"]}
+        for n in range(1, 9):  # station n is pair n: a reference strain, its wall difference and the pressure move it
+            difference = s[f"temp_inner_{n:02d}"] - s[f"temp_outer_{n:02d}"]
+            strain = (
+                110
+                + 8 * n
+                + STRAIN_PER_K * (difference + WALL_K * pair_heat(n))
+                + STRAIN_PER_MPA * (s["main_steam_pressure"] - REFERENCE["main_steam_pressure"])
+            )
+            values[f"bridge_mvv_{n:02d}"] = strain * 6 / 1000
+        for name in NOISE:
+            if name not in values and name in s:
+                values[name] = s[name]
+        for i in range(1, 97):
+            for side in ("inner", "outer"):
+                values[f"temp_{side}_{i:02d}"] = s[f"temp_{side}_{i:02d}"]
+        for name, value in values.items():
+            kind = name if name in NOISE else name.rsplit("_", 1)[0]
+            demo, steady = NOISE[kind]
+            if self.steady:
+                sigma, rho, band = steady
+                out[name] = self.send(name, value + self.wobble(name, sigma, rho), band)
+            else:
+                sigma, rho, step = demo
+                noisy = value + self.wobble(name, sigma, rho)
+                out[name] = round(round(noisy / step) * step, 6) if step else noisy
+        return out
+
+
 def encode_registers(value, point):
     """Convert engineering value back to the configured wire representation."""
     raw = (value - point.offset) / point.scale
@@ -46,7 +215,7 @@ def encode_registers(value, point):
 
 
 class FieldSimulator:
-    def __init__(self, config):
+    def __init__(self, config, write_ceiling=False, steady=False):
         validate_research(config)
         if not config.simulation.enabled:
             raise ValueError("simulation is disabled")
@@ -59,6 +228,12 @@ class FieldSimulator:
         self.started_at = time.time()
         self.step = 0
         self.values = {}
+        # write_ceiling (development load tests only, never a field mode): every input changes every second through its
+        # independent signal - not what a plant does, but the most a gateway sending raw noisy values could make the
+        # backend write (修复轮15, 用户 11-01).  Otherwise the plant model, and only then the process scenarios.
+        self.write_ceiling = write_ceiling
+        self.plant = Plant(self.sim.seed, steady)  # steady: the plant at the pace of a real one, for the tests
+        self.ramp_from = None
         self.ledger = deque(maxlen=self.sim.ledger_limit)
         self.transitions = deque(maxlen=self.sim.ledger_limit)
         self.modbus = None
@@ -73,7 +248,10 @@ class FieldSimulator:
     def set_scenario(self, name):
         if name not in self.scenarios:
             raise ValueError("unknown scenario")
+        if self.write_ceiling and self.scenarios[name].kind in PROCESS_KINDS:
+            raise ValueError("process scenarios need the plant model; this field runs the write-ceiling load")
         self.scenario = self.scenarios[name]
+        self.ramp_from = None
         self.scenario_started = time.monotonic()
         self.transitions.append({"time": time.time(), "scenario": name, "step": self.step})
 
@@ -199,6 +377,23 @@ class FieldSimulator:
             )
             await node.write_value(dv)
 
+    def load_command(self, scenario, elapsed):
+        """The base swing, or a load ramp: from where the load was, at `ramp_rate`, to the target, held, and back."""
+        base = self.plant.base_load(self.step)
+        if scenario.kind != "load_ramp":
+            return base
+        if self.ramp_from is None:
+            self.ramp_from = base
+        ramp = max(abs(scenario.load_target - self.ramp_from) / scenario.ramp_rate * 60, 1)
+        share = max(0.0, min(1.0, elapsed / ramp, (scenario.duration - elapsed) / ramp))
+        return base + share * (scenario.load_target - base)
+
+    def local_heat(self, scenario):
+        """Pair index -> added local heat while a hotspot lasts; the walls follow through their own lag."""
+        if scenario.kind != "hotspot":
+            return {}
+        return {int(point.rsplit("_", 1)[1]): scenario.heat for point in scenario.points}
+
     def generate(self, now):
         scenario = self.scenario
         elapsed = time.monotonic() - self.scenario_started
@@ -206,16 +401,18 @@ class FieldSimulator:
             self.set_scenario(self.baseline.name)
             scenario = self.scenario
             elapsed = 0
+        modelled = {} if self.write_ceiling else self.plant.advance(
+            self.step, self.load_command(scenario, elapsed), self.local_heat(scenario)
+        )
         for signal in self.sim.signals:
             if scenario.kind == "freeze" and signal.point in scenario.points and signal.point in self.values:
                 continue
-            value = signal_value(signal, self.sim.seed, self.step, self.sim.interval)
+            if signal.point in modelled:
+                value = modelled[signal.point]
+            else:
+                value = signal_value(signal, self.sim.seed, self.step, self.sim.interval)
             if scenario.kind == "thermal_step":
                 value += scenario.offsets.get(signal.point, 0)
-            elif scenario.kind == "load_cycle":
-                value += scenario.offsets.get(signal.point, 0) * math.sin(
-                    math.pi * min(elapsed / scenario.duration, 1)
-                )
             self.values[signal.point] = {
                 "value": value,
                 "quality": "BAD"
@@ -287,6 +484,7 @@ class FieldSimulator:
     def status(self):
         return {
             "config_id": self.config.config_id,
+            "mode": "write_ceiling" if self.write_ceiling else "steady" if self.plant.steady else "demonstration",
             "scenario": self.scenario.name,
             "step": self.step,
             "started_at": self.started_at,
@@ -306,11 +504,11 @@ class ScenarioRequest(BaseModel):
     scenario: str
 
 
-def create_simulation_app(config):
+def create_simulation_app(config, steady=False):
     token = os.environ.get(config.simulation.token_env, "")
     if len(token) < 16:
         raise ValueError("simulation control token must contain at least 16 characters")
-    field = FieldSimulator(config)
+    field = FieldSimulator(config, steady=steady)
 
     @asynccontextmanager
     async def lifespan(app):
@@ -354,10 +552,11 @@ def main():
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default="config/research-sim.json")
+    parser.add_argument("--steady", action="store_true", help="the plant at the pace of a real one (tests); default: demonstration")
     args = parser.parse_args()
     config = load_settings(args.config)
     uvicorn.run(
-        create_simulation_app(config),
+        create_simulation_app(config, args.steady),
         host=config.simulation.control_host,
         port=config.simulation.control_port,
         access_log=False,

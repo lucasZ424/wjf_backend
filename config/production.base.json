@@ -4784,7 +4784,7 @@
         "stress_95",
         "stress_96"
       ],
-      "operation": "maximum",
+      "operation": "absolute_peak",
       "unit": "MPa",
       "extreme_low": -500,
       "extreme_high": 500
@@ -5337,7 +5337,7 @@
       "reheat_temperature": "再热蒸汽温度",
       "working_fluid_temperature": "工质温度",
       "furnace_pressure": "炉膛负压",
-      "thermal_stress_peak": "热应力估算峰值"
+      "thermal_stress_peak": "热应力代理绝对峰值（保留符号）"
     }
   }
 }

@@ -136,7 +136,7 @@ async def crash(iterations: int, seed: int = 7) -> dict:
     accounts = Accounts(work / "accounts.json")
     viewer = accounts.create("viewer", "viewer")
     accounts.create("admin", "admin")
-    field = FieldSimulator(config)
+    field = FieldSimulator(config, write_ceiling=True)  # every input changing every second, as before 修复轮15
     await field.start()
     backends = []
     try:

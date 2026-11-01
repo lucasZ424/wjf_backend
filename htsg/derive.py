@@ -49,6 +49,9 @@ def compute(rule: Derived, values: list[float], models: dict) -> tuple[float, di
             value = statistics.fmean(values)
         case "maximum":
             value = max(values)  # signed maximum, never abs()
+        case "absolute_peak":
+            # 修复轮15: the largest magnitude with its sign kept; of equal magnitudes the first input in order
+            value = max(values, key=abs)
         case "difference":
             value = values[0] - values[1]
         case "ratio":

@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import math
+import re
 from typing import Literal
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ResearchModel(BaseModel):
@@ -35,7 +36,8 @@ class Scenario(ResearchModel):
     kind: Literal[
         "baseline",
         "thermal_step",
-        "load_cycle",
+        "load_ramp",
+        "hotspot",
         "bad_quality",
         "freeze",
         "disconnect_modbus",
@@ -44,6 +46,17 @@ class Scenario(ResearchModel):
     duration: float = Field(30, gt=0, le=3600)
     points: tuple[str, ...] = ()
     offsets: dict[str, float] = Field(default_factory=dict)
+    load_target: float | None = Field(None, gt=0)  # load_ramp: the load held between the two ramps, MW
+    ramp_rate: float = Field(12, gt=0)  # load_ramp: MW per minute
+    heat: float = Field(0, ge=0)  # hotspot: added local heat, relative to the heat there before
+
+    @model_validator(mode="after")
+    def process_parameters(self):
+        if self.kind == "load_ramp" and self.load_target is None:
+            raise ValueError("load_ramp needs load_target")
+        if self.kind == "hotspot" and self.heat <= 0:
+            raise ValueError("hotspot needs heat")
+        return self
 
 
 class Simulation(ResearchModel):
@@ -130,6 +143,8 @@ def validate_research(config):
     for scenario in sim.scenarios:
         if not (set(scenario.points) | set(scenario.offsets)) <= signals:
             raise ValueError("scenario references unknown point")
+        if scenario.kind == "hotspot" and not all(re.fullmatch(r"temp_(inner|outer)_\d+", x) for x in scenario.points):
+            raise ValueError("a hotspot heats wall temperature pairs only")
     ports = [sim.control_port]
     kinds = []
     occupied = set()

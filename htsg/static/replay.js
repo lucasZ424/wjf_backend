@@ -27,6 +27,11 @@ export function retentionNotes(result, stamp) {
 }
 export const ENDS = {NEXT_CHANGE: "至下一次变化", WATERMARK: "至已确认水位", SEGMENT_END: "至有效段结束", GAP: "至归档缺口起点"};
 
+// 修复轮15: a value strictly beyond its channel's high or low limit, as the fault tracker judges a value (equal to a limit is
+// normal).  The archive keeps no recovery of a fault, so the replay chart colours where a value was beyond a limit, not a
+// confirmed fault.
+export const beyondLimit = (definition, value) =>
+  Number.isFinite(value) && ((definition.high != null && value > definition.high) || (definition.low != null && value < definition.low));
 export const channelRows = channel => channel.segments.flatMap(s => s.rows.map(row => ({...row, run: s.run_id, seg: s.seg})));
 // The page names a quality or a result state in words (终版 §17.5); the CSV keeps the codes, to be checked against the database.
 const QUALITIES = {GOOD: "良好", BAD: "不良", UNCERTAIN: "不确定", UNKNOWN: "未知"};

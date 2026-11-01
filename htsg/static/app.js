@@ -1,6 +1,6 @@
 "use strict";
 import {newLive, Rejected, take} from "/static/stream.js";
-import {buildCsv, channelRows, ENDS, gapMark, qualityText, reasonText, retentionNotes, rowText} from "/static/replay.js";
+import {beyondLimit, buildCsv, channelRows, ENDS, gapMark, qualityText, reasonText, retentionNotes, rowText} from "/static/replay.js";
 
 const $ = id => document.getElementById(id);
 const esc = value => String(value ?? "—").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
@@ -211,15 +211,17 @@ function findPairs() {
 const loadId = () => (state.config.ui.process_points || []).find(id => id.includes("load")) || "load_mw";
 const trendIds = () => state.config._trendIds ??= new Set([loadId(), ...pairs().flatMap(p => [p.delta, p.stress])]);
 
-// A series is a list of {t, v, valid}: the value in effect from t on.  An invalid state or a lost connection is a
-// point with no value, and nothing is drawn through it.
+// A series is a list of {t, v, valid, alarm}: the value in effect from t on.  An invalid state or a lost connection is a
+// point with no value, and nothing is drawn through it; `alarm` is a confirmed fault of the channel (修复轮15), drawn in
+// the alarm colour from that reading on.
 function trendNote(channels, wall) {
   const wanted = trendIds();
   for (const [id, view] of Object.entries(channels)) {
     if (!wanted.has(id)) continue;
     const list = trend.series.get(id) || [], last = list[list.length - 1], valid = view.valid && Number.isFinite(view.value);
-    if (last && last.valid === valid && last.v === (valid ? view.value : null)) continue;
-    list.push({t: wall, v: valid ? view.value : null, valid});
+    const alarm = view.fault === "CONFIRMED";
+    if (last && last.valid === valid && last.v === (valid ? view.value : null) && last.alarm === alarm) continue;
+    list.push({t: wall, v: valid ? view.value : null, valid, alarm});
     while (list.length > 2 && list[1].t < wall - KEEP_SECONDS) list.shift();
     trend.series.set(id, list);
   }
@@ -243,7 +245,7 @@ function trendHtml() {
       <div id="trend-latest" class="controls"></div>
       <canvas id="trend-canvas" class="chart" style="height:560px" aria-label="三分栏实时趋势"></canvas>
       <div id="trend-readout" class="chart-caption">把鼠标移到图上查看同一时刻三栏各自的值。</div>
-      <p class="chart-caption">三栏共用一条时间轴，只为对照观察，不表示同时采样。热应力是按温差与约束假设算出的估算值，不是实测。数据无效或中断处曲线断开；页面每秒读取一次，一秒内的短暂变化可能看不到，过去的数据请到“历史查询”页查看。</p></div>`;
+      <p class="chart-caption">三栏共用一条时间轴，只为对照观察，不表示同时采样。热应力是按温差与约束假设算出的估算值，不是实测。曲线变为橙色表示该量“故障已确认”。数据无效或中断处曲线断开；页面每秒读取一次，一秒内的短暂变化可能看不到，过去的数据请到“历史查询”页查看。</p></div>`;
 }
 function mountTrend() {
   $("pair-select").value = String(trend.pair);
@@ -258,12 +260,43 @@ function mountTrend() {
   };
   canvas.onmouseleave = () => { trend.cursor = null; invalidate(); };
 }
+// 修复轮15: a value axis spans at least the least change worth seeing in its quantity, so a steady reading is not stretched
+// over the whole panel; a wall temperature and a wall difference share the unit but not the span.  The data still widen it.
+const MIN_SPAN = {"mV/V": 0.05, "με": 50, degC: 20, "℃": 20, MW: 50, "t/h": 100, MPa: 1, kPa: 0.2};
+function minSpan(id) {
+  const d = definition(id);
+  if (d.operation === "difference" && (d.unit === "degC" || d.unit === "℃")) return 10;
+  if (d.unit === "MPa" && ["thermal_stress", "absolute_peak", "maximum"].includes(d.operation)) return 10;
+  return MIN_SPAN[d.unit] ?? 0;
+}
+// The axis widened to the least span around the data, then snapped to even steps of 1, 2 or 5 × 10^k.
+function valueAxis(values, span, intervals) {
+  let lo = values.length ? Math.min(...values) : 0, hi = values.length ? Math.max(...values) : 1;
+  const need = Math.max(span, (hi - lo) * 1.2) || Math.max(1, Math.abs(lo) * 0.04), mid = (lo + hi) / 2;
+  const raw = need / intervals, size = 10 ** Math.floor(Math.log10(raw));
+  const step = [1, 2, 5, 10].map(m => m * size).find(s => s >= raw * 0.999);
+  lo = Math.floor((mid - need / 2) / step) * step;
+  hi = Math.ceil((mid + need / 2) / step) * step;
+  const ticks = [];
+  for (let k = 0; k <= Math.round((hi - lo) / step); k++) ticks.push(Number((hi - k * step).toPrecision(12)));
+  return {lo, hi, ticks};
+}
+// 修复轮15 (用户 11-01): a colour for each kind of quantity, the same on the live trend and in the replay chart; red stays
+// "no value" and amber the cursor and the gaps, so no line takes either.
+const LINE = {plain: "#73bcff", difference: "#4fd1a5", stress: "#c79bff", alarm: "#ff9f43"};
+const beyond = (id, value) => beyondLimit(definition(id), value);
+function lineColor(id) {
+  const d = definition(id);
+  if (d.operation === "difference" && (d.unit === "degC" || d.unit === "℃")) return LINE.difference;
+  if (d.unit === "MPa" && ["thermal_stress", "absolute_peak", "maximum"].includes(d.operation)) return LINE.stress;
+  return LINE.plain;
+}
 function trendPanels() {
   const p = pairs()[trend.pair], ids = [loadId(), p.delta, p.stress];
   // the difference and the stress can be either sign and say so; the load is a plain quantity
   return ids.map((id, i) => {
     const raw = definition(id).unit;
-    return {id, name: i === 0 ? "负荷" : i === 1 ? "内外壁温差" : "热应力（估算）", unit: unitText(raw), points: trend.series.get(id) || [], show: v => i === 0 ? reading(v, raw) : signed(v, raw)};
+    return {id, name: i === 0 ? "负荷" : i === 1 ? "内外壁温差" : "热应力（估算）", unit: unitText(raw), color: lineColor(id), points: trend.series.get(id) || [], show: v => i === 0 ? reading(v, raw) : signed(v, raw)};
   });
 }
 function updateTrend() {
@@ -271,7 +304,7 @@ function updateTrend() {
   if (!canvas || !pairs().length) return;
   const p = pairs()[trend.pair], panels = trendPanels(), now = state.serverWall || Date.now() / 1000;
   $("pair-inputs").textContent = `内壁 ${p.inner}，外壁 ${p.outer}（温差与热应力都由这一对算出）`;
-  setHtml("trend-latest", panels.map(x => { const view = channel(x.id); return `<span data-panel="${esc(x.id)}">${esc(x.name)}：<b>${view && view.valid ? `${x.show(view.value)} ${esc(x.unit)}` : "—"}</b></span> ${stateBadges(x.id)}`; }).join(" "));
+  setHtml("trend-latest", panels.map(x => { const view = channel(x.id); return `<span data-panel="${esc(x.id)}"><span style="color:${x.color}">${esc(x.name)}</span>：<b>${view && view.valid ? `${x.show(view.value)} ${esc(x.unit)}` : "—"}</b></span> ${stateBadges(x.id)}`; }).join(" "));
   $("trend-readout").textContent = trend.cursor === null ? "把鼠标移到图上查看同一时刻三栏各自的值。"
     : `游标 ${clock(trend.cursor)}（各栏取游标时刻之前最近一次的值，不代表同步采样）：` + panels.map(x => { const v = valueAt(x.points, trend.cursor); return `${x.name} ${v && v.valid ? `${x.show(v.v)} ${x.unit}` : "—（无数据或无效）"}`; }).join(" ｜ ");
   plotTrend(canvas, panels, now);
@@ -290,26 +323,23 @@ function plotTrend(canvas, panels, now) {
     const inside = panel.points.filter(q => q.t <= now), seen = inside.filter(q => q.valid && q.t >= t0);
     const held = valueAt(inside, t0);
     const values = [...seen.map(q => q.v), ...(held && held.valid ? [held.v] : [])];
-    let lo = Math.min(...values), hi = Math.max(...values);
-    if (!values.length) { lo = 0; hi = 1; }
-    const pad = (hi - lo) * 0.2 || Math.max(1, Math.abs(lo) * 0.02);
-    lo -= pad; hi += pad;
+    const {lo, hi, ticks} = valueAxis(values, minSpan(panel.id), 4);
     const y = v => bottom - (v - lo) / (hi - lo) * height;
-    canvas.plot.panels.push({id: panel.id, unit: panel.unit, lo, hi, top, bottom, points: inside.filter(q => q.t >= t0 || q === held).map(q => ({...q}))});
-    c.fillStyle = "#91aac5";
-    c.fillText(`${panel.name}（${panel.unit}）`, left + 4, top + 11);
-    for (let k = 0; k <= 2; k++) {
-      const yy = top + height * k / 2;
+    canvas.plot.panels.push({id: panel.id, unit: panel.unit, color: panel.color, lo, hi, top, bottom, points: inside.filter(q => q.t >= t0 || q === held).map(q => ({...q}))});
+    for (const tick of ticks) {
+      const yy = y(tick);
       c.strokeStyle = "#304968"; c.beginPath(); c.moveTo(left, yy); c.lineTo(right, yy); c.stroke();
-      c.fillStyle = "#91aac5"; c.fillText(panel.show(hi - (hi - lo) * k / 2), 2, yy + 4);
+      c.fillStyle = "#91aac5"; c.fillText(panel.show(tick), 2, yy + 4);
     }
+    c.fillStyle = panel.color;  // the panel's name in its line's colour, after the grid so no tick label covers it
+    c.fillText(`${panel.name}（${panel.unit}）`, left + 4, top + 11);
     inside.forEach((q, j) => {
       const next = inside[j + 1], a = x(q.t), b = next ? x(next.t) : x(now);
       if (b < left || x(q.t) > right) return;
       if (q.valid) {
-        c.strokeStyle = "#73bcff"; c.lineWidth = 1.8;
+        c.strokeStyle = q.alarm ? LINE.alarm : panel.color; c.lineWidth = 1.8;
         c.beginPath(); c.moveTo(Math.max(a, left), y(q.v)); c.lineTo(Math.max(b, a + 1), y(q.v)); c.stroke();
-        if (next && next.valid) { c.beginPath(); c.moveTo(b, y(q.v)); c.lineTo(b, y(next.v)); c.stroke(); }
+        if (next && next.valid) { c.strokeStyle = next.alarm ? LINE.alarm : panel.color; c.beginPath(); c.moveTo(b, y(q.v)); c.lineTo(b, y(next.v)); c.stroke(); }
       } else {
         c.fillStyle = "#ff777b"; c.fillRect(Math.max(a, left), bottom - 5, Math.max(3, b - Math.max(a, left)), 5);
       }
@@ -587,11 +617,11 @@ function drawReplay() {
     <div id="replay-summary">${table(["通道", "单位", "窗口起点依据", "窗口内记录", "窗口内最后一条", "状态"], summary)}</div>
     <div class="controls"><label>图表与记录通道<select id="replay-focus">${request.points.map(id => option(id, id === focus)).join("")}</select></label><button id="replay-export">导出 CSV</button></div>
     <canvas id="replay-chart" class="chart" aria-label="回溯图表"></canvas>
-    <p class="chart-caption">阶梯线是每个值的生效期；虚线是窗口起点时仍有效的值；红色是无效或超出极值；阴影是归档缺口，竖虚线是有效段起点。曲线不插值、不补点。</p>
+    <p class="chart-caption">阶梯线是每个值的生效期；虚线是窗口起点时仍有效的值；红色是无效或超出极值；橙色是数值超出该通道的高限或低限（只按限值判断，不等于已确认的故障）；阴影是归档缺口，竖虚线是有效段起点。曲线不插值、不补点。</p>
     <div id="replay-records" class="scroll">${recordsTable(rows, focusData)}</div>`;
   $("replay-focus").onchange = event => { replay.chart = event.target.value; runReplay(); };
   $("replay-export").onclick = exportCsv;
-  plotReplay($("replay-chart"), focusData, result);
+  plotReplay($("replay-chart"), focusData, result, focus);
 }
 
 // Why the archive lost a stretch, in words (终版 §17.5), the code beside it.
@@ -620,7 +650,7 @@ function exportCsv() {
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
-function plotReplay(canvas, channel, result) {
+function plotReplay(canvas, channel, result, id) {
   const ratio = window.devicePixelRatio || 1, w = canvas.clientWidth, h = 240, left = 62, right = w - 14, top = 14, bottom = h - 28;
   canvas.width = w * ratio;
   canvas.height = h * ratio;
@@ -644,26 +674,29 @@ function plotReplay(canvas, channel, result) {
   canvas.plot.ticks = drawTicks(c, x, start, end, {left, right, axis: bottom, text: h - 8});
   c.fillStyle = "#91aac5";
   if (!good.length) { c.fillText("窗口内没有有效数值可画", left + 12, (top + bottom) / 2); }
-  let lo = Math.min(...good.map(r => r.value)), hi = Math.max(...good.map(r => r.value));
+  const {lo, hi, ticks} = valueAxis(good.map(r => r.value), minSpan(id), 4);
+  const y = v => bottom - (v - lo) / (hi - lo) * (bottom - top), color = lineColor(id);
+  canvas.plot.color = color;
   if (good.length) {
-    const pad = (hi - lo) * 0.15 || Math.max(1, Math.abs(lo) * 0.01);
-    lo -= pad; hi += pad;
-    for (let i = 0; i <= 4; i++) {
-      const yy = top + (bottom - top) * i / 4;
+    for (const tick of ticks) {
+      const yy = y(tick);
       c.strokeStyle = "#304968"; c.beginPath(); c.moveTo(left, yy); c.lineTo(right, yy); c.stroke();
-      c.fillStyle = "#91aac5"; c.fillText(reading(hi - (hi - lo) * i / 4, channel.unit), 2, yy + 4);
+      c.fillStyle = "#91aac5"; c.fillText(reading(tick, channel.unit), 2, yy + 4);
     }
   }
-  const y = v => bottom - (v - lo) / (hi - lo) * (bottom - top);
   rows.forEach((r, i) => {
     const a = x(r.time), b = r.until == null ? a : x(r.until);
     if (r.valid && Number.isFinite(r.value)) {
-      c.strokeStyle = "#73bcff"; c.fillStyle = "#73bcff"; c.lineWidth = 1.8;
+      const own = beyond(id, r.value) ? LINE.alarm : color;
+      c.strokeStyle = own; c.fillStyle = own; c.lineWidth = 1.8;
       c.setLineDash(r.held ? [5, 3] : []);
       c.beginPath(); c.moveTo(a, y(r.value)); c.lineTo(Math.max(b, a + 1), y(r.value)); c.stroke();
       c.setLineDash([]);
       const next = rows[i + 1];
-      if (r.ended_by === "NEXT_CHANGE" && next && next.valid && Number.isFinite(next.value)) { c.beginPath(); c.moveTo(b, y(r.value)); c.lineTo(b, y(next.value)); c.stroke(); }
+      if (r.ended_by === "NEXT_CHANGE" && next && next.valid && Number.isFinite(next.value)) {
+        c.strokeStyle = beyond(id, next.value) ? LINE.alarm : color;
+        c.beginPath(); c.moveTo(b, y(r.value)); c.lineTo(b, y(next.value)); c.stroke(); c.strokeStyle = own;
+      }
       c.beginPath(); c.arc(a, y(r.value), r.held ? 3.5 : 2.5, 0, Math.PI * 2); r.held ? c.stroke() : c.fill();
       if (r.until == null) { c.fillStyle = "#91aac5"; c.fillText("?", a + 5, y(r.value) - 5); }
     } else {
@@ -679,7 +712,7 @@ window.addEventListener("resize", () => {
   refit = true;
   requestAnimationFrame(() => {
     refit = false;
-    if (state.page === 5 && view.result && $("replay-chart")) plotReplay($("replay-chart"), view.result.channels[view.request.chart], view.result);
+    if (state.page === 5 && view.result && $("replay-chart")) plotReplay($("replay-chart"), view.result.channels[view.request.chart], view.result, view.request.chart);
   });
 });
 
