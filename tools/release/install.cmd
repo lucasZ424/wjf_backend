@@ -1,5 +1,5 @@
 @echo off
-rem HTSG one-click install (fix round 15): asks for administrator rights, then runs setup\install.py
+rem HTSG one-click install: asks for administrator rights, then runs setup\install.py
 rem with the Python bundled in this package.  Safe to run again: finished steps are skipped.
 net session >nul 2>&1
 if errorlevel 1 (

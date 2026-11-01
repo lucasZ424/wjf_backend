@@ -9,7 +9,7 @@ VERSION.json 标明“未提交快照”，不得交付现场。
 
 发布包内（修复轮15：傻瓜式安装）：双击即用的“安装.cmd”与 `setup\\install.py`；免安装运行环境 `runtime\\`（构建机上的
 Python 3.13 x64 加上程序与全部运行依赖，现场不装 Python、不跑 pip）；PostgreSQL 压缩包与它需要的 VC 运行库
-（`installers\\`）；部署与看守脚本、点表工具、生产基础配置与空模板、安装与运维说明、校验脚本。PostgreSQL 默认取开发盘上
+（`installers\\`）；部署与看守脚本、生产基础配置与空模板、安装与运维说明、校验脚本。PostgreSQL 默认取开发盘上
 的 postgresql-18.6.zip 及其校验文件。
 
 点表工具包 HTSG-POINTSHEET-…：同一运行环境加点表工具，任何 Windows 电脑解压即用（“1-生成点表模板”“2-生成配置”）。
@@ -41,9 +41,6 @@ POSTGRESQL_ZIP = Path("D:/HTSG-dev/postgresql-18.6.zip")
 FROM_SOURCE = {
     "scripts/deploy_databases.py": "scripts/deploy_databases.py",
     "scripts/supervise.py": "scripts/supervise.py",
-    "tools/pointsheet/pointsheet.py": "tools/pointsheet/pointsheet.py",
-    "tools/pointsheet/README.md": "tools/pointsheet/README.md",
-    "tools/pointsheet/requirements.txt": "tools/pointsheet/requirements.txt",
     "config/production.base.json": "config/production.base.json",
     "config/production.template.json": "config/production.template.json",
     "requirements.runtime.lock": "requirements.runtime.lock",

@@ -3,9 +3,9 @@
     python tools/release/build_simulator.py --ref <提交号或标签> --out D:/HTSG-release
 
 和发布包一样只认已提交的版本（`git archive` 导出）。包内：双击入口“1-启动模拟现场（演示）”“1-启动模拟现场（稳态）”
-“2-触发场景”；免安装运行环境 `runtime\\`（与发布包同一构建方式）；`sim\\sim.py`、模拟现场配置 `sim\\sim-field.json`（即该
+“2-触发场景”“3-清除模拟安装”；免安装运行环境 `runtime\\`（与发布包同一构建方式）；`sim\\sim.py`、模拟现场配置 `sim\\sim-field.json`（即该
 版本的 `config/research-sim.json`）与触发文件示例；后端配置 `production.json`（正式模式，点表与数据源取模拟现场的，项目
-名称、存储与其余部分取 `config/production.base.json`，构建时按该版本的程序校验，安装时交给发布包的安装程序）；使用说明、
+名称、存储与其余部分取 `config/production.base.json`，构建时按该版本的程序校验，安装时交给发布包的安装程序）；模拟手册、
 `verify.ps1` 与 SHA-256 清单。
 """
 
@@ -29,7 +29,9 @@ FROM_SOURCE = {
     "tools/simulator/start-demo.cmd": "1-启动模拟现场（演示）.cmd",
     "tools/simulator/start-steady.cmd": "1-启动模拟现场（稳态）.cmd",
     "tools/simulator/trigger.cmd": "2-触发场景.cmd",
-    "tools/simulator/模拟数据源使用说明.md": "模拟数据源使用说明.md",
+    "tools/simulator/cleanup.py": "sim/cleanup.py",
+    "tools/simulator/cleanup.cmd": "3-清除模拟安装.cmd",
+    "tools/simulator/模拟手册.md": "模拟手册.md",
     "tools/release/verify.ps1": "verify.ps1",
 }
 

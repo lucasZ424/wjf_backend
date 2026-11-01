@@ -1,11 +1,11 @@
-"""HTSG 一键安装（修复轮15，用户 2026-11-01：傻瓜式安装）。双击发布包里的“安装.cmd”即运行本程序（自动请求管理员权限）。
+"""HTSG 一键安装。双击发布包里的“安装.cmd”即运行本程序（自动请求管理员权限）。
 
 做的事，依次：核对发布包 → 拷程序到 <根目录>\\app → 解压数据库软件到 <根目录>\\pgsql（带上它需要的 VC 运行库）→ 放入配置
 （点表工具或模拟数据源包生成的 production.json）→ 选两块数据盘 → 建库、建管理员 → 注册数据库服务与开机任务 → 等后端起来、
 打开浏览器。
 
 可以重复运行：已经做完的步骤跳过，中途断电或关窗后再双击一次，从没做完的那一步接着做。它不删除任何数据，也不覆盖已有
-的配置、库或账户；装有另一版本时停下，按《安装与运维说明》第7节升级。
+的配置、库或账户；装有另一版本时停下，按《安装与运维说明》第6节升级。
 
 无人值守（管理员 PowerShell，发布包目录里）：
     .\\runtime\\python.exe setup\\install.py --root D:\\HTSG --config D:\\点表\\production.json --primary D: --emergency E: --yes
@@ -115,7 +115,7 @@ class Installer:
             theirs = json.loads(there.read_text(encoding="utf-8")) if there.is_file() else {}
             if theirs.get("commit") != mine["commit"]:
                 raise Stop(f"{self.app} 里已装有另一版本（{theirs.get('version', '不明')}）。本程序不覆盖已装的程序："
-                           "升级按《安装与运维说明》第7节做。")  # fmt: skip
+                           "升级按《安装与运维说明》第6节做。")  # fmt: skip
             say(f"程序已在 {self.app}（同一版本 {mine['version']}），跳过拷贝。")
             return
         partial = self.app.with_name(self.app.name + PARTIAL)
@@ -207,7 +207,7 @@ class Installer:
         deadline = time.monotonic() + 300
         while not self.reachable():
             if time.monotonic() > deadline:
-                raise Stop("5 分钟内后端没有响应。看 <程序目录>\\.local 下的日志，或按《安装与运维说明》第6节排查；"
+                raise Stop("5 分钟内后端没有响应。看 <程序目录>\\.local 下的日志，或按《安装与运维说明》第5节排查；"
                            "重新双击“安装.cmd”会接着检查。")  # fmt: skip
             time.sleep(3)
         if self.browser:
@@ -247,7 +247,7 @@ class Installer:
         say(f"  网页：{URL}（本机）")
         say(f"  程序目录：{self.app}")
         say(f"  管理员初始口令：{self.app / '.local' / 'initial-credentials.json'}（只给业主，登录后在“系统管理与权限”页加只读账户）")
-        say("  接着按《安装与运维说明》第5节做安装后自检。断电或重启后数据库与后端会自己起来，不用再运行本程序。")
+        say("  接着按《安装与运维说明》第3节做安装后自检。断电或重启后数据库与后端会自己起来，不用再运行本程序。")
 
 
 def main(argv=None) -> int:
