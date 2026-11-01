@@ -162,3 +162,18 @@ def test_install_builds_one_cluster_per_disk_writes_the_same_folders_into_the_co
             if (folder / "pgdata" / "PG_VERSION").exists():
                 subprocess.run([str(PG_BIN / "pg_ctl.exe"), "-D", str(folder / "pgdata"), "-w", "-m", "fast", "stop"],
                                capture_output=True)  # fmt: skip
+
+
+def test_the_password_folder_keeps_the_access_initdb_needs_after_dropping_administrator_rights():
+    """Rehearsal 2026-11-01: the one-click install runs elevated, and initdb drops its administrator rights before it reads
+    the password file.  A folder from mkdtemp (Python 3.13) admits only SYSTEM, Administrators and its owner - the
+    Administrators group when elevated - so the install stopped at the first cluster.  The folder must inherit the access of
+    the temporary folder instead, which names the user."""
+    import subprocess
+
+    folder = deploy.password_folder()
+    try:
+        acl = subprocess.run(["icacls", str(folder)], capture_output=True).stdout.decode("utf-8", errors="replace")
+        assert "(I)" in acl, f"inherited from the temporary folder, not a protected list of its own: {acl}"
+    finally:
+        folder.rmdir()

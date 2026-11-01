@@ -334,6 +334,15 @@ def running(inp, role) -> bool:
     return subprocess.run([str(inp["pg_bin"] / "pg_ctl.exe"), "-D", role.data, "status"], capture_output=True).returncode == 0
 
 
+def password_folder() -> Path:
+    """Where initdb reads the password from.  Not mkdtemp: since Python 3.13 its folder admits only its creator, and when the
+    installer runs elevated that is the Administrators group - initdb, which drops its administrator rights before it runs,
+    could not read the password (rehearsal 2026-11-01).  A plain folder inherits the temporary folder's access, the user's own."""
+    folder = Path(tempfile.gettempdir()) / f"htsg-deploy-{secrets.token_hex(8)}"
+    folder.mkdir()
+    return folder
+
+
 def install(inp: dict, volume_of=volume):
     import psycopg
 
@@ -355,7 +364,7 @@ def install(inp: dict, volume_of=volume):
         for role in roles:
             os.makedirs(role.folder, exist_ok=True)
             if facts[role.name]["state"] == "new cluster":
-                secret = Path(tempfile.mkdtemp(prefix="htsg-deploy-")) / "pw"
+                secret = password_folder() / "pw"
                 try:
                     secret.write_text(password, encoding="utf-8")
                     run([inp["pg_bin"] / "initdb.exe", "-D", role.data, "-U", "htsg", "--pwfile", secret,
