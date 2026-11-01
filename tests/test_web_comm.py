@@ -65,7 +65,7 @@ def test_the_page_is_the_sixth_after_self_check_has_no_page_number_and_both_role
     assert page.locator("#comm-inputs tbody tr").count() == len(inputs), "every input has its row"
     for card in ("数据源状态", "点位映射与实际读数", "通信日志（本次运行）"):
         assert page.locator("h3", has_text=card).count() == 1
-    assert "本次运行" in page.locator("main").inner_text() and "不读取归档" in page.locator("main").inner_text()
+    assert "本次运行" in page.locator("main").inner_text(), "the log is marked as this run's only"
     assert page.errors == []
 
 

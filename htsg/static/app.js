@@ -68,7 +68,6 @@ function stateBadges(id) {
   let out = view.valid ? badge("有效", "ok") : badge(reasonText(view.reason), "bad");
   if (view.fault === "PENDING") out += " " + badge("越限待确认", "warn");
   if (view.fault === "CONFIRMED") out += " " + badge(`故障已确认${view.fault_direction === "HIGH" ? "（高）" : view.fault_direction === "LOW" ? "（低）" : ""}`, "bad");
-  if (view.estimate) out += " " + badge("估算值", "warn");
   return out;
 }
 
@@ -91,7 +90,7 @@ function renderPage() {
   try { sessionStorage.setItem(PAGE_KEY, String(page.id)); } catch { /* no storage: a reload starts at the overview */ }
   $("navigation").innerHTML = pages.map(p => `<button data-page="${p.id}" class="${p.id === page.id ? "active" : ""}">${esc(p.name)}</button>`).join("");
   $("navigation").querySelectorAll("button").forEach(b => b.onclick = () => { state.page = Number(b.dataset.page); renderPage(); });
-  $("workspace").innerHTML = `<div class="page-heading"><div><span class="eyebrow">HTSG</span><h2>${esc(page.name)}</h2><span class="muted">${esc(state.config.project?.title || "")}</span></div><span class="badge">数据来源：后端协议主动读取</span></div>${page.html()}`;
+  $("workspace").innerHTML = `<div class="page-heading"><div><span class="eyebrow">HTSG</span><h2>${esc(page.name)}</h2><span class="muted">${esc(state.config.project?.title || "")}</span></div></div>${page.html()}`;
   page.mount?.();
   renderLive();
 }
@@ -153,13 +152,12 @@ const quantity = id => { const view = channel(id), unit = definition(id).unit; r
 function strainTable() {
   return table(STRAIN_HEAD, stations().map(s => [esc(s.label || s.id), quantity(bridgeOf(s)), quantity(s.strain), quantity(s.strain_change), stationBadge(stationState(s))]));
 }
-const STRAIN_NOTE = '<p class="chart-caption">换算应变按 GF=6 换算，未作温度补偿，不是已验证的机械应变。原始信号、换算应变和应变变化是三个不同的量。</p>';
 
 function overviewHtml() {
   return `<div id="source-status" class="grid metrics"></div>
     <div class="card" style="margin-bottom:16px"><h3>越限状态</h3><div id="fault-summary"></div></div>
     <div class="grid two"><div class="card"><h3>过程量（实时）</h3><div id="process-table"></div></div>
-    <div class="card"><h3>应变测点（三种量分别显示）</h3><div id="strain-table"></div>${STRAIN_NOTE}</div></div>`;
+    <div class="card"><h3>应变测点（三种量分别显示）</h3><div id="strain-table"></div></div></div>`;
 }
 function updateOverview() {
   const sources = state.live.status?.sources || {};
@@ -174,10 +172,10 @@ function updateOverview() {
 }
 
 function strainHtml() {
-  return `<div class="grid two"><div class="card"><h3>测点分布示意（${stations().length} 个固定测点）</h3><div id="strain-map" class="map strain-map"></div>
+  return `<div class="grid two"><div class="card"><h3>测点分布（${stations().length} 个测点）</h3><div id="strain-map" class="map strain-map"></div>
     <div class="legend"><b>● 正常</b><span style="color:var(--amber)">● 越限待确认</span><em>● 故障已确认</em><span>● 无效（灰色，注明原因）</span></div>
-    <p class="chart-caption">每个测点一个色块，颜色表示该点是否有效、是否越限；不在测点之间插值，位置只是示意，不代表现场布置。</p></div>
-    <div class="card"><h3>三种量分别显示</h3><div id="strain-table"></div>${STRAIN_NOTE}</div></div>`;
+    <p class="chart-caption">每个测点一个色块，颜色表示该点是否有效、是否越限。</p></div>
+    <div class="card"><h3>三种量分别显示</h3><div id="strain-table"></div></div></div>`;
 }
 function updateStrain() {
   setHtml("strain-map", stations().map(s => {
@@ -240,12 +238,12 @@ function trendReading(reading, before) {
 const valueAt = (list, t) => { let found = null; for (const p of list) { if (p.t <= t) found = p; else break; } return found; };
 
 function trendHtml() {
-  return `<div class="controls"><label>温度对<select id="pair-select">${pairs().map((p, i) => `<option value="${i}">${esc(p.name)}</option>`).join("")}</select></label><span id="pair-inputs" class="muted"></span><span class="badge warn">热应力为估算值，不是实测</span></div>
+  return `<div class="controls"><label>温度对<select id="pair-select">${pairs().map((p, i) => `<option value="${i}">${esc(p.name)}</option>`).join("")}</select></label><span id="pair-inputs" class="muted"></span></div>
     <div class="card"><h3>负荷、内外壁温差与热应力（同一时间轴，最近 ${TREND_SECONDS / 60} 分钟）</h3>
       <div id="trend-latest" class="controls"></div>
       <canvas id="trend-canvas" class="chart" style="height:560px" aria-label="三分栏实时趋势"></canvas>
       <div id="trend-readout" class="chart-caption">把鼠标移到图上查看同一时刻三栏各自的值。</div>
-      <p class="chart-caption">三栏共用一条时间轴，只为对照观察，不表示同时采样。热应力是按温差与约束假设算出的估算值，不是实测。曲线变为橙色表示该量“故障已确认”。数据无效或中断处曲线断开；页面每秒读取一次，一秒内的短暂变化可能看不到，过去的数据请到“历史查询”页查看。</p></div>`;
+      <p class="chart-caption">曲线变为橙色表示该量“故障已确认”；数据无效或中断处曲线断开。过去的数据请到“历史查询”页查看。</p></div>`;
 }
 function mountTrend() {
   $("pair-select").value = String(trend.pair);
@@ -306,7 +304,7 @@ function updateTrend() {
   $("pair-inputs").textContent = `内壁 ${p.inner}，外壁 ${p.outer}（温差与热应力都由这一对算出）`;
   setHtml("trend-latest", panels.map(x => { const view = channel(x.id); return `<span data-panel="${esc(x.id)}"><span style="color:${x.color}">${esc(x.name)}</span>：<b>${view && view.valid ? `${x.show(view.value)} ${esc(x.unit)}` : "—"}</b></span> ${stateBadges(x.id)}`; }).join(" "));
   $("trend-readout").textContent = trend.cursor === null ? "把鼠标移到图上查看同一时刻三栏各自的值。"
-    : `游标 ${clock(trend.cursor)}（各栏取游标时刻之前最近一次的值，不代表同步采样）：` + panels.map(x => { const v = valueAt(x.points, trend.cursor); return `${x.name} ${v && v.valid ? `${x.show(v.v)} ${x.unit}` : "—（无数据或无效）"}`; }).join(" ｜ ");
+    : `游标 ${clock(trend.cursor)}：` + panels.map(x => { const v = valueAt(x.points, trend.cursor); return `${x.name} ${v && v.valid ? `${x.show(v.v)} ${x.unit}` : "—（无数据或无效）"}`; }).join(" ｜ ");
   plotTrend(canvas, panels, now);
 }
 function plotTrend(canvas, panels, now) {
@@ -594,7 +592,7 @@ function startBasis(rows, result, unit) {
 function drawReplay() {
   const box = $("replay-result");
   if (!box) return;
-  if (!replayReady()) { box.innerHTML = '<p class="muted">请填写中心时间和至少一个通道，或在左侧选择一条故障。不会自动查询当前时刻。</p>'; return; }
+  if (!replayReady()) { box.innerHTML = '<p class="muted">请填写中心时间和至少一个通道，或在左侧选择一条故障。</p>'; return; }
   if (view.loading) { box.innerHTML = '<p class="muted">正在从数据库读取…</p>'; return; }
   if (view.error) { box.innerHTML = `<p class="log-error" role="alert">历史读取失败：${esc(view.error)}</p>`; return; }
   if (!view.result) { box.innerHTML = '<p class="muted">设置已填好，点击“查询”。</p>'; return; }
@@ -617,7 +615,7 @@ function drawReplay() {
     <div id="replay-summary">${table(["通道", "单位", "窗口起点依据", "窗口内记录", "窗口内最后一条", "状态"], summary)}</div>
     <div class="controls"><label>图表与记录通道<select id="replay-focus">${request.points.map(id => option(id, id === focus)).join("")}</select></label><button id="replay-export">导出 CSV</button></div>
     <canvas id="replay-chart" class="chart" aria-label="回溯图表"></canvas>
-    <p class="chart-caption">阶梯线是每个值的生效期；虚线是窗口起点时仍有效的值；红色是无效或超出极值；橙色是数值超出该通道的高限或低限（只按限值判断，不等于已确认的故障）；阴影是归档缺口，竖虚线是有效段起点。曲线不插值、不补点。</p>
+    <p class="chart-caption">阶梯线是每个值的生效期；虚线是窗口起点时仍有效的值；红色是无效或超出极值；橙色是数值超出该通道的高限或低限；阴影是归档缺口，竖虚线是有效段起点。</p>
     <div id="replay-records" class="scroll">${recordsTable(rows, focusData)}</div>`;
   $("replay-focus").onchange = event => { replay.chart = event.target.value; runReplay(); };
   $("replay-export").onclick = exportCsv;
@@ -769,8 +767,7 @@ setInterval(() => { if (!state.stopped && HEALTH_PAGES.includes(state.page)) loa
 // ------------------------------------------------------------- the two counters of a source, on two pages
 
 // Both come from the same /api/health answer as everything else on the communication page, so the two pages agree.
-const COUNTER_NOTE = "重新同步次数：通信连续正常 60 秒后清零，累计 5 次为持续失步。连续建连失败次数：建连成功后清零，订阅或读取失败不计。"
-  + "两者与日志里的“次数”含义不同。每 5 秒刷新一次。";
+const COUNTER_NOTE = "重新同步次数：通信连续正常 60 秒后清零，累计 5 次为持续失步。连续建连失败次数：建连成功后清零，订阅或读取失败不计。";
 function counterCells(id) {
   const s = health.data?.status?.sources?.[id];
   if (!s) return ["—", "—"];
@@ -783,8 +780,7 @@ function selfcheckHtml() {
   return `<div class="grid two"><div class="card"><h3>数据源与通信</h3><div id="check-sources"></div></div><div class="card"><h3>OPC UA 订阅协商参数</h3><div id="check-negotiated"></div></div></div>
     <div class="grid two"><div class="card"><h3>历史归档</h3><div id="check-archive"></div></div><div class="card"><h3>故障记录归档</h3><div id="check-faults"></div></div></div>
     <div class="card"><h3>存储保留与滚动删除</h3><div id="check-retention"></div></div>
-    <div class="card"><h3>运行时限（配置值）</h3><div id="check-timing"></div></div>
-    <div class="note">本页不含传感器零漂、硬件温度等硬件诊断（没有这类输入），只显示软件的采集、通信协商与归档状态。</div>`;
+    <div class="card"><h3>运行时限（配置值）</h3><div id="check-timing"></div></div>`;
 }
 // 终版 §13.6 自检与报警: what each database keeps, the deletion's real pace, the next one or why it cannot be foreseen, the alarm.
 const ALARM_REASONS = {
@@ -859,8 +855,7 @@ function updateSelfcheck() {
   setHtml("check-retention", retentionHtml(archive));
   const f = status?.faults;
   setHtml("check-faults", !f ? '<p class="muted">等待实时数据</p>' : `<p>${f.archive_incomplete ? badge("故障归档不完整", "bad") : badge("故障归档完整", "ok")} 未写入的缓冲 <b>${f.buffered}/${f.limit}</b>，累计拒绝 <b>${f.rejected_total}</b> 条</p>`
-    + table(["数据源", "缺口摘要：丢失条数", "最早", "最晚", "涉及通道"], Object.entries(f.loss || {}).map(([id, l]) => [esc(id), l.count, stamp(l.first_wall), stamp(l.last_wall), esc((l.points || []).join("、"))]))
-    + `<p class="chart-caption">故障记录在写入数据库之前只在内存中，进程退出会丢失。缓冲满了就拒绝新记录，已有记录不受影响，采集照常。</p>`);
+    + table(["数据源", "缺口摘要：丢失条数", "最早", "最晚", "涉及通道"], Object.entries(f.loss || {}).map(([id, l]) => [esc(id), l.count, stamp(l.first_wall), stamp(l.last_wall), esc((l.points || []).join("、"))])));
   setHtml("check-timing", table(["项目", "值"], [
     ["故障确认时长", `${timing.fault_confirm_seconds} 秒`], ["OPC UA 数据有效期 / 断连告警", `${timing.ua_data_validity} 秒 / ${timing.ua_alarm_seconds} 秒`], ["Modbus 断连告警", `${timing.modbus_alarm_seconds} 秒`],
     ["页面读取间隔 / 单次读取上限", `${timing.ui_poll_interval} 秒 / ${timing.ui_poll_timeout} 秒`], ["前端数据中断提示", `${timing.ui_stall_notice} 秒`], ["故障缓冲上限", `${timing.fault_buffer_limit} 条`], ["水位提交间隔", `${timing.watermark_interval} 秒`],
@@ -903,8 +898,7 @@ function reasonName(code) {
 const reasonCell = code => `${reasonName(code) !== String(code) ? `${esc(reasonName(code))} ` : ""}<code>${esc(code)}</code>`;
 
 function commHtml() {
-  return `<div class="note">这里只有<b>本次运行</b>的通信记录，后端重启后清空，不读取归档，也没有更早的历史。表中读数取自同一时刻的快照，不表示各点同时采样；源时间戳按服务器给出的原样显示。</div>
-    <p id="comm-taken" class="chart-caption"></p>
+  return `<p id="comm-taken" class="chart-caption"></p>
     <div class="card"><h3>数据源状态</h3><div id="comm-sources"></div></div>
     <div class="card"><h3>点位映射与实际读数</h3><div id="comm-inputs" class="scroll"></div></div>
     <div class="card"><h3>通信日志（本次运行）</h3><div id="comm-log-meta"></div><div id="comm-log" class="scroll"></div></div>`;
@@ -942,11 +936,11 @@ function commInputs(rows) {
 function commLog(log) {
   const meta = [`保留 <b>${log.entries.length}</b> / ${log.limit} 条`,
     `已淘汰 <b>${log.evicted}</b> 条${log.oldest_time == null ? "" : `，现存最早记录 ${stampAt(log.oldest_time)}`}`,
-    `诊断丢失 <b>${log.diag_lost}</b> 次（只是日志没记上，不是数据丢失）`];
+    `诊断丢失 <b>${log.diag_lost}</b> 次`];
   const incomplete = log.incomplete ? " " + badge("日志不完整", "warn") : "";
   const body = log.entries.length
     ? table(["序号", "发现时刻", "数据源", "事件", "原因 / 详情", "代次", "次数", "首次失败", "最近失败", "状态", "最后有效通信"], [...log.entries].reverse().map(commEntry))
-    : '<p class="empty">暂无记录。这里只有本次运行的记录，没有记录不表示从未发生通信故障。</p>';
+    : '<p class="empty">暂无记录</p>';
   return {meta: `<p>${meta.join("；")}${incomplete}</p>`, body};
 }
 function commEntry(e) {
@@ -969,7 +963,7 @@ function drawComm() {
     setHtml("comm-log-meta", "");
     return;
   }
-  setHtml("comm-taken", `快照时刻：<b>${stampAt(comm.taken_time)}</b>（每行的“后端接收时刻”才是该点的观测时刻）${health.error ? `；<span class="log-error">最近一次刷新失败：${esc(health.error)}，以下仍是上次读到的内容</span>` : ""}`);
+  setHtml("comm-taken", `快照时刻：<b>${stampAt(comm.taken_time)}</b>${health.error ? `；<span class="log-error">最近一次刷新失败：${esc(health.error)}，以下仍是上次读到的内容</span>` : ""}`);
   setHtml("comm-sources", commSources(health.data));
   setHtml("comm-inputs", commInputs(comm.inputs));
   const log = commLog(comm.log);
@@ -1134,7 +1128,7 @@ setInterval(() => {
   state.live = newLive();
   setConnection("数据中断", "bad");
   state.drawFailed = false;  // nothing is drawn while interrupted; the interruption is what is said
-  notice(`已超过 ${Math.round(limit / 1000)} 秒没有取得可用的后端数据${reader.failure ? `（最近一次：${reader.failure}）` : ""}。实时读数已停止显示，正在自动重试；这不代表设备通信状态，历史查询不受此提示影响。`);
+  notice(`已超过 ${Math.round(limit / 1000)} 秒没有取得可用的后端数据${reader.failure ? `（最近一次：${reader.failure}）` : ""}。实时读数已停止显示，正在自动重试。`);
   draw();
 }, 500);
 
