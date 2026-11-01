@@ -56,7 +56,7 @@
 | `project` | 标题、额定容量、科研说明 |
 | `sources`、`points` | 本机端口、寄存器、数据类型／字节序、NodeId、单位、缩放、采样间隔、阈值 |
 | `derived`、`models` | 派生通道及其输入映射、热应力模型参数 |
-| `simulation` | 随机种子、生成间隔、控制端口与令牌变量名、`ledger_limit`、`validation_duration_seconds`、各点信号（基值、波幅、周期、噪声、相位）与场景 |
+| `simulation` | 随机种子、生成间隔、控制端口与令牌变量名、`ledger_limit`、`validation_duration_seconds`、各点信号（基值、波幅、周期、噪声、相位；写入上限压测及机组模型未覆盖的点用）与场景（变负荷的目标负荷与速率、局部超温的测点与加热倍数） |
 | `storage` | 开发预算、路径、批次预算 |
 | `ui` | 测点示意坐标、中文标签、展示精度、过程量、历史窗口 |
 
@@ -64,7 +64,7 @@
 
 ## 5. 场景
 
-模拟器有 8 个场景，同一时刻只有一个生效：`baseline`、`thermal_step`、`load_cycle`、`extreme_temperature`、`bad_quality`、`freeze`、`disconnect_modbus`、`disconnect_opcua`。**网页没有场景切换入口**（评估后不做：加按钮要改冻结的第15节页面与权限要求，并使整套连续运行与 G3 证据作废，见[模拟场景覆盖表](HTSG_V1_模拟场景覆盖表_v0.1.md)“认领结论”）；用手动脚本触发，**一次一个场景，不按顺序、不定时**：
+模拟器有 9 个场景，同一时刻只有一个生效：`baseline`、`load_ramp`、`hotspot_01`、`overload`、`extreme_temperature`、`bad_quality`、`freeze`、`disconnect_modbus`、`disconnect_opcua`。**网页没有场景切换入口**（评估后不做：加按钮要改冻结的第15节页面与权限要求，并使整套连续运行与 G3 证据作废，见[模拟场景覆盖表](HTSG_V1_模拟场景覆盖表_v0.1.md)“认领结论”）；用手动脚本触发，**一次一个场景，不按顺序、不定时**：
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\trigger_scenario.py --list      # 列出场景名与持续时间
@@ -75,8 +75,9 @@
 触发文件里只放一个 `scenario`（另可选 `research_config`，仅在研究配置不是 `config/research-sim.json` 时用）；写了多个场景或多余的键会被拒绝，未知场景名在发请求之前就报错并列出可用名。模拟器未运行、令牌不对时给出明确的错误信息；控制令牌从 `.local/research/simulation-secret.txt` 读取，不打印。（脚本只是对模拟控制接口 `POST http://127.0.0.1:14841/scenario` 的封装，仅本机回环、令牌认证。）
 
 - 切换在模拟器的**下一次生成**才生效，`POST /scenario` 立即返回的状态不证明协议端已应用（断连场景还要等服务器重配）。
-- 非基线场景各持续配置里的 `duration` 秒，之后自动回到基线：`thermal_step`、`extreme_temperature` 30 秒，`load_cycle` 120 秒，`bad_quality`、`freeze`、两个断连各 20 秒。断连场景是停掉相应服务器（连接被拒），不是“沉默”；`bad_quality` 与 `freeze` 各作用于2个点；`freeze` 保留值与 OPC UA 源时间戳，在接收时间基准下，读回的恒定值**不能单独证明设备故障**（freeze 作为“信号断联”的新判据尚未确定）。
-- 默认研究配置里 208 路信号都带噪声和振幅，**没有静止点**；要整源静止须用测量脚本的 quiet 配置，而不是场景。组合场景、请求超时、协议异常、缺号／Overflow、服务端修订参数等模拟器都产生不了（见[模拟场景覆盖表](HTSG_V1_模拟场景覆盖表_v0.1.md)）。
+- 非基线场景各持续配置里的 `duration` 秒，之后自动回到基线：`load_ramp`、`overload` 1200 秒，`hotspot_01` 600 秒，`extreme_temperature` 30 秒，`bad_quality`、`freeze`、两个断连各 20 秒。断连场景是停掉相应服务器（连接被拒），不是“沉默”；`bad_quality` 与 `freeze` 各作用于2个点；`freeze` 保留值与 OPC UA 源时间戳，在接收时间基准下，读回的恒定值**不能单独证明设备故障**（freeze 作为“信号断联”的新判据尚未确定）。
+- 模拟器默认按**低配机组模型**发数（修复轮15）：模拟测站当作水冷壁受热管段（外壁高于内壁），负荷慢起伏，流量、压力、给水温度、壁温、电桥按一阶惯性随负荷与局部热负荷联动。分两档（用户 11-01）：**演示档**（默认，`research_lab.py run` 用它）温度按 0.1 ℃ 取值、曲线变化明显，全场平均每秒约 85 个点有变化；**稳态档**（`python -m htsg.simulation --steady`，长时测试用）加死区，按真实机组的节奏慢变，平均每秒约 3 个点有变化。变负荷（12 MW/min 降到 510 MW 再升回）、测点01局部超温（外壁、温差负向、应变越限）、超负荷（690 MW，主汽压力与流量越限，负荷不到 693 MW 高限）三个工艺场景两档都有。数字是演示设定，不是真实机组的保证值。
+- **写入上限压测**（只在开发脚本里，`FieldSimulator(..., write_ceiling=True)`；测量、冒烟、韧性脚本固定用它，没有对外的开关）：208 路按各自信号独立变化，**每秒全部变化**。真实机组不会这样，它模拟的是网关把带噪声的原始值直接送上来时后端可能承受的最大写入量，即修复轮14 实测 4.1 GB/天的工况；工艺场景在此被拒绝，故障类场景照常。要整源静止须用测量脚本的 quiet 配置，而不是场景。组合场景、请求超时、协议异常、缺号／Overflow、服务端修订参数等模拟器都产生不了（见[模拟场景覆盖表](HTSG_V1_模拟场景覆盖表_v0.1.md)）。
 
 ## 6. 页面
 
