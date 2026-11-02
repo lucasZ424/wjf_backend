@@ -31,7 +31,7 @@ FROM_SOURCE = {
     "tools/simulator/trigger.cmd": "2-触发场景.cmd",
     "tools/simulator/cleanup.py": "sim/cleanup.py",
     "tools/simulator/cleanup.cmd": "3-清除模拟安装.cmd",
-    "tools/simulator/模拟手册.md": "模拟手册.md",
+    "tools/simulator/模拟手册.pdf": "模拟手册.pdf",
     "tools/release/verify.ps1": "verify.ps1",
 }
 

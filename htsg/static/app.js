@@ -842,8 +842,8 @@ function updateSelfcheck() {
     const n = negotiated[id];
     if (!n) return `<h3>${esc(id)}</h3><p class="muted">尚未取得协商结果（订阅未建立）。</p>`;
     const limit = n.queue_capability === "OVERWRITE_UNDETECTABLE"
-      ? badge("覆盖不可检测", "warn") + " 服务端把测点队列修订为 1：中间通知可能被覆盖且没有溢出标记；发布序号连续不能证明监控项无丢值。"
-      : badge("队列溢出可检测", "ok") + " 队列大于 1，溢出会被检测：只影响该点（记录溢出、该点重新计时），不重建订阅。";
+      ? badge("覆盖不可检测", "warn")
+      : badge("队列溢出可检测", "ok");
     return `<h3>${esc(id)}</h3>${table(["参数", "请求值", "服务端实际授予"], negotiatedRows(n))}<p>${limit}</p>${(n.violations || []).map(v => `<p class="log-error">不满足约束：${esc(v)}</p>`).join("")}`;
   }).join("") || '<p class="muted">没有 OPC UA 数据源。</p>');
   const archive = data?.archive, [where, kind] = TARGETS[archive?.target] || [archive?.target || "未知", "warn"], q = archive?.queue;

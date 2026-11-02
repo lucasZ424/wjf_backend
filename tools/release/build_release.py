@@ -44,7 +44,7 @@ FROM_SOURCE = {
     "config/production.base.json": "config/production.base.json",
     "config/production.template.json": "config/production.template.json",
     "requirements.runtime.lock": "requirements.runtime.lock",
-    "tools/release/安装与运维说明.md": "安装与运维说明.md",
+    "tools/release/安装与运维说明.pdf": "安装与运维说明.pdf",
     "tools/release/verify.ps1": "verify.ps1",
     "tools/release/install.py": "setup/install.py",
     "tools/release/install.cmd": "安装.cmd",
@@ -55,7 +55,7 @@ POINTSHEET = {
     "tools/pointsheet/launch.py": "launch.py",
     "tools/pointsheet/template.cmd": "1-生成点表模板.cmd",
     "tools/pointsheet/convert.cmd": "2-生成配置.cmd",
-    "tools/pointsheet/点表工具使用说明.md": "点表工具使用说明.md",
+    "tools/pointsheet/点表工具使用说明.pdf": "点表工具使用说明.pdf",
     "config/production.base.json": "production.base.json",
     "tools/release/verify.ps1": "verify.ps1",
 }
