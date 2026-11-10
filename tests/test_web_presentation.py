@@ -71,12 +71,16 @@ def test_readings_keep_a_fixed_number_of_decimals_by_unit_and_no_thousands_separ
     process = page.locator("#process-table")
     process.get_by_text("MW").first.wait_for()
     text = process.inner_text()
-    for shown in ["600.0 MW", "1850 t/h", "2117 t/h", "28.70 MPa", "309.0 ℃", "-0.050 kPa"]:
-        assert shown in text, (shown, text)  # 终版 §17.6: 1 / 0 / 2 / 1 / 3 decimals
+    for shown in ["600.0 MW", "1850 t/h", "2117 t/h", "309.0 ℃", "-0.050 kPa"]:
+        assert shown in text, (shown, text)  # 终版 §17.6: 1 / 0 / 1 / 3 decimals
     assert "1,850" not in text
     strain = page.locator("#strain-table").inner_text()
     assert re.search(r"\b0\.7\d{3} mV/V", strain), "the bridge signal with four decimals"
     assert re.search(r"(?<![\d.])\d+ με", strain) and not re.search(r"\d\.\d+ με", strain), "strain in whole microstrain"
+    # 修复轮18: MPa left the process table with the main steam pressure; 终版 §17.6 keeps two decimals for the thermal stress estimate
+    page.get_by_role("button", name="热应力分析").click()
+    page.locator("#trend-latest").get_by_text("MPa").wait_for()
+    assert re.search(r"(?<![\d.])\d+\.\d{2} MPa", page.locator("#trend-latest").inner_text()), "the stress with two decimals"
 
 
 def test_reloading_stays_on_the_page_in_front_and_signing_out_forgets_it(page, rig):
@@ -238,3 +242,18 @@ def test_a_backend_that_cannot_be_reached_is_said_in_words_not_by_the_browser(pa
     page.locator("#login-form button").click()
     page.locator("#login-error").get_by_text("连不上后端").wait_for()
     assert "fetch" not in page.locator("#login-error").inner_text().lower()
+
+
+def test_the_overview_names_the_process_quantities_of_the_new_table(page, rig):
+    """D5 (用户 11-05): the names an operator reads changed with the ids, or the new number stands under the old name."""
+    sign_in(page, rig)
+    table = page.locator("#process-table")
+    table.locator("tbody tr").first.wait_for()
+    rows = [r.locator("td").first.inner_text().strip() for r in table.locator("tbody tr").all()]
+    assert len(rows) == 7, rows
+    assert rows[:3] == ["机组负荷", "给水流量", "主汽流量"], "D1: in the order of the table"
+    text = page.locator("#workspace").inner_text()
+    assert "给水流量" in text and "主汽流量" in text
+    for old in ("水冷壁流量", "主汽压力", "过热蒸汽流量"):
+        assert old not in text, old
+    assert page.errors == []

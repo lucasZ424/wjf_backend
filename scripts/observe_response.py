@@ -58,7 +58,7 @@ from htsg.web import create_web_app  # noqa: E402
 logging.getLogger("asyncua").setLevel(logging.ERROR)
 logging.getLogger("pymodbus").setLevel(logging.CRITICAL)  # the libraries' own chatter would bury the timeline; the backend's facts come from its log
 DEFAULT_CONFIG = ROOT / ".local/observe/observe.json"
-FULL_WATCH = ["bridge_mvv_01", "strain_01", "strain_change_01", "temp_inner_01", "delta_t_01"]
+FULL_WATCH = ["bridge_mvv_01", "strain_01", "strain_change_01", "stress_01", "temp_wall_001"]
 SLAVES_WATCH = ["d1_a", "d1_b", "d2_a", "d2_b"]
 STATUS_OVERFLOW = 0x0480  # info type "data value" + info bit "Overflow" (OPC UA part 4, 7.34)
 
@@ -161,7 +161,7 @@ class Observation:
             await self.ua.start()
             self.nominal = {}
             for i, name in enumerate(UA_NAMES):
-                value = 480.0 + i * 0.01 if name.startswith("temp_inner") else 440.0 + i * 0.01 if name.startswith("temp_outer") else PROCESS[name]
+                value = 450.0 + i * 0.01 if name.startswith("temp_wall") else PROCESS[name]
                 self.nominal[name] = value
                 await self.ua.set(name, value)
             iserver = self.ua.server.iserver
@@ -355,7 +355,7 @@ class Observation:
                 sub._notification_seq += skip
             self.mark(f"SKIPPED {skip} notification sequence number(s) on the server (a message that never was)", effective=True)
         elif case == "ua_overflow":
-            point, burst = cfg.get("point", "temp_inner_01"), int(cfg.get("burst", 15))
+            point, burst = cfg.get("point", "temp_wall_001"), int(cfg.get("burst", 15))
             for i in range(burst):
                 await self.ua.set(point, self.nominal[point] + 0.5 * (i + 1))
             self.mark(f"WRITTEN {burst} values to {point} at once; the queue holds {cfg.get('queue', 10)}", effective=True)

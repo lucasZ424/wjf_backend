@@ -117,18 +117,20 @@ def test_extreme_is_strictly_beyond_the_limit_and_keeps_the_raw_value(value, ext
 # ------------------------------------------------------------- D10 operators
 
 
-def test_bridge_strain_and_thermal_proxy_match_independent_hand_calculation():
-    owner, rec = make_owner()
+def test_bridge_strain_and_stress_match_independent_hand_calculation():
+    """B4 on the small configuration; the result names its configuration and carries no estimate block any more (修复轮18)."""
+    stress = {"id": "st1", "inputs": ["s1"], "operation": "elastic_stress", "unit": "MPa", "model_id": "elastic"}
+    owner, rec = make_owner(small_config(extra_derived=[stress]))
     owner.accept(poll(1, {"b1": 0.708, "b2": -0.3}))
     # 0.708 mV/V x N(1) x 1000 / GF(6) = 118 microstrain; -0.3 -> -50
     assert GAUGE_FACTOR == 6
     assert rec.results("s1")[0].value == pytest.approx(118.0)
     assert rec.results("s2")[0].value == pytest.approx(-50.0)
-    owner.accept(notify([("ti", 500.0), ("to", 450.0)]))
-    # E=170000 MPa, alpha=1.35e-5 /K, restraint 0.5 -> 1.1475 MPa/K ; (500-450) K -> 57.375 MPa
-    sp = rec.results("sp")[0]
-    assert sp.value == pytest.approx(57.375)
-    assert sp.estimate["qualification"] == "ESTIMATED" and sp.config_id == owner.config.config_id
+    # E=170000 MPa x 118e-6 = 20.06 MPa
+    st = rec.results("st1")[0]
+    assert st.value == pytest.approx(20.06)
+    assert st.config_id == owner.config.config_id and not hasattr(st, "estimate")
+    assert "estimate" not in owner.channel_views()["st1"], "the current state no longer has the key: nothing reads it"
 
 
 def test_a_missing_modbus_input_is_not_borrowed_from_the_previous_round():
@@ -141,45 +143,47 @@ def test_a_missing_modbus_input_is_not_borrowed_from_the_previous_round():
 
 
 def peak_config(operation="maximum"):
-    points = [
-        {"id": f"t{i}{k}", "source": "ua", "unit": "degC", "node_id": f"ns=2;s=t{i}{k}"}
-        for i in (1, 2, 3)
-        for k in "io"
-    ]
+    """Three bridges, E = 200000 MPa so that 1 mV/V is 1000/6 με is 33.33 MPa: -1.2 mV/V is -200 με is -40 MPa."""
+    points = [{"id": "b3", "source": "mb", "unit": "mV/V", "address": 4, "data_type": "float32"}]
     derived = [
-        {"id": f"st{i}", "inputs": [f"t{i}i", f"t{i}o"], "operation": "thermal_stress", "unit": "MPa", "model_id": "thermal"}
-        for i in (1, 2, 3)
+        {"id": "s3", "inputs": ["b3"], "operation": "bridge_strain", "unit": "με"},
+        *({"id": f"st{i}", "inputs": [f"s{i}"], "operation": "elastic_stress", "unit": "MPa", "model_id": "elastic"} for i in (1, 2, 3)),
+        {"id": "peak", "inputs": ["st1", "st2", "st3"], "operation": operation, "unit": "MPa"},
     ]  # fmt: skip
-    derived.append({"id": "peak", "inputs": ["st1", "st2", "st3"], "operation": operation, "unit": "MPa"})
-    return small_config(points, derived)
+    return small_config(points, derived, models=[{"id": "elastic", "young_mpa": 200000}])
 
 
 def test_peak_is_the_signed_maximum_and_needs_every_estimate():
     owner, rec = make_owner(peak_config())
-    # all three pairs cool (outer hotter): every stress is negative, the peak is the least negative
-    owner.accept(notify([("t1i", 400.0), ("t1o", 420.0), ("t2i", 400.0), ("t2o", 410.0), ("t3i", 400.0), ("t3o", 440.0)]))
-    stress = {p: rec.results(p)[-1].value for p in ("st1", "st2", "st3")}
-    assert all(v < 0 for v in stress.values())
-    assert rec.results("peak")[-1].value == max(stress.values()), "signed maximum, not the largest magnitude"
-    owner.accept(notify([("t2i", 400.0, r.BAD, 0x80000000)], seq=2, wall=1011.0, mono=111.0))
+    owner.accept(poll(1, {"b1": -1.2, "b2": -0.6, "b3": -1.8}))  # -40, -20, -60 MPa
+    assert rec.results("peak")[-1].value == pytest.approx(-20.0), "signed maximum, not the largest magnitude"
+    owner.accept(poll(2, {"b1": -1.2, "b3": -1.8}))  # the second bridge does not answer
     peak = rec.results("peak")[-1]
     assert (peak.status, peak.reason) == (r.RESULT_NA, "INPUT_UNAVAILABLE"), "a missing estimate is not read as 0"
 
 
-def test_the_absolute_peak_is_the_largest_magnitude_with_its_sign_and_needs_every_estimate():
-    """修复轮15 (审核 2.6): with heated tubes every stress proxy is negative, and the signed maximum would show the
-    quietest pair.  The absolute peak shows the most stressed one and keeps its sign; `maximum` keeps its own meaning."""
+@pytest.mark.parametrize(
+    ("bridges", "stresses", "peak"),
+    [
+        pytest.param((-1.2, 1.2, 0.0), (-40.0, 40.0, 0.0), -40.0, id="B9-equal-magnitudes-the-first-in-channel-order-a-signed-maximum-says-plus-40"),
+        pytest.param((1.2, -1.2, 0.0), (40.0, -40.0, 0.0), 40.0, id="B9-the-same-the-other-way-round"),
+        pytest.param((-1.5, 1.2, 0.0), (-50.0, 40.0, 0.0), -50.0, id="the-largest-magnitude-keeps-its-sign"),
+        pytest.param((0.0, 0.3, -0.6), (0.0, 10.0, -20.0), -20.0, id="the-last-can-be-the-largest"),
+    ],
+)
+def test_the_absolute_peak_is_the_largest_magnitude_with_its_sign_the_first_of_equals(bridges, stresses, peak):
+    """修复轮15 (审核 2.6), B9: the absolute peak shows the most stressed bridge and keeps its sign; `maximum` keeps its own meaning."""
     owner, rec = make_owner(peak_config("absolute_peak"))
-    owner.accept(notify([("t1i", 400.0), ("t1o", 420.0), ("t2i", 400.0), ("t2o", 410.0), ("t3i", 400.0), ("t3o", 440.0)]))
-    stress = {p: rec.results(p)[-1].value for p in ("st1", "st2", "st3")}
-    assert rec.results("peak")[-1].value == stress["st3"] < 0, "the most negative estimate, sign kept"
-    owner.accept(notify([("t2i", 470.0)], seq=2, wall=1011.0, mono=111.0))  # +60 K: a positive estimate wins by magnitude
-    assert rec.results("peak")[-1].value == rec.results("st2")[-1].value > 0
-    owner.accept(notify([("t1i", 380.0), ("t2i", 340.0), ("t3i", 440.0)], seq=3, wall=1012.0, mono=112.0))  # -40, -70, 0
-    owner.accept(notify([("t2i", 450.0)], seq=4, wall=1013.0, mono=113.0))  # st1 -40 K, st2 +40 K: equal magnitudes
-    st1, st2 = rec.results("st1")[-1].value, rec.results("st2")[-1].value
-    assert st1 == -st2 and rec.results("peak")[-1].value == st1, "a tie goes to the first input in channel order"
-    owner.accept(notify([("t3i", 400.0, r.BAD, 0x80000000)], seq=5, wall=1014.0, mono=114.0))
+    owner.accept(poll(1, dict(zip(("b1", "b2", "b3"), bridges, strict=True))))
+    assert [rec.results(f"st{i}")[-1].value for i in (1, 2, 3)] == pytest.approx(list(stresses))
+    assert rec.results("peak")[-1].value == pytest.approx(peak)
+
+
+def test_the_absolute_peak_needs_every_estimate():
+    """B5: a peak over seven bridges of eight would look like the whole picture."""
+    owner, rec = make_owner(peak_config("absolute_peak"))
+    owner.accept(poll(1, {"b1": -1.2, "b2": 1.2, "b3": 0.0}))
+    owner.accept(poll(2, {"b1": -1.2, "b2": 1.2}))
     peak = rec.results("peak")[-1]
     assert (peak.status, peak.reason) == (r.RESULT_NA, "INPUT_UNAVAILABLE"), "a missing estimate is not read as 0"
 

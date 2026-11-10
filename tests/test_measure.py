@@ -25,7 +25,7 @@ async def test_a_steady_full_scale_run_leaves_nothing_unexplained_and_no_backlog
     async with measure.Lab(stats_interval=2) as lab:
         burst = await measure.initial_burst(lab)
         steady = await measure.steady(lab, 8)
-        assert len(lab.views()) == 417 and lab.everything_valid()
+        assert len(lab.views()) == 255 and lab.everything_valid()  # A1, I5
     for report in (burst, steady):
         assert report["unexplained"] == {"ingress_dropped": 0, "queue_rejected": 0, "refused": 0, "failures": 0}, report
     assert burst["archive_caught_up_after_seconds"] is not None and burst["archive_caught_up_after_seconds"] < 10

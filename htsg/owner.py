@@ -1414,7 +1414,6 @@ class Owner:
                 "status": out.status if known else rec.RESULT_NA,
                 "reason": out.reason if known else "UNKNOWN",
                 "extreme": bool(known and out.extreme),
-                "estimate": out.estimate if known else None,
                 "time": last.at_wall if last else None,  # the batch of the last CHANGE; equal results are not re-sent
                 "valid": bool(known and out.status == rec.RESULT_OK and not out.extreme),
                 **self._fault_view(pid),
@@ -1559,7 +1558,6 @@ class Owner:
             at_wall=batch.wall,
             extreme=outcome.extreme,
             basis=outcome.basis,
-            estimate=outcome.estimate,
         )
         state.emitted_key, state.emitted = key, result
         return result

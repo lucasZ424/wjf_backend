@@ -32,6 +32,23 @@ def rig(tmp_path):
     return SimpleNamespace(config=config, accounts=accounts, owner=owner, app=app, headers={"Authorization": "Bearer " + credential})
 
 
+def test_the_reading_at_full_scale_is_255_channels_and_says_nothing_of_a_removed_estimate(tmp_path):
+    """A7, 终版 §13.3 and 修复轮18: the interface follows the configuration, and the derived quantities lost a key nobody read."""
+    from live_support import BRIDGES, FULL
+
+    accounts = Accounts(tmp_path / "accounts.json")
+    headers = {"Authorization": "Bearer " + accounts.create("viewer", "viewer")}
+    owner = Owner(FULL, WALL0, MONO0, run_id="snap")
+    for source in ("mb_field", "ua_field"):
+        owner.begin_generation(source, 1, WALL0, MONO0)
+    owner.accept(poll(1, {b: 0.6 for b in BRIDGES}, source="mb_field"))
+    with TestClient(create_web_app(config=FULL, accounts=accounts, owner=owner)) as client:
+        channels = client.get("/api/snapshot", headers=headers).json()["channels"]
+    assert len(channels) == 255
+    assert set(channels) == {p.id for p in FULL.points} | {d.id for d in FULL.derived}
+    assert "estimate" not in channels["stress_01"] and channels["stress_01"]["valid"]
+
+
 def test_one_reading_is_the_whole_current_state_and_names_each_sample(tmp_path):
     t = rig(tmp_path)
     t.owner.accept(notify([("ti", 500.0), ("to", 450.0)], wall=WALL0 + 1, mono=MONO0 + 1))

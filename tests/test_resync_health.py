@@ -455,7 +455,7 @@ async def test_the_waiting_event_follows_create_subscription_without_waiting_for
 
     async def slow_items(self, *args, **kw):
         events.append("items_start")
-        await asyncio.sleep(0.4)  # the 200-item case: creating the items takes a while
+        await asyncio.sleep(0.4)  # the 222-item case: creating the items takes a while
         result = await original_items(self, *args, **kw)
         events.append("items_done")
         return result

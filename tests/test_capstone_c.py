@@ -1,6 +1,6 @@
 """Capstone C: protocols to state, full scale, real servers (方案第 5 节).
 
-Real pymodbus and asyncua servers; 8 Bridge registers plus 200 monitored items; owner, ordered ingress
+Real pymodbus and asyncua servers; 8 Bridge registers plus 222 monitored items; owner, ordered ingress
 and both acquirers wired as the runtime wires them.  Persistence is an in-memory commit sink here.
 Deterministic gap / callback failures are covered at the library boundary in test_ua_channel.py.
 """
@@ -8,6 +8,7 @@ Deterministic gap / callback failures are covered at the library boundary in tes
 import asyncio
 import time
 
+import pytest
 from live_support import BRIDGES, UA_NAMES, Rig
 
 from htsg import records as r
@@ -18,21 +19,21 @@ async def test_full_scale_nominal_run_stays_quiet_when_nothing_changes():
     async with rig:
         await rig.until(
             lambda: all(rig.owner.points[n].obs is not None for n in [*UA_NAMES, *BRIDGES]),
-            timeout=30, why="all 208 inputs received",
+            timeout=30, why="all 230 inputs received",
         )  # fmt: skip
-        assert rig.ua.subscription_count == 1, "200 monitored items live in ONE subscription"
+        assert rig.ua.subscription_count == 1, "I1: 222 monitored items live in ONE subscription"
         negotiated = rig.uaa.negotiated
-        assert len(negotiated.items) == 200 and negotiated.violations == []
+        assert len(negotiated.items) == 222 and negotiated.violations == []  # I1
         assert negotiated.requested["queue_size"] == 10 and negotiated.keepalive_count == rig.timing.ua_keepalive_count
-        # derived channels follow the inputs: 8 strains, 96 differences, 96 stress proxies, 1 peak
+        # derived channels follow the inputs: 8 strains, 8 stresses, 1 peak; the changes wait for a second round
         await rig.until(lambda: all(rig.owner.results[f"strain_{i:02d}"].current.status == "OK" for i in range(1, 9)),
                         timeout=10, why="strains")  # fmt: skip
         await rig.until(lambda: rig.owner.results["thermal_stress_peak"].current
                         and rig.owner.results["thermal_stress_peak"].current.status == "OK", timeout=10, why="peak")  # fmt: skip
         ok = sum(1 for s in rig.owner.results.values() if s.current and s.current.status == "OK")
-        assert ok >= 8 + 96 + 96 + 1, ok
+        assert ok >= 8 + 8 + 1, ok
 
-        # nothing changes for a while: the cache is NOT re-reported every second (终版 §3.3)
+        # I2: nothing changes for a while: the cache is NOT re-reported every second (终版 §3.3)
         before = len(rig.observations("ua_field"))
         await asyncio.sleep(4.5)
         assert len(rig.observations("ua_field")) == before, "no per-second replay of unchanged OPC UA values"
@@ -40,12 +41,18 @@ async def test_full_scale_nominal_run_stays_quiet_when_nothing_changes():
         assert rig.uaa.channel.stats["keepalive"] >= 1
 
         # one real change -> exactly one new observation for that point, derived values follow
-        await rig.ua.set("temp_inner_01", 495.0)
-        await rig.until(lambda: rig.owner.points["temp_inner_01"].obs.value == 495.0, why="change delivered")
-        new = [o for o in rig.observations("ua_field")[before:] if o.point_id == "temp_inner_01"]
+        results = len([x for g in rig.groups(r.GROUP_BATCH) if g.source_id == "ua_field" for x in g.results])
+        await rig.ua.set("temp_wall_001", 495.0)
+        await rig.until(lambda: rig.owner.points["temp_wall_001"].obs.value == 495.0, why="change delivered")
+        new = [o for o in rig.observations("ua_field")[before:] if o.point_id == "temp_wall_001"]
         assert [o.value for o in new] == [495.0]
-        assert rig.owner.results["delta_t_01"].current.value == rig.owner.points["temp_inner_01"].obs.value - \
-            rig.owner.points["temp_outer_01"].obs.value  # fmt: skip
+        assert len([x for g in rig.groups(r.GROUP_BATCH) if g.source_id == "ua_field" for x in g.results]) == results == 0, "C6: nothing rests on a wall"
+
+        # B4 on the real protocol: 0.708 mV/V is 118 με is 20.06 MPa, in the round that read it
+        rig.mb.values[2] = 0.708
+        await rig.until(lambda: rig.owner.points["bridge_mvv_03"].obs.value == pytest.approx(0.708), why="the bridge was read")
+        assert rig.owner.results["strain_03"].current.value == pytest.approx(118.0)
+        assert rig.owner.results["stress_03"].current.value == pytest.approx(20.06)
 
         # the library is not allowed to reconnect or recreate on its own
         assert rig.uaa.gen == 1 and rig.owner.health["resyncs"] == 0 and rig.mba.gen == 1
@@ -78,14 +85,16 @@ async def test_modbus_timeout_static_values_and_recovery_at_full_scale():
 async def test_silence_inside_the_window_recovers_the_same_generation_and_longer_silence_rebuilds():
     rig = Rig(use_proxy=True)
     async with rig:
-        await rig.until(lambda: rig.owner.sources["ua_field"].state == "VALID" and rig.owner.points["temp_inner_96"].obs,
+        await rig.until(lambda: rig.owner.sources["ua_field"].state == "VALID" and rig.owner.points["temp_wall_215"].obs,
                         timeout=30, why="running")  # fmt: skip
         await asyncio.sleep(1.2)
         recoveries = len(rig.groups(r.GROUP_RECOVERY))
         rig.proxy.pause()  # silence, not a disconnect
         await rig.until(lambda: rig.owner.sources["ua_field"].state == "EXPIRED", timeout=8, why="3 s expiry")
         assert rig.owner.health["resyncs"] == 0 and rig.uaa.gen == 1, "expiry never rebuilds"
-        assert rig.owner.results["delta_t_01"].current.reason == "SOURCE_INVALID"
+        views = rig.owner.channel_views()  # I3, what used to be seen on a difference: the source's points say why, the bridges go on
+        assert (views["temp_wall_001"]["valid"], views["temp_wall_001"]["reason"]) == (False, "SOURCE_EXPIRED")
+        assert views["strain_01"]["valid"] and views["stress_01"]["valid"]
         rig.proxy.resume()  # inside the 3-6 s window: same subscription resumes with continuous numbers
         await rig.until(lambda: rig.owner.sources["ua_field"].state == "VALID", timeout=8, why="same-generation recovery")
         s = rig.owner.sources["ua_field"]
@@ -93,7 +102,7 @@ async def test_silence_inside_the_window_recovers_the_same_generation_and_longer
         assert len(rig.groups(r.GROUP_RECOVERY)) == recoveries + 1
         group = rig.groups(r.GROUP_RECOVERY)[-1]
         assert {o.point_id for o in group.observations if o.origin == r.ORIGIN_ASSERTION} >= set(UA_NAMES)
-        assert rig.owner.results["delta_t_01"].current.status == "OK"
+        assert rig.owner.channel_views()["temp_wall_001"]["valid"]
 
         # longer than the 6 s threshold: silence itself triggers the rebuild on a new generation
         rig.proxy.pause()

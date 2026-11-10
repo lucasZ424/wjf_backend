@@ -1,6 +1,6 @@
 """D45: the runtime assembles the batch-driven chain and nothing else (方案模块 H).
 
-Real Modbus and OPC UA servers at full scale (8 bridges, 200 monitored items), real PostgreSQL archives, the
+Real Modbus and OPC UA servers at full scale (8 bridges, 222 monitored items), real PostgreSQL archives, the
 real owner, queue and web application.  Why it matters: this is the wiring the delivered system runs on, so
 what the pieces promise one by one - ordered ingress, whole-group commits, realtime state that does not wait for
 the database, an honest end of the run - must also hold once they are connected.
@@ -15,7 +15,7 @@ from pathlib import Path
 import httpx
 import pytest
 from archive_support import groups_in_order, samples
-from live_support import PROCESS, UA_NAMES, full_config
+from live_support import NOMINAL, UA_NAMES, full_config
 from protocol_support import FieldModbus, FieldUa
 from test_archive_router import Disks
 
@@ -37,8 +37,7 @@ class Field:
         self.mb, self.ua = FieldModbus(), FieldUa(UA_NAMES)
         await self.mb.start()
         await self.ua.start()
-        for i, name in enumerate(UA_NAMES):
-            value = 480.0 + i * 0.01 if name.startswith("temp_inner") else 440.0 + i * 0.01 if name.startswith("temp_outer") else PROCESS[name]
+        for name, value in NOMINAL.items():
             await self.ua.set(name, value)
         self.config = full_config(self.mb.port, self.ua.endpoint, TIMING)
         return self
@@ -78,8 +77,8 @@ async def test_the_runtime_reads_both_protocols_archives_serves_the_history_and_
         runtime, app, credentials = build(field, tmp_path, primary, emergency)
         await runtime.start()
         try:
-            await until(lambda: all(v["valid"] for v in runtime.owner.channel_views().values()), "all 208 inputs and 209 results are valid")
-            assert len(runtime.owner.channel_views()) == 417
+            await until(lambda: all(v["valid"] for v in runtime.owner.channel_views().values()), "all 230 inputs and 25 results are valid")
+            assert len(runtime.owner.channel_views()) == 255
             await until(lambda: runtime.queue.depth == 0 and runtime.queue.stats["committed"] > 3, "the archive has written")
             headers = {"Authorization": "Bearer " + credentials["viewer"]}
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://htsg") as client:
@@ -89,21 +88,22 @@ async def test_the_runtime_reads_both_protocols_archives_serves_the_history_and_
                 assert granted["keepalive_count"] == TIMING.ua_keepalive_count and granted["requested"]["queue_size"] == 10
                 assert granted["violations"] == [], "what the server really granted was checked against the limits"
                 comm = health["communication"]  # D44d: the same response carries the communication state
-                assert len(comm["inputs"]) == 208 and all(row["observation_id"] and row["valid"] for row in comm["inputs"])
+                assert len(comm["inputs"]) == 230 and all(row["observation_id"] and row["valid"] for row in comm["inputs"])
                 assert {s: v["connect_failures"] for s, v in health["status"]["sources"].items()} == {"mb_field": 0, "ua_field": 0}
                 assert {(e["source_id"], e["event"]) for e in comm["log"]["entries"]} >= {
                     (s, e) for s in ("mb_field", "ua_field") for e in ("NEW_GENERATION", "FIRST_COMM")
                 } and comm["log"]["incomplete"] is False, "each source: connected, then its first valid communication"
                 assert {s: v["archive"] for s, v in health["archive"]["sources"].items()} == {"mb_field": "OK", "ua_field": "OK"}
                 assert health["archive"]["queue"]["committed"] > 0 and health["archive"]["queue"]["failures"] == 0
-                assert len((await client.get("/api/channels", headers=headers)).json()["channels"]) == 417
-                query = {"center": time.time(), "seconds": 120, "points": "bridge_mvv_01,strain_01,temp_inner_01,delta_t_01"}
+                assert len((await client.get("/api/channels", headers=headers)).json()["channels"]) == 255  # A7
+                assert len((await client.get("/api/snapshot", headers=headers)).json()["channels"]) == 255  # A7
+                query = {"center": time.time(), "seconds": 120, "points": "bridge_mvv_01,strain_01,temp_wall_001,stress_01"}
                 body = (await client.get("/api/replay", params=query, headers=headers)).json()
                 rows = {pid: [x for s in body["channels"][pid]["segments"] for x in s["rows"]] for pid in body["channels"]}
                 assert len(rows["bridge_mvv_01"]) >= 2, "a Modbus round is stored every second"
-                still = rows["temp_inner_01"]
+                still = rows["temp_wall_001"]
                 with primary.session() as conn:  # receipts are in their batch's order; a restatement is -1, a baseline last
-                    receipts = samples(conn, "c.point_id='temp_inner_01' AND s.item BETWEEN 0 AND 32766")
+                    receipts = samples(conn, "c.point_id='temp_wall_001' AND s.item BETWEEN 0 AND 32766")
                 assert len(receipts) == 1, "a value that never changes is stored once ..."
                 assert len({x["value"] for x in still}) == 1, "... then only restated"
                 by_time = {x["time"]: x["value"] for x in rows["bridge_mvv_01"]}
@@ -115,13 +115,44 @@ async def test_the_runtime_reads_both_protocols_archives_serves_the_history_and_
                     near = min(by_time, key=lambda t, at=strain["time"]: abs(t - at))
                     assert abs(near - strain["time"]) < 0.1, (strain, sorted(by_time))
                     assert strain["value"] == pytest.approx(by_time[near] * 1000 / 6), "a result with ITS input"
-                inner, outer = 480.0 + UA_NAMES.index("temp_inner_01") * 0.01, 440.0 + UA_NAMES.index("temp_outer_01") * 0.01
-                assert rows["delta_t_01"][0]["value"] == pytest.approx(inner - outer)
+                # FieldModbus holds the first bridge at 0.5 mV/V: 83.33 με, x 0.17 MPa per με
+                assert rows["stress_01"][0]["value"] == pytest.approx(0.5 * 1000 / 6 * 0.17), "B4 through the whole chain"
         finally:
             await runtime.stop()
     stop = (runtime.health["shutdown_incomplete"], runtime.health["run_end_status"], runtime.health["failed_sources"])
     assert stop == (False, "COMMITTED", []), "the end of the run was confirmed, so every source had settled before it"
     assert kinds(primary, "RUN_START") == 1 and kinds(primary, "RUN_END") == 1, "the run is registered and ended"
+
+
+async def test_a_stop_and_a_restart_on_the_same_databases_at_full_scale_leaves_a_history_without_doubles_or_holes(archive_db_factory, tmp_path):
+    """I6, 终版 §5: this is how a power cut ends for the operator - the process starts again by itself on what is there.  A start
+    that fails on its own earlier data, or writes a second copy of it, would spoil the one thing a restart is for."""
+    primary, emergency = archive_db_factory("primary"), archive_db_factory("emergency")
+    async with Field() as field:
+        for attempt in (1, 2):
+            field.mb.values[0] = 0.5 + 0.01 * attempt  # each run sees its own value of a bridge; the walls keep theirs
+            router = ArchiveRouter(field.config, primary, emergency, disk_usage=Disks())
+            runtime = Runtime(field.config, router, Accounts(tmp_path / f"accounts{attempt}.json"), number_file=tmp_path / "bucket_number.json")
+            await runtime.start()
+            try:
+                await until(lambda: all(v["valid"] for v in runtime.owner.channel_views().values()), "all channels valid")
+                await until(lambda: runtime.queue.depth == 0 and runtime.queue.stats["committed"] > 3, "the archive has written")
+                await asyncio.sleep(4)
+            finally:
+                await runtime.stop()
+            assert (runtime.health["shutdown_incomplete"], runtime.health["run_end_status"]) == (False, "COMMITTED"), attempt
+    with primary.session() as conn:
+        runs = conn.execute("SELECT run_id,end_reason FROM run").fetchall()
+        assert [x["end_reason"] for x in runs] == ["NORMAL", "NORMAL"], "two runs, each ended properly"
+        assert conn.execute("SELECT count(*) AS n FROM archive_gap").fetchone()["n"] == 0, "no hole inside either run"
+        doubles = conn.execute("SELECT count(*) AS n FROM (SELECT 1 FROM sample GROUP BY channel,run,seg,t,item HAVING count(*) > 1) x").fetchone()["n"]
+        assert doubles == 0, "and nothing was written twice"
+        walls = samples(conn, "c.point_id='temp_wall_001' AND s.item BETWEEN 0 AND 32766")
+        assert len(walls) == 2 and {x["run_id"] for x in walls} == {x["run_id"] for x in runs}, "a still wall: once per run"
+        for run in runs:
+            rounds = [x["t"] for x in samples(conn, "c.point_id='bridge_mvv_01' AND n.run_id=%s", (run["run_id"],))]
+            assert len(rounds) >= 3, run
+            assert max(b - a for a, b in zip(rounds, rounds[1:], strict=False)) < 2.5, "a round a second, no hole inside the run"
 
 
 async def test_realtime_state_does_not_wait_for_a_database_that_cannot_be_reached(tmp_path, monkeypatch):

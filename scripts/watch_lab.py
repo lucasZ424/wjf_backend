@@ -30,8 +30,8 @@ import trigger_scenario as trig  # noqa: E402
 
 from htsg.config import load_settings  # noqa: E402
 
-INPUTS = "bridge_mvv_01,temp_inner_01,load_mw"
-CHANNELS = "bridge_mvv_01,strain_01,strain_change_01,temp_inner_01,delta_t_01,load_mw"
+INPUTS = "bridge_mvv_01,temp_wall_001,load_mw"
+CHANNELS = "bridge_mvv_01,strain_01,strain_change_01,stress_01,temp_wall_001,load_mw"
 
 
 class Lab:

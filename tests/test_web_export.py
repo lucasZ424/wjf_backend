@@ -82,7 +82,7 @@ def open_history(page, rig):
     page.locator("#replay-settings").wait_for()
 
 
-def query(page, center=CENTER, seconds=100, points=("temp_inner_06",)):
+def query(page, center=CENTER, seconds=100, points=("temp_wall_006",)):
     page.locator("#replay-center").fill(center)
     page.locator("#replay-center").dispatch_event("change")
     page.locator("#replay-seconds").fill(str(seconds))
@@ -112,15 +112,15 @@ def test_the_file_holds_exactly_the_rows_on_screen_and_the_settings_that_made_th
     requests = []
     page.on("request", lambda r: requests.append(r.url) if "/api/replay" in r.url else None)
     open_history(page, replay_rig)
-    query(page, points=("temp_inner_06", "temp_inner_07"))
+    query(page, points=("temp_wall_006", "temp_wall_007"))
     asked = len(requests)
     name, (meta, header, rows) = export(page, tmp_path)
     assert len(requests) == asked, "exporting asks the database for nothing"
-    assert name.endswith(".csv") and "temp_inner_06" in name
+    assert name.endswith(".csv") and "temp_wall_006" in name
     facts = {m[0]: m[1] for m in meta if len(m) == 2}
     assert facts["时区"].startswith("Asia/Shanghai") and facts["中心时间"] == "1970-01-01T08:17:10.000+08:00"
     assert facts["窗口长度(秒)"] == "100" and facts["每通道行数上限"] == "10000" and facts["是否达到行数上限"] == "否"
-    assert facts["查询通道"] == "temp_inner_06 temp_inner_07" and facts["导出通道"] == "temp_inner_06"
+    assert facts["查询通道"] == "temp_wall_006 temp_wall_007" and facts["导出通道"] == "temp_wall_006"
     assert facts["查询时刻"].endswith("+08:00") and float(facts["查询时刻(UTC秒)"]) > 1.6e9
     gaps = [m[1] for m in meta if m[0] == "归档缺口"]
     assert any("ua_field" in g and "QUEUE_FULL" in g and "1970-01-01T08:17:07" in g for g in gaps), gaps
@@ -139,10 +139,10 @@ def test_the_file_holds_exactly_the_rows_on_screen_and_the_settings_that_made_th
     bad = [r for r in rows if r[col["是否有效"]] == "否"]
     assert len(bad) == 1 and "BAD" in bad[0][col["质量/状态"]] and "0x80350000" in bad[0][col["质量/状态"]]
     # the other channel on screen gives the other file, again equal to its table
-    page.locator("#replay-focus").select_option("temp_inner_07")
-    page.wait_for_function("document.querySelector('#replay-focus')?.value === 'temp_inner_07' && document.querySelector('#replay-records tbody tr')")
+    page.locator("#replay-focus").select_option("temp_wall_007")
+    page.wait_for_function("document.querySelector('#replay-focus')?.value === 'temp_wall_007' && document.querySelector('#replay-records tbody tr')")
     _, (_, _, rows7) = export(page, tmp_path)
-    assert len(rows7) == len(shown(page)[0]) and {r[0] for r in rows7} == {"temp_inner_07"}
+    assert len(rows7) == len(shown(page)[0]) and {r[0] for r in rows7} == {"temp_wall_007"}
     times = [float(r[header.index("生效时间(UTC秒)")]) for r in rows7]
     assert times == [1001.0, 1029.0, 1047.0], "the value before the gap, and the restatements that open the next segments"
     assert page.errors == []
@@ -150,7 +150,7 @@ def test_the_file_holds_exactly_the_rows_on_screen_and_the_settings_that_made_th
 
 def test_a_held_value_is_exported_as_held_with_its_own_time_never_as_a_new_sample(page, replay_rig, tmp_path):
     open_history(page, replay_rig)
-    query(page, center="1970-01-01T08:17:13", seconds=4, points=("temp_outer_01",))  # [1031, 1035]
+    query(page, center="1970-01-01T08:17:13", seconds=4, points=("temp_wall_001",))  # [1031, 1035]
     _, (_, header, rows) = export(page, tmp_path)
     (row,) = rows
     col = {n: header.index(n) for n in header}

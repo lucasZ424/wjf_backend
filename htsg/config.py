@@ -8,11 +8,20 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .research_config import UI, Project, Simulation, validate_research
-from .thermal import ThermalModel
 
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, allow_inf_nan=False)
+
+
+class StressModel(StrictModel):
+    """The modulus that turns a converted strain into a stress estimate (修复轮18).  Constant, not a function of temperature."""
+
+    id: str = Field(min_length=1)
+    young_mpa: float = Field(170000, gt=0, le=1000000)
+    version: str = Field("1", min_length=1)
+    basis: str = Field("synthetic research assumption", min_length=1)
+    reference_urls: tuple[str, ...] = ()
 
 
 def check_fault_band(item):
@@ -119,7 +128,7 @@ class Derived(StrictModel):
         "absolute_peak",
         "unconfigured",
         "bridge_strain",
-        "thermal_stress",
+        "elastic_stress",
     ]
     model_id: str | None = None
     unit: str
@@ -247,7 +256,7 @@ class Settings(StrictModel):
     project: Project = Project()
     simulation: Simulation = Simulation()
     ui: UI = UI()
-    models: tuple[ThermalModel, ...] = ()
+    models: tuple[StressModel, ...] = ()
 
     @model_validator(mode="after")
     def references(self):
@@ -281,8 +290,8 @@ class Settings(StrictModel):
                 check_node_id(point)
         if sum(sources[x.source].kind == "modbus" for x in self.points) > 8:
             raise ValueError("Modbus Bridge channel capacity is 8")
-        if sum(sources[x.source].kind == "opcua" for x in self.points) > 200:
-            raise ValueError("OPC UA channel capacity is 200")
+        if sum(sources[x.source].kind == "opcua" for x in self.points) > 222:
+            raise ValueError("OPC UA channel capacity is 222")
         for derived in self.derived:
             if (
                 derived.extreme_low is not None
@@ -300,21 +309,18 @@ class Settings(StrictModel):
                     or derived.offset != 0
                 ):
                     raise ValueError("bridge_strain needs one mV/V input, με output and identity scaling")
-            elif derived.operation == "thermal_stress":
+            elif derived.operation == "elastic_stress":
                 if (
                     derived.model_id not in models
-                    or len(derived.inputs) != 2
-                    or any(units.get(x) not in ("°C", "degC", "C") for x in derived.inputs)
-                    or len({units.get(x) for x in derived.inputs}) != 1
+                    or len(derived.inputs) != 1
+                    or units.get(derived.inputs[0]) != "με"
                     or derived.unit != "MPa"
                     or derived.scale != 1
                     or derived.offset != 0
                 ):
-                    raise ValueError(
-                        "thermal_stress needs a model, two Celsius inputs, MPa and identity scaling"
-                    )
+                    raise ValueError("elastic_stress needs a model, one με input, MPa and identity scaling")
             elif derived.model_id is not None:
-                raise ValueError("model_id is only supported by thermal_stress")
+                raise ValueError("model_id is only supported by elastic_stress")
             if not set(derived.inputs) <= known or (
                 not derived.inputs and derived.operation != "unconfigured"
             ):

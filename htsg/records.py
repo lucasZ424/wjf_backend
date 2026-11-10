@@ -225,7 +225,6 @@ class Result:
     at_wall: float
     extreme: bool = False
     basis: dict | None = None  # e.g. strain_change: current and previous planned tick
-    estimate: dict | None = None
     origin: str = ORIGIN_RECEIVED
     orig_id: str | None = None
     asserted_wall: float | None = None

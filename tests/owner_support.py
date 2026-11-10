@@ -4,7 +4,7 @@ from htsg import records as r
 from htsg.config import Settings
 from htsg.owner import Owner
 
-MODEL = {"id": "thermal", "version": "t1", "basis": "test"}
+MODEL = {"id": "elastic", "version": "t1", "basis": "test"}  # young_mpa: the default of the model, 170000
 
 
 def small_config(extra_points=(), extra_derived=(), **over):
@@ -23,7 +23,9 @@ def small_config(extra_points=(), extra_derived=(), **over):
         {"id": "c1", "inputs": ["s1"], "operation": "change", "unit": "με", "extreme_low": -10000, "extreme_high": 10000},
         {"id": "c2", "inputs": ["s2"], "operation": "change", "unit": "με", "extreme_low": -10000, "extreme_high": 10000},
         {"id": "dt", "inputs": ["ti", "to"], "operation": "difference", "unit": "degC"},
-        {"id": "sp", "inputs": ["ti", "to"], "operation": "thermal_stress", "unit": "MPa", "model_id": "thermal"},
+        # 修复轮18: the plain algebra of 终版 §8.2 lives on in this configuration, which the default point table no longer has
+        # (a second result of the same two inputs, moving with `dt`); the stress chain is added by a test that wants it
+        {"id": "d2", "inputs": ["ti", "to"], "operation": "difference", "unit": "degC", "scale": 2},
         *extra_derived,
     ]  # fmt: skip
     data = {

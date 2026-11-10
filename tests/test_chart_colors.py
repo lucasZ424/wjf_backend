@@ -26,11 +26,11 @@ def judge(cases):
 
 def test_the_replay_chart_judges_a_limit_as_the_fault_tracker_does():
     wall = {"high": 490, "low": None}
-    difference = {"high": 55, "low": -55}
+    strain = {"high": 690, "low": -690}  # either side: 修复轮18 a strain, the temperature difference is gone
     process = {"high": None, "low": 925}
     none = {"high": None, "low": None}
     assert judge([[wall, 490.1], [wall, 490], [wall, -1000]]) == [True, False, False], "strictly above a high limit"
-    assert judge([[difference, -55.1], [difference, -55], [difference, 55.1]]) == [True, False, True], "either side"
+    assert judge([[strain, -690.1], [strain, -690], [strain, 690.1]]) == [True, False, True], "either side"
     assert judge([[process, 924.9], [process, 3000]]) == [True, False], "a low limit alone"
     assert judge([[none, 1e9], [wall, None]]) == [False, False], "no limit, or no value: never coloured"
 
@@ -39,9 +39,9 @@ def test_the_chart_and_the_fault_tracker_agree_on_every_case():
     """The other side of the agreement: the same values through the backend's own judgment give the same answers."""
     from htsg.fault_tracker import FaultTracker
 
-    rules = {"wall": {"high": 490, "low": None}, "difference": {"high": 55, "low": -55}, "process": {"high": None, "low": 925}}
+    rules = {"wall": {"high": 490, "low": None}, "strain": {"high": 690, "low": -690}, "process": {"high": None, "low": 925}}
     tracker = FaultTracker(rules)
-    cases = [(name, v) for name, values in (("wall", (489.9, 490, 490.1)), ("difference", (-55.1, -55, 55, 55.1)),
+    cases = [(name, v) for name, values in (("wall", (489.9, 490, 490.1)), ("strain", (-690.1, -690, 690, 690.1)),
                                             ("process", (924.9, 925, 925.1))) for v in values]  # fmt: skip
     backend = [tracker.direction(name, v) is not None for name, v in cases]
     assert judge([[rules[name], v] for name, v in cases]) == backend

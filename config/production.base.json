@@ -25,15 +25,10 @@
   "derived": [],
   "models": [
     {
-      "id": "thermal_assumed",
+      "id": "stress_assumed",
       "young_mpa": 170000,
-      "expansion_per_k": 1.35e-05,
-      "restraint": 0.5,
-      "young_relative_uncertainty": 0.1,
-      "expansion_relative_uncertainty": 0.1,
-      "restraint_uncertainty": 0.2,
-      "version": "research-1",
-      "basis": "合成科研假设：E=170 GPa, alpha=13.5e-6/K, 约束系数0.5；区间为敏感性边界，非统计置信区间。",
+      "version": "research-2",
+      "basis": "合成科研假设：E=170 GPa，不随温度变化；现场钢号确认后替换。",
       "reference_urls": []
     }
   ],

@@ -9,7 +9,7 @@ from htsg.simulation import FieldSimulator
 
 def test_defaults_cover_all_current_source_and_derived_channels():
     config = load_settings("config/research-sim.json")
-    assert len(config.points) == 208 and len(config.derived) == 209
+    assert len(config.points) == 230 and len(config.derived) == 25  # A1
     for point in (*config.points, *config.derived):
         assert point.extreme_low is not None and point.extreme_high is not None
         assert not is_extreme(point.extreme_low, point)

@@ -16,10 +16,13 @@ FULL = load_settings(Path(__file__).resolve().parents[1] / "config" / "research-
 UA_NAMES = [p.id for p in FULL.points if p.source == "ua_field"]
 BRIDGES = [p.id for p in FULL.points if p.source == "mb_field"]
 PROCESS = {
-    "load_mw": 600.0, "waterwall_flow": 1850.0, "main_steam_flow": 2117.0, "main_steam_pressure": 28.7,
+    "load_mw": 600.0, "feedwater_flow": 1850.0, "main_steam_flow": 2117.0,
     "feedwater_temperature": 309.0, "reheat_temperature": 623.0, "working_fluid_temperature": 435.0,
     "furnace_pressure": -0.05,
 }  # fmt: skip
+# Distinct, plausible values for the 222 OPC UA channels: every wall below its 490 degC limit, the process values at their
+# normal readings (默认越限阈值与回差 §2).
+NOMINAL = {n: 480.0 + i * 0.01 if n.startswith("temp_wall") else PROCESS[n] for i, n in enumerate(UA_NAMES)}
 
 
 def full_config(mb_port, ua_endpoint, timing=None):
@@ -45,13 +48,8 @@ class Rig:
 
     async def seed(self):
         """Distinct nominal values, written BEFORE any subscription exists so the first delivery is final."""
-        for i, name in enumerate(UA_NAMES):
-            if name.startswith("temp_inner"):
-                await self.ua.set(name, 480.0 + i * 0.01)
-            elif name.startswith("temp_outer"):
-                await self.ua.set(name, 440.0 + i * 0.01)
-            else:
-                await self.ua.set(name, PROCESS[name])
+        for name, value in NOMINAL.items():
+            await self.ua.set(name, value)
 
     async def __aenter__(self):
         await self.mb.start()

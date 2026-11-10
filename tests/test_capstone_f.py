@@ -1,7 +1,7 @@
 """Capstone F: a verifiable global replay (方案第 8 节).
 
 Known values, a deliberate archive gap, a clock step, a quality-only change, duplicate-time versions and a route
-switch to a second database are fed through the owner into real PostgreSQL; all 417 channels are then read back
+switch to a second database are fed through the owner into real PostgreSQL; all 255 channels are then read back
 through the HTTP API and checked against an oracle built from the script itself.
 """
 
@@ -11,7 +11,7 @@ import pytest
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.testclient import TestClient
-from live_support import BRIDGES, FULL, PROCESS, UA_NAMES
+from live_support import BRIDGES, FULL, NOMINAL
 from owner_support import FixedBucket
 from test_archive_gap import Sink
 from test_archive_router import Disks
@@ -31,10 +31,9 @@ def wall(t):
     return 1000.0 + (t - 100) + (10.0 if t >= 137 else 0.0)  # a +10 s clock step at t=137
 
 
-VALUES = {
-    n: (440.0 if n.startswith("temp_outer") else 480.0 + i * 0.01 if n.startswith("temp_inner") else PROCESS[n])
-    for i, n in enumerate(UA_NAMES)
-}
+VALUES = NOMINAL
+BAD_BRIDGE, BAD_ROUND = 1, 115  # the second bridge answers with a bad quality in this one round
+MPA_PER_MICROSTRAIN = 0.17  # E = 170000 MPa, 热应力估算模型
 
 
 def bridge(k, t):
@@ -74,18 +73,19 @@ def script(cfg=None):
         if t == 101:
             items = [r.Item(n, v) for n, v in VALUES.items()]
         elif t == 110:
-            items = [r.Item("temp_inner_05", v) for v in (481.0, 482.0, 483.0)]  # three versions, one instant
+            items = [r.Item("temp_wall_005", v) for v in (481.0, 482.0, 483.0)]  # three versions, one instant
         elif t == 120:
-            items = [r.Item("temp_inner_06", VALUES["temp_inner_06"], r.BAD, 0x80350000)]
+            items = [r.Item("temp_wall_006", VALUES["temp_wall_006"], r.BAD, 0x80350000)]
         elif t == 122:
-            items = [r.Item("temp_inner_06", VALUES["temp_inner_06"])]  # same number, Good again
+            items = [r.Item("temp_wall_006", VALUES["temp_wall_006"])]  # same number, Good again
         elif t == 127:
-            items = [r.Item("temp_inner_07", 479.0)]  # lost: the archive is refusing
+            items = [r.Item("temp_wall_007", 479.0)]  # lost: the archive is refusing
         seq += 1
         owner.accept(r.InputBatch("ua_field", 1, r.KIND_UA_NOTIFY, w, m, tuple(items), publish_seq=seq))
         owner.accept(
             r.InputBatch("mb_field", 1, r.KIND_MODBUS_POLL, w, m,
-                         tuple(r.Item(b, bridge(k, t)) for k, b in enumerate(BRIDGES)), tick=t - 100)
+                         tuple(r.Item(b, bridge(k, t), r.BAD if (k, t) == (BAD_BRIDGE, BAD_ROUND) else r.GOOD,
+                                      0x80350000 if (k, t) == (BAD_BRIDGE, BAD_ROUND) else None) for k, b in enumerate(BRIDGES)), tick=t - 100)
         )  # fmt: skip
         confirm()
         owner.tick(w, m)
@@ -137,7 +137,7 @@ def replay_once(client, **kw):
 
 
 def replay(client, **kw):
-    """All 417 channels.  One replay takes at most CHANNEL_LIMIT of them (修复轮03), so they are asked in groups and the
+    """All 255 channels.  One replay takes at most CHANNEL_LIMIT of them (修复轮03), so they are asked in groups and the
     answers joined: every channel must still be answered, and a flag raised by any group stands for the whole."""
     names = ALL.split(",")
     step = __import__("htsg.history", fromlist=["x"]).CHANNEL_LIMIT
@@ -166,29 +166,30 @@ def rows(body, pid, kind="raw", restated=None):
     return [x for x in out if restated is None or x["restated"] == restated]
 
 
-def test_all_417_channels_are_answered_with_nothing_truncated_or_partial(world):
-    assert len(world.get("/api/channels", headers=HEADERS).json()["channels"]) == 417
+def test_all_255_channels_are_answered_with_nothing_truncated_or_partial(world):
+    """A7, 终版 §13.3: /api/channels follows the configuration, and so does the replay."""
+    assert len(world.get("/api/channels", headers=HEADERS).json()["channels"]) == 255
     body = replay(world)
-    assert len(body["channels"]) == 417 and not body["partial"] and not body["truncated"]
+    assert len(body["channels"]) == 255 and not body["partial"] and not body["truncated"]
     assert body["sources"] == ["mb_field", "ua_field"]
 
 
 def test_inputs_match_the_known_values_and_a_still_value_is_backed_by_its_evidence(world):
     body = replay(world)
     for name, value in VALUES.items():
-        if name in ("temp_inner_05", "temp_inner_06", "temp_inner_07"):
+        if name in ("temp_wall_005", "temp_wall_006", "temp_wall_007"):
             continue
         received = rows(body, name, restated=False)
         assert [(x["value"], x["time"]) for x in received] == [(value, 1001.0)], name
     # a window that sees no change at all still carries the value in effect, with its original time
     quiet = replay(world, center=1033.0, seconds=4)  # inside the segment that began at the restatement (1029-1036)
-    held = rows(quiet, "temp_outer_01")
-    assert len(held) == 1 and held[0]["held"] is True and held[0]["value"] == 440.0
+    held = rows(quiet, "temp_wall_001")
+    assert len(held) == 1 and held[0]["held"] is True and held[0]["value"] == VALUES["temp_wall_001"]
     assert held[0]["restated"], "restated after the gap"
     assert held[0]["time"] == 1029.0 and held[0]["until"] == 1036.0, "counts from the restatement, ends with the segment"
     # the +10 s step left wall 1037-1046 with no segment at all: a window there must claim nothing
     hole = replay(world, center=1043.0, seconds=6)
-    assert hole["channels"]["temp_outer_01"]["segments"] == []
+    assert hole["channels"]["temp_wall_001"]["segments"] == []
 
 
 def test_modbus_rounds_and_every_derived_value_follow_the_script(world):
@@ -204,32 +205,41 @@ def test_modbus_rounds_and_every_derived_value_follow_the_script(world):
         assert restated["time"] == wall(129), "the round survives as a restatement"
         assert restated["value"] == pytest.approx(bridge(k, 129))
         strain = {x["time"]: x["value"] for x in rows(body, f"strain_{k + 1:02d}", "derived", restated=False)}
+        stress = {x["time"]: x["value"] for x in rows(body, f"stress_{k + 1:02d}", "derived", restated=False)}
         for x in got:
-            assert strain[x["time"]] == pytest.approx(x["value"] * 1000 / 6), "no old input with a new result"
-    first_inner, outer = VALUES["temp_inner_01"], VALUES["temp_outer_01"]
-    assert rows(body, "delta_t_01", "derived", restated=False)[0]["value"] == pytest.approx(first_inner - outer)
-    assert rows(body, "stress_01", "derived", restated=False)[0]["value"] == pytest.approx(1.1475 * (first_inner - outer))
+            if x["valid"]:
+                assert strain[x["time"]] == pytest.approx(x["value"] * 1000 / 6), "no old input with a new result"
+                assert stress[x["time"]] == pytest.approx(x["value"] * 1000 / 6 * MPA_PER_MICROSTRAIN), "B4: E x the strain of that round"
+    first = rows(body, "thermal_stress_peak", "derived", restated=False)[0]
+    assert first["value"] == pytest.approx(bridge(7, 101) * 1000 / 6 * MPA_PER_MICROSTRAIN), "the largest of the eight"
+    assert rows(body, "temp_wall_001", "derived") == [], "C6: nothing is computed from a wall"
 
 
 def test_versions_at_one_instant_are_all_kept_in_batch_order(world):
     body = replay(world)
-    got = rows(body, "temp_inner_05", restated=False)[1:]  # after the initial value
+    got = rows(body, "temp_wall_005", restated=False)[1:]  # after the initial value
     assert [x["value"] for x in got] == [481.0, 482.0, 483.0], "in batch order: they share one time"
-    assert len({x["time"] for x in got}) == 1
-    derived = [x for x in rows(body, "delta_t_05", "derived", restated=False) if x["time"] == got[0]["time"]]
-    assert [x["value"] for x in derived] == [483.0 - 440.0], "only the batch-end result is calculated"
+    assert len({x["time"] for x in got}) == 1  # that only the batch-end result is calculated: test_stress, on a small configuration (C8)
 
 
 def test_a_quality_only_change_is_traceable_and_the_bad_interval_borrows_nothing(world):
     body = replay(world)
-    got = rows(body, "temp_inner_06", restated=False)
+    got = rows(body, "temp_wall_006", restated=False)
     assert [(x["quality"], x["time"]) for x in got] == [("GOOD", 1001.0), ("BAD", 1020.0), ("GOOD", 1022.0)]
     assert len({x["id"] for x in got}) == 3 and len({x["value"] for x in got}) == 1, "same number, three records"
     assert got[0]["until"] == 1020.0 and got[0]["ended_by"] == "NEXT_CHANGE", "Good ends where Bad begins"
     assert got[1]["valid"] is False and got[1]["status_code"] == 0x80350000 and got[1]["until"] == 1022.0
-    derived = rows(body, "delta_t_06", "derived", restated=False)
-    assert [(x["status"], x["valid"]) for x in derived] == [("OK", True), ("NOT_AVAILABLE", False), ("OK", True)]
-    assert [x["time"] for x in derived] == [x["time"] for x in got], "each result at the time of the input it rests on"
+    # the same on the source that has results (B5): the reading keeps its number, what rests on it has none, the next round is whole
+    at = wall(BAD_ROUND)
+    reading = next(x for x in rows(body, "bridge_mvv_02", restated=False) if x["time"] == at)
+    assert (reading["value"], reading["valid"]) == (pytest.approx(bridge(BAD_BRIDGE, BAD_ROUND)), False) and reading["status_code"] == 0x80350000
+    for pid in ("strain_02", "stress_02", "thermal_stress_peak"):
+        derived = {x["time"]: x for x in rows(body, pid, "derived", restated=False)}
+        assert (derived[at - 1.0]["status"], derived[at - 1.0]["valid"]) == ("OK", True), pid
+        assert (derived[at]["status"], derived[at]["valid"], derived[at]["value"]) == ("NOT_AVAILABLE", False, None), pid
+        assert (derived[at + 1.0]["status"], derived[at + 1.0]["valid"]) == ("OK", True), pid
+    assert rows(body, "stress_01", "derived", restated=False), "the other bridges go on"
+    assert {x["time"]: x["valid"] for x in rows(body, "stress_01", "derived", restated=False)}[at] is True
 
 
 def test_an_archive_gap_is_never_bridged_and_a_lost_sample_is_not_invented(world):
@@ -237,11 +247,11 @@ def test_an_archive_gap_is_never_bridged_and_a_lost_sample_is_not_invented(world
     assert {(g["source_id"], g["start_wall"], g["end_wall"]) for g in body["gaps"]} >= {
         ("mb_field", 1026.0, 1029.0), ("ua_field", 1027.0, 1029.0),
     }  # fmt: skip
-    spans = body["channels"]["temp_inner_07"]["segments"]
+    spans = body["channels"]["temp_wall_007"]["segments"]
     assert len(spans) >= 2
     first = spans[0]["rows"][0]
-    assert first["value"] == VALUES["temp_inner_07"] and first["until"] == 1027.0, "not stretched across the gap"
-    assert not [x for x in rows(body, "temp_inner_07", restated=False) if x["value"] == 479.0]
+    assert first["value"] == VALUES["temp_wall_007"] and first["until"] == 1027.0, "not stretched across the gap"
+    assert not [x for x in rows(body, "temp_wall_007", restated=False) if x["value"] == 479.0]
     restated = spans[1]["rows"][0]
     assert (restated["value"], restated["time"]) == (479.0, 1029.0), "the state kept is restated, counted from 1029"
     assert restated["time"] == spans[1]["start_wall"]
@@ -251,7 +261,7 @@ def test_an_archive_gap_is_never_bridged_and_a_lost_sample_is_not_invented(world
 
 def test_nothing_crosses_a_segment_and_the_clock_step_opens_one(world):
     body = replay(world)
-    for pid in ("bridge_mvv_01", "temp_outer_01", "strain_01"):
+    for pid in ("bridge_mvv_01", "temp_wall_001", "strain_01"):
         spans = body["channels"][pid]["segments"]
         assert len(spans) == 3, (pid, [s["seg"] for s in spans])
         for span in spans:

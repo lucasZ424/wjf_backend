@@ -31,7 +31,7 @@ def test_a_refused_item_makes_only_its_point_and_what_needs_it_unavailable_until
     assert (views["ti"]["valid"], views["ti"]["reason"]) == (False, "ITEM_REFUSED"), "the page says why"
     assert views["to"]["valid"] and (views["mx"]["valid"], views["mx"]["value"]) == (True, 450.0), "the others go on"
     assert (views["dt"]["valid"], views["dt"]["reason"]) == (False, "INPUT_UNAVAILABLE"), "a result that needs it cannot be had"
-    assert (views["sp"]["valid"], views["sp"]["reason"]) == (False, "INPUT_UNAVAILABLE")
+    assert (views["d2"]["valid"], views["d2"]["reason"]) == (False, "INPUT_UNAVAILABLE")
     s = owner.sources["ua"]
     assert s.state == "VALID" and s.resync_count == 0, "no rebuild for it"
     stored = [st.detail["points"] for g in recorder.commits for st in g.states if st.kind == "ITEMS_REFUSED"]

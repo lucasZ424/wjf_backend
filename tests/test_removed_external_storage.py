@@ -39,7 +39,8 @@ def test_a_connection_file_still_naming_a_removable_database_is_refused_before_a
 def test_a_deployment_file_still_naming_a_removable_volume_is_refused(tmp_path):
     path = tmp_path / "deploy.json"
     path.write_text(json.dumps({"volumes": {"primary": "D:", "emergency": "C:", "external": "E:"}, "pg_bin": "x", "config": "y"}))
-    with pytest.raises(SystemExit, match="external"):
+    # 用户 11-10：按 rc9 的提示（修复轮16 起是中文）：只能有正常库和应急库
+    with pytest.raises(SystemExit, match='"volumes" 只能且必须有 "primary"（正常库）和 "emergency"（应急库）'):
         deploy.read_input(path)
 
 

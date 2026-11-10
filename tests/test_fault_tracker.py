@@ -131,7 +131,7 @@ def test_one_hysteresis_number_cannot_stand_for_both_sides_in_the_configuration(
     research = load_settings("config/research-sim.json")
     rules = {x.id: fault_rule(x) for x in (*research.points, *research.derived) if fault_rule(x)}
     t = FaultTracker(rules, 5.0)
-    assert len(t.tracked()) == 304
+    assert len(t.tracked()) == 230  # A1, 终版 §8.1: 215 walls, 7 process quantities, 8 strains
     feedwater = rules["feedwater_temperature"]
     assert (feedwater["hysteresis_low"], feedwater["hysteresis_high"]) == (6, 1)
-    assert rules["waterwall_flow"]["high"] is None and rules["waterwall_flow"]["hysteresis_high"] == 0
+    assert rules["feedwater_flow"]["high"] is None and rules["feedwater_flow"]["hysteresis_high"] == 0

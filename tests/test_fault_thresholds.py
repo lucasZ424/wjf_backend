@@ -22,7 +22,7 @@ def research():
 
 
 def expand(cell):
-    """`temp_inner_01…96、temp_outer_01…96（金属壁温）` -> channel ids."""
+    """`temp_wall_001…215（金属壁温）` -> channel ids."""
     cell = re.sub(r"[（(].*?[）)]", "", cell)
     ids = []
     for token in re.split(r"[、,，]", cell):
@@ -54,7 +54,7 @@ def table(path, start_marker, end_marker):
 
 def expected_fault_rules():
     rules = {}
-    for row in table("dev-docs/默认越限阈值与回差.md", '<a id="fault-defaults"></a>', "合计 304 路"):
+    for row in table("dev-docs/默认越限阈值与回差.md", '<a id="fault-defaults"></a>', "合计 230 路"):
         low, hl, high, hh = (number(c) for c in row[4:8])
         for channel in expand(row[0]):
             rules[channel] = (low, hl, high, hh)
@@ -63,7 +63,7 @@ def expected_fault_rules():
 
 def expected_extremes():
     limits = {}
-    for row in table("dev-docs/默认极值阈值.md", '<a id="extreme-defaults"></a>', "208 路源通道"):
+    for row in table("dev-docs/默认极值阈值.md", '<a id="extreme-defaults"></a>', "230 路源通道"):
         for channel in expand(row[0]):
             limits[channel] = (number(row[2]), number(row[3]))
     return limits
@@ -73,17 +73,25 @@ def channels(config):
     return {item.id: item for item in (*config.points, *config.derived)}
 
 
-def test_channel_counts_are_8_modbus_200_opcua_and_209_derived(research):
+def test_channel_counts_are_8_modbus_222_opcua_and_25_derived(research):
+    """A1, 终版 §3.4: a point forgotten or left over from the old table changes one of these numbers."""
     kinds = {s.id: s.kind for s in research.sources}
     modbus = [p for p in research.points if kinds[p.source] == "modbus"]
     opcua = [p for p in research.points if kinds[p.source] == "opcua"]
-    assert (len(modbus), len(opcua), len(research.derived)) == (8, 200, 209)
-    assert len(research.points) + len(research.derived) == 417
+    assert (len(modbus), len(opcua), len(research.derived)) == (8, 222, 25)
+    assert len(research.points) + len(research.derived) == 255
+    walls = [p.id for p in opcua if p.id.startswith("temp_wall_")]
+    assert walls == [f"temp_wall_{i:03d}" for i in range(1, 216)], "215 walls, numbered without a hole"
+    assert len(opcua) - len(walls) == 7, "and the seven process quantities"
+    assert sum(d.id.startswith("strain_") and not d.id.startswith("strain_change_") for d in research.derived) == 8
+    assert sum(d.id.startswith("strain_change_") for d in research.derived) == 8
+    assert sum(d.id.startswith("stress_") for d in research.derived) == 8
+    assert [d.id for d in research.derived if d.operation == "absolute_peak"] == ["thermal_stress_peak"]
 
 
-def test_exactly_304_channels_have_ordinary_thresholds_and_they_match_the_table(research):
+def test_exactly_230_channels_have_ordinary_thresholds_and_they_match_the_table(research):
     expected = expected_fault_rules()
-    assert len(expected) == 304
+    assert len(expected) == 230
     actual = {k: v for k, v in channels(research).items() if fault_rule(v)}
     assert set(actual) == set(expected)
     for channel, (low, hl, high, hh) in expected.items():
@@ -97,20 +105,20 @@ def test_exactly_304_channels_have_ordinary_thresholds_and_they_match_the_table(
 def test_each_hysteresis_side_is_independent(research):
     feedwater = fault_rule(channels(research)["feedwater_temperature"])
     assert (feedwater["hysteresis_low"], feedwater["hysteresis_high"]) == (6, 1)
-    assert fault_rule(channels(research)["waterwall_flow"])["high"] is None
+    assert fault_rule(channels(research)["feedwater_flow"])["high"] is None
 
 
 def test_channels_without_ordinary_thresholds_are_the_specified_ones(research):
     quiet = {k for k, v in channels(research).items() if not fault_rule(v)}
-    assert len(quiet) == 417 - 304
+    assert len(quiet) == 255 - 230
     assert {f"bridge_mvv_{i:02d}" for i in range(1, 9)} <= quiet
     assert {f"strain_change_{i:02d}" for i in range(1, 9)} <= quiet
-    assert {f"stress_{i:02d}" for i in range(1, 97)} | {"thermal_stress_peak"} <= quiet
+    assert {f"stress_{i:02d}" for i in range(1, 9)} | {"thermal_stress_peak"} <= quiet  # B10, Q7: a stress never raises a record
 
 
-def test_all_417_extreme_limits_are_unchanged_and_independent_of_ordinary_ones(research):
+def test_all_255_extreme_limits_are_as_the_table_says_and_independent_of_ordinary_ones(research):
     expected = expected_extremes()
-    assert len(expected) == 417
+    assert len(expected) == 255
     for channel, item in channels(research).items():
         assert (item.extreme_low, item.extreme_high) == expected[channel], channel
     # the ordinary band sits strictly inside the extreme band, so the two never replace each other

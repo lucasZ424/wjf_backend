@@ -282,7 +282,7 @@ async def test_a_normal_stop_registers_the_end_last_by_commit_time_and_takes_a_f
 
 
 async def test_a_normal_stop_at_full_scale_takes_a_fraction_of_the_deadline(archive_db_factory, tmp_path):
-    """细则 8.2-5: 8 Modbus bridges, 200 OPC UA items, real servers, real databases; the measured value is printed."""
+    """细则 8.2-5: 8 Modbus bridges, 222 OPC UA items, real servers, real databases; the measured value is printed."""
     primary, emergency = archive_db_factory("primary"), archive_db_factory("emergency")
     async with Field() as field:
         runtime, _, _ = build_full_scale(field, tmp_path, primary, emergency)

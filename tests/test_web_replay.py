@@ -20,7 +20,7 @@ KEY = "htsg.replay"
 @pytest.fixture(autouse=True)
 def faults(replay_rig):
     if not getattr(replay_rig, "faults_seeded", False):
-        replay_rig.seed_faults([("temp_inner_06", "HIGH", 1020.0, 500.0)])
+        replay_rig.seed_faults([("temp_wall_006", "HIGH", 1020.0, 500.0)])
         replay_rig.faults_seeded = True
 
 
@@ -38,7 +38,7 @@ def configure(page, center, seconds, points):
     page.locator("#replay-points").select_option(points)
 
 
-def query(page, center=CENTER, seconds=100, points=("temp_inner_06",)):
+def query(page, center=CENTER, seconds=100, points=("temp_wall_006",)):
     configure(page, center, seconds, list(points))
     page.locator("#replay-run").click()
     page.locator("#replay-meta").wait_for()
@@ -77,7 +77,7 @@ def test_nothing_is_asked_for_until_settings_exist(page, replay_rig):
     seen = []
     page.on("request", lambda r: seen.append(r.url) if "/api/replay" in r.url else None)
     open_history(page, replay_rig)
-    assert "不会自动查询当前时刻" in page.locator("#replay-result").inner_text()
+    # 用户 11-10：页面只留操作用语（11-01），说明文字不再上页面，这里不再要求它
     page.reload()
     page.get_by_role("button", name="历史查询").click()
     page.wait_for_timeout(700)
@@ -86,10 +86,10 @@ def test_nothing_is_asked_for_until_settings_exist(page, replay_rig):
 
 def test_only_settings_are_kept_and_they_survive_a_reload_but_not_a_clear_or_a_logout(page, replay_rig):
     open_history(page, replay_rig)
-    query(page, points=("temp_inner_06", "temp_inner_07"))
+    query(page, points=("temp_wall_006", "temp_wall_007"))
     kept = json.loads(stored(page))
     assert set(kept) == {"fault", "center", "seconds", "points", "chart"}, "settings only - no data"
-    assert kept["center"] == 1030 and kept["seconds"] == 100 and kept["points"] == ["temp_inner_06", "temp_inner_07"]
+    assert kept["center"] == 1030 and kept["seconds"] == 100 and kept["points"] == ["temp_wall_006", "temp_wall_007"]
     assert len(stored(page)) < 600
     page.reload()  # the sign-in and the settings are the tab's; the page asks the database again by itself
     page.get_by_role("button", name="历史查询").click()
@@ -98,7 +98,7 @@ def test_only_settings_are_kept_and_they_survive_a_reload_but_not_a_clear_or_a_l
     assert page.locator("#replay-summary tbody tr").count() == 2
     page.locator("#replay-clear").click()
     assert stored(page) is None and page.locator("#replay-center").input_value() == ""
-    assert "不会自动查询" in page.locator("#replay-result").inner_text()
+    # 用户 11-10：页面只留操作用语（11-01），说明文字不再上页面，这里不再要求它
     query(page)
     assert stored(page) is not None
     page.locator("#logout").click()
@@ -108,9 +108,9 @@ def test_only_settings_are_kept_and_they_survive_a_reload_but_not_a_clear_or_a_l
 
 def test_the_value_in_effect_at_the_window_start_is_shown_with_the_time_it_counts_from(page, replay_rig):
     open_history(page, replay_rig)
-    query(page, center="1970-01-01T08:17:13", seconds=4, points=("temp_outer_01",))  # [1031, 1035], no change inside
+    query(page, center="1970-01-01T08:17:13", seconds=4, points=("temp_wall_001",))  # [1031, 1035], no change inside
     basis = page.locator("#replay-summary tbody tr").inner_text()
-    assert "440" in basis and "生效于 1970/1/1 08:17:09" in basis, "restated at 1029: the time it counts from"
+    assert f"{VALUES['temp_wall_001']:.1f}" in basis and "生效于 1970/1/1 08:17:09" in basis, "restated at 1029: the time it counts from"
     (row,) = record_rows(page).all()
     cells = row.locator("td").all_inner_texts()
     assert "held" in row.get_attribute("class")
@@ -120,11 +120,11 @@ def test_the_value_in_effect_at_the_window_start_is_shown_with_the_time_it_count
 
 def test_a_gap_is_shaded_and_listed_and_nothing_is_drawn_or_invented_inside_it(page, replay_rig):
     open_history(page, replay_rig)
-    query(page, points=("temp_inner_07", "bridge_mvv_01"))
+    query(page, points=("temp_wall_007", "bridge_mvv_01"))
     notes = page.locator(".note").all_inner_texts()
     assert any("ua_field" in n and "08:17:07" in n and "08:17:09" in n and "QUEUE_FULL" in n for n in notes), notes
     assert any("mb_field" in n and "08:17:06" in n for n in notes)
-    page.locator("#replay-focus").select_option("temp_inner_07")
+    page.locator("#replay-focus").select_option("temp_wall_007")
     page.locator("#replay-records tbody tr").first.wait_for()
     got = [c.locator("td").all_inner_texts() for c in record_rows(page).all()]
     assert [c[0][:17] for c in got] == ["1970/1/1 08:16:41", "1970/1/1 08:17:09", "1970/1/1 08:17:27"]  # 1001, 1029, 1047
@@ -139,13 +139,13 @@ def test_a_gap_is_shaded_and_listed_and_nothing_is_drawn_or_invented_inside_it(p
 
 def test_a_bad_quality_interval_is_marked_red_and_borrows_no_value(page, replay_rig):
     open_history(page, replay_rig)
-    query(page, points=("temp_inner_06",))
+    query(page, points=("temp_wall_006",))
     every = [(r.get_attribute("class"), r.locator("td").all_inner_texts()) for r in record_rows(page).all()]
     got = every[:3]  # what was received; the restatements after the gap and the clock step follow
     assert [c[1][2].split()[0] for c in got] == ["良好", "不良", "良好"]  # 终版 §17.5: in words
     assert len(every) == 5, "two restatements follow"
     assert "bad" in got[1][0] and got[1][1][1] == "—" and "0x80350000" in got[1][1][2]
-    assert got[0][1][1] == got[2][1][1] == f"{VALUES['temp_inner_06']:.1f}", "same number, three separate records"
+    assert got[0][1][1] == got[2][1][1] == f"{VALUES['temp_wall_006']:.1f}", "same number, three separate records"
     assert "含无效或极值记录" in page.locator("#replay-summary").inner_text()
     between = pixels(page, 1020.0, 1022.0)
     assert between["red"] > 5 and between["cyan"] == 0, "the Bad interval is not filled with the earlier Good value"
@@ -153,7 +153,7 @@ def test_a_bad_quality_interval_is_marked_red_and_borrows_no_value(page, replay_
 
 def test_versions_at_one_instant_are_all_shown_in_batch_order(page, replay_rig):
     open_history(page, replay_rig)
-    query(page, points=("temp_inner_05",))
+    query(page, points=("temp_wall_005",))
     every = [r.locator("td").all_inner_texts() for r in record_rows(page).all()]
     got = every[1:4]  # after the first value; the restatements come later
     assert [c[1] for c in got] == ["481.0", "482.0", "483.0"], "in batch order"  # 终版 §17.6: ℃ to one decimal
@@ -186,11 +186,11 @@ def test_switching_the_chart_channel_asks_the_database_again_and_the_newest_wind
     held = []
     page.on("request", lambda r: seen.append(r.url) if "/api/replay" in r.url else None)
     open_history(page, replay_rig)
-    query(page, points=("temp_inner_06", "temp_inner_07"))
+    query(page, points=("temp_wall_006", "temp_wall_007"))
     before = len(seen)
-    page.locator("#replay-focus").select_option("temp_inner_07")
+    page.locator("#replay-focus").select_option("temp_wall_007")
     page.locator("#replay-records tbody tr").first.wait_for()
-    assert len(seen) == before + 1 and json.loads(stored(page))["chart"] == "temp_inner_07"
+    assert len(seen) == before + 1 and json.loads(stored(page))["chart"] == "temp_wall_007"
     # a slow answer for an old window must not replace the answer for the new one
     page.route("**/api/replay*", lambda route: held.append(route) if "seconds=100" in route.request.url and not held else route.continue_())
     page.locator("#replay-run").click()  # window of 100 s: held in flight
@@ -212,15 +212,17 @@ def test_choosing_a_fault_runs_the_replay_around_it(page, replay_rig):
     page.on("request", lambda r: seen.append(r.url) if "/api/replay?" in r.url else None)
     open_history(page, replay_rig)
     replay = page.request.get(replay_rig.url + "/api/ui-config", headers={"Authorization": "Bearer " + replay_rig.credentials["viewer"]}).json()["replay"]
-    template = replay["templates"]["temp_inner_06"]
+    template = replay["templates"]["temp_wall_006"]
     page.locator("#replay-seconds").fill("100")
     page.locator("#replay-seconds").dispatch_event("change")
     page.locator("#fault-list .fault-row").first.click()
     page.locator("#replay-meta").wait_for()
     assert "中心 1970/1/1 08:17:00" in page.locator("#replay-meta").inner_text()
-    assert page.locator("#replay-summary tbody tr").count() == len(template) == 12
+    assert page.locator("#replay-summary tbody tr").count() == len(template) == 8  # E1, Q3: the wall and the 7 process quantities
+    assert template == ["temp_wall_006", "load_mw", "feedwater_flow", "main_steam_flow", "feedwater_temperature",
+                        "reheat_temperature", "working_fluid_temperature", "furnace_pressure"]  # fmt: skip
     assert page.locator("#replay-seconds").input_value() == str(replay["default_seconds"]), "the window is reset to the default"
-    assert page.locator("#replay-focus").input_value() == "temp_inner_06", "the chart shows the fault"
+    assert page.locator("#replay-focus").input_value() == "temp_wall_006", "the chart shows the fault"
     assert len(seen) == 1 and seen[0].count("%2C") == len(template) - 1 and f"seconds={replay['default_seconds']}" in seen[0]
     assert json.loads(stored(page))["fault"]["id"].startswith("seed/fault/")
 
@@ -239,15 +241,52 @@ def test_at_most_twelve_channels_can_be_chosen_by_hand(page, replay_rig):
 def test_filtering_the_channel_list_keeps_the_chosen_channels_in_view(page, replay_rig):
     """修复轮13: a chosen channel hidden by the filter was dropped by the next plain click, without a word."""
     open_history(page, replay_rig)
-    page.locator("#replay-points").select_option(["temp_inner_05", "temp_inner_06"])
+    page.locator("#replay-points").select_option(["temp_wall_005", "temp_wall_006"])
     page.locator("#replay-filter").fill("load")
     shown = page.locator("#replay-points option").evaluate_all("options => options.filter(o => !o.hidden).map(o => o.value)")
-    assert {"temp_inner_05", "temp_inner_06", "load_mw"} <= set(shown) and len(shown) < 10, shown
+    assert {"temp_wall_005", "temp_wall_006", "load_mw"} <= set(shown) and len(shown) < 10, shown
+
+
+BLUE, GREEN, PURPLE = "#73bcff", "#4fd1a5", "#c79bff"  # 用户 11-06
+
+
+def coloured(page, color):
+    """Pixels of the history chart in `color`, over the whole plot."""
+    return page.evaluate(
+        """color => {
+          const c = document.querySelector('#replay-chart'), p = c.plot, g = c.getContext('2d'), r = c.width / c.clientWidth;
+          const [lr, lg, lb] = [1, 3, 5].map(k => parseInt(color.slice(k, k + 2), 16));
+          const d = g.getImageData(Math.round(p.left * r), Math.round(p.top * r), Math.round((p.right - p.left) * r), Math.round((p.bottom - p.top) * r)).data;
+          let n = 0;
+          for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 200 && Math.abs(d[i] - lr) < 20 && Math.abs(d[i + 1] - lg) < 20 && Math.abs(d[i + 2] - lb) < 20) n++;
+          return n;
+        }""",
+        color,
+    )
+
+
+@pytest.mark.parametrize(
+    ("channel", "own", "other"),
+    [
+        pytest.param("temp_wall_001", BLUE, GREEN, id="F11-a-wall-stays-blue-it-is-green-only-on-the-thermal-stress-page"),
+        pytest.param("load_mw", BLUE, PURPLE, id="F11-a-plain-quantity-is-blue"),
+        pytest.param("stress_01", PURPLE, BLUE, id="F11-a-stress-is-purple"),
+        pytest.param("thermal_stress_peak", PURPLE, BLUE, id="F11-the-peak-is-purple"),
+    ],
+)
+def test_the_history_chart_keeps_its_colours(page, replay_rig, channel, own, other):
+    """F11, P1 (用户 11-06): the three colours of the thermal stress page are that page's alone; the history page is as it was."""
+    open_history(page, replay_rig)
+    query(page, points=(channel,))
+    assert page.evaluate("document.querySelector('#replay-chart').plot.color") == own
+    assert coloured(page, own) > 50, "the line is really drawn in it"
+    assert coloured(page, other) == 0
+    assert page.errors == []
 
 
 def test_units_and_the_window_length_read_as_people_say_them(page, replay_rig):
     open_history(page, replay_rig)
-    option = page.locator("#replay-points option[value='temp_inner_06']").text_content()
+    option = page.locator("#replay-points option[value='temp_wall_006']").text_content()
     assert "℃" in option and "degC" not in option
     for seconds, said in [(5400, "1.5 小时"), (90, "1.5 分钟"), (45, "45 秒"), (172800, "2 天")]:
         page.locator("#replay-seconds").fill(str(seconds))

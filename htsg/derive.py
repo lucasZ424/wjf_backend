@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from .config import Derived, Settings
 from .extremes import is_extreme
 from .records import RESULT_NA, RESULT_OK
-from .thermal import estimate_thermal
 
 GAUGE_FACTOR = 6  # §3.1: unified GF=6, full bridge N=1; not a per-sensor calibration
 BRIDGE_N = 1
@@ -30,7 +29,6 @@ class Outcome:
     status: str
     reason: str | None
     extreme: bool = False
-    estimate: dict | None = None
     basis: dict | None = None  # strain_change: current and previous planned round
 
 
@@ -38,8 +36,7 @@ def unavailable(reason: str) -> Outcome:
     return Outcome(None, RESULT_NA, reason)
 
 
-def compute(rule: Derived, values: list[float], models: dict) -> tuple[float, dict | None]:
-    estimate = None
+def compute(rule: Derived, values: list[float], models: dict) -> float:
     match rule.operation:
         case "bridge_strain":
             value = values[0] * BRIDGE_N * 1000 / GAUGE_FACTOR
@@ -56,18 +53,17 @@ def compute(rule: Derived, values: list[float], models: dict) -> tuple[float, di
             value = values[0] - values[1]
         case "ratio":
             value = values[0] / values[1]
-        case "thermal_stress":
+        case "elastic_stress":
             model = models.get(rule.model_id)
             if model is None:
                 raise ValueError("MODEL_NOT_CONFIGURED")
-            result = estimate_thermal(model, *values)
-            value, estimate = result["value"], result["estimate"]
+            value = model.young_mpa * values[0] * 1e-6  # MPa from με: an estimate, the strain is not temperature compensated
         case _:
             raise ValueError("UNSUPPORTED_OPERATION")
     value = value * rule.scale + rule.offset
     if not math.isfinite(value):
         raise ValueError("NONFINITE")
-    return value, estimate
+    return value
 
 
 def evaluate(rule: Derived, inputs: list[Input], models: dict) -> Outcome:
@@ -79,10 +75,10 @@ def evaluate(rule: Derived, inputs: list[Input], models: dict) -> Outcome:
     if not all(x.valid and x.value is not None for x in inputs):
         return unavailable("INPUT_UNAVAILABLE")
     try:
-        value, estimate = compute(rule, [x.value for x in inputs], models)
+        value = compute(rule, [x.value for x in inputs], models)
     except (ValueError, OverflowError, ZeroDivisionError) as error:
         return unavailable(str(error) or type(error).__name__)
-    return Outcome(value, RESULT_OK, None, is_extreme(value, rule), estimate)
+    return Outcome(value, RESULT_OK, None, is_extreme(value, rule))
 
 
 class Topology:

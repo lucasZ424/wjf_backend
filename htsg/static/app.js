@@ -193,21 +193,16 @@ function updateStrain() {
 
 // Only what this page reads is plotted: the readings since it signed in.  Custom history lives on page 5.
 const TREND_SECONDS = 300, KEEP_SECONDS = 600;
-const trend = {series: new Map(), pair: 0, cursor: null};
+const trend = {series: new Map(), wall: 0, stress: 0, cursor: null};
 const signed = (value, unit) => typeof value === "number" && Number.isFinite(value) ? (value > 0 ? "+" : "") + reading(value, unit) : "—";
 const UNIT_TEXT = {degC: "℃"};
 const unitText = unit => UNIT_TEXT[unit] || unit || "";
 
-const pairs = () => state.config._pairs ??= findPairs();  // the configuration does not change within a session
-function findPairs() {
-  const derived = state.config.derived, same = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
-  return derived.filter(d => d.operation === "difference").map(d => {
-    const stress = derived.find(x => x.operation === "thermal_stress" && same(x.inputs, d.inputs));
-    return {delta: d.id, stress: stress?.id, inner: d.inputs[0], outer: d.inputs[1], name: label(d.id).replace(/\s*内外壁温差$/, "")};
-  }).filter(p => p.stress);
-}
+// 修复轮18: a wall and a bridge have nothing to do with each other, so each is chosen on its own
+const walls = () => state.config._walls ??= state.config.points.map(p => p.id).filter(id => id.startsWith("temp_wall_"));  // the configuration does not change within a session
+const stresses = () => state.config._stresses ??= state.config.derived.filter(d => d.operation === "elastic_stress").map(d => d.id);
 const loadId = () => (state.config.ui.process_points || []).find(id => id.includes("load")) || "load_mw";
-const trendIds = () => state.config._trendIds ??= new Set([loadId(), ...pairs().flatMap(p => [p.delta, p.stress])]);
+const trendIds = () => state.config._trendIds ??= new Set([loadId(), ...walls(), ...stresses()]);
 
 // A series is a list of {t, v, valid, alarm}: the value in effect from t on.  An invalid state or a lost connection is a
 // point with no value, and nothing is drawn through it; `alarm` is a confirmed fault of the channel (修复轮15), drawn in
@@ -238,16 +233,20 @@ function trendReading(reading, before) {
 const valueAt = (list, t) => { let found = null; for (const p of list) { if (p.t <= t) found = p; else break; } return found; };
 
 function trendHtml() {
-  return `<div class="controls"><label>温度对<select id="pair-select">${pairs().map((p, i) => `<option value="${i}">${esc(p.name)}</option>`).join("")}</select></label><span id="pair-inputs" class="muted"></span></div>
-    <div class="card"><h3>负荷、内外壁温差与热应力（同一时间轴，最近 ${TREND_SECONDS / 60} 分钟）</h3>
+  const options = (ids, name) => ids.map((id, i) => `<option value="${i}">${esc(name(id))}</option>`).join("");
+  return `<div class="controls"><label>壁温<select id="wall-select">${options(walls(), label)}</select></label>
+      <label>电桥<select id="stress-select">${options(stresses(), id => label(id).replace(/\s*热应力估算$/, ""))}</select></label></div>
+    <div class="card"><h3>负荷、壁温与热应力（同一时间轴，最近 ${TREND_SECONDS / 60} 分钟）</h3>
       <div id="trend-latest" class="controls"></div>
       <canvas id="trend-canvas" class="chart" style="height:560px" aria-label="三分栏实时趋势"></canvas>
-      <div id="trend-readout" class="chart-caption">把鼠标移到图上查看同一时刻三栏各自的值。</div>
+      <div id="trend-readout" class="chart-caption">把鼠标移到图上查看同一时刻各栏的值。</div>
       <p class="chart-caption">曲线变为橙色表示该量“故障已确认”；数据无效或中断处曲线断开。过去的数据请到“历史查询”页查看。</p></div>`;
 }
 function mountTrend() {
-  $("pair-select").value = String(trend.pair);
-  $("pair-select").onchange = event => { trend.pair = Number(event.target.value); updateTrend(); };
+  $("wall-select").value = String(trend.wall);
+  $("wall-select").onchange = event => { trend.wall = Number(event.target.value); updateTrend(); };
+  $("stress-select").value = String(trend.stress);
+  $("stress-select").onchange = event => { trend.stress = Number(event.target.value); updateTrend(); };
   const canvas = $("trend-canvas");
   canvas.onmousemove = event => {
     const plot = canvas.plot;
@@ -259,12 +258,11 @@ function mountTrend() {
   canvas.onmouseleave = () => { trend.cursor = null; invalidate(); };
 }
 // 修复轮15: a value axis spans at least the least change worth seeing in its quantity, so a steady reading is not stretched
-// over the whole panel; a wall temperature and a wall difference share the unit but not the span.  The data still widen it.
+// over the whole panel.  The data still widen it.
 const MIN_SPAN = {"mV/V": 0.05, "με": 50, degC: 20, "℃": 20, MW: 50, "t/h": 100, MPa: 1, kPa: 0.2};
 function minSpan(id) {
   const d = definition(id);
-  if (d.operation === "difference" && (d.unit === "degC" || d.unit === "℃")) return 10;
-  if (d.unit === "MPa" && ["thermal_stress", "absolute_peak", "maximum"].includes(d.operation)) return 10;
+  if (d.unit === "MPa" && ["elastic_stress", "absolute_peak", "maximum"].includes(d.operation)) return 10;
   return MIN_SPAN[d.unit] ?? 0;
 }
 // The axis widened to the least span around the data, then snapped to even steps of 1, 2 or 5 × 10^k.
@@ -279,36 +277,35 @@ function valueAxis(values, span, intervals) {
   for (let k = 0; k <= Math.round((hi - lo) / step); k++) ticks.push(Number((hi - k * step).toPrecision(12)));
   return {lo, hi, ticks};
 }
-// 修复轮15 (用户 11-01): a colour for each kind of quantity, the same on the live trend and in the replay chart; red stays
-// "no value" and amber the cursor and the gaps, so no line takes either.
-const LINE = {plain: "#73bcff", difference: "#4fd1a5", stress: "#c79bff", alarm: "#ff9f43"};
+// 修复轮15 (用户 11-01): a colour for each kind of quantity in the replay chart; red stays "no value" and amber the cursor and
+// the gaps, so no line takes either.  用户 11-06: the three curves of the thermal stress page each have their own (`trendPanels`).
+const LINE = {plain: "#73bcff", wall: "#4fd1a5", stress: "#c79bff", alarm: "#ff9f43"};
 const beyond = (id, value) => beyondLimit(definition(id), value);
 function lineColor(id) {
   const d = definition(id);
-  if (d.operation === "difference" && (d.unit === "degC" || d.unit === "℃")) return LINE.difference;
-  if (d.unit === "MPa" && ["thermal_stress", "absolute_peak", "maximum"].includes(d.operation)) return LINE.stress;
+  if (d.unit === "MPa" && ["elastic_stress", "absolute_peak", "maximum"].includes(d.operation)) return LINE.stress;
   return LINE.plain;
 }
 function trendPanels() {
-  const p = pairs()[trend.pair], ids = [loadId(), p.delta, p.stress];
-  // the difference and the stress can be either sign and say so; the load is a plain quantity
-  return ids.map((id, i) => {
+  // the stress can be either sign and says so; the load and the wall are plain quantities.  A configuration may lack any of them.
+  const known = new Set(definitions().map(d => d.id));
+  return [[loadId(), "负荷", reading, LINE.plain], [walls()[trend.wall], "壁温", reading, LINE.wall], [stresses()[trend.stress], "热应力（估算）", signed, LINE.stress]].filter(([id]) => known.has(id)).map(([id, name, shown, color]) => {
     const raw = definition(id).unit;
-    return {id, name: i === 0 ? "负荷" : i === 1 ? "内外壁温差" : "热应力（估算）", unit: unitText(raw), color: lineColor(id), points: trend.series.get(id) || [], show: v => i === 0 ? reading(v, raw) : signed(v, raw)};
+    return {id, name, unit: unitText(raw), color, points: trend.series.get(id) || [], show: v => shown(v, raw)};
   });
 }
 function updateTrend() {
   const canvas = $("trend-canvas");
-  if (!canvas || !pairs().length) return;
-  const p = pairs()[trend.pair], panels = trendPanels(), now = state.serverWall || Date.now() / 1000;
-  $("pair-inputs").textContent = `内壁 ${p.inner}，外壁 ${p.outer}（温差与热应力都由这一对算出）`;
+  const panels = canvas ? trendPanels() : [];
+  if (!panels.length) return;
+  const now = state.serverWall || Date.now() / 1000;
   setHtml("trend-latest", panels.map(x => { const view = channel(x.id); return `<span data-panel="${esc(x.id)}"><span style="color:${x.color}">${esc(x.name)}</span>：<b>${view && view.valid ? `${x.show(view.value)} ${esc(x.unit)}` : "—"}</b></span> ${stateBadges(x.id)}`; }).join(" "));
-  $("trend-readout").textContent = trend.cursor === null ? "把鼠标移到图上查看同一时刻三栏各自的值。"
+  $("trend-readout").textContent = trend.cursor === null ? "把鼠标移到图上查看同一时刻各栏的值。"
     : `游标 ${clock(trend.cursor)}：` + panels.map(x => { const v = valueAt(x.points, trend.cursor); return `${x.name} ${v && v.valid ? `${x.show(v.v)} ${x.unit}` : "—（无数据或无效）"}`; }).join(" ｜ ");
   plotTrend(canvas, panels, now);
 }
 function plotTrend(canvas, panels, now) {
-  const ratio = window.devicePixelRatio || 1, w = canvas.clientWidth, h = 560, left = 70, right = w - 16, gap = 22, top0 = 10, height = (h - 34 - top0 - gap * 2) / 3, t0 = now - TREND_SECONDS;
+  const ratio = window.devicePixelRatio || 1, w = canvas.clientWidth, h = 560, left = 70, right = w - 16, gap = 22, top0 = 10, height = (h - 34 - top0 - gap * (panels.length - 1)) / panels.length, t0 = now - TREND_SECONDS;
   canvas.width = w * ratio;
   canvas.height = h * ratio;
   const c = canvas.getContext("2d");

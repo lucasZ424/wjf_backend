@@ -26,7 +26,7 @@ def template():
     if SHEET.exists():
         raise SystemExit(f"{SHEET} 已经有了，不覆盖（它可能已填好）。要新模板，先把它改名或挪走。")
     pointsheet.main(["template", "--base", str(BASE), "--out", str(SHEET)])
-    print(f"已生成空白点表：{SHEET}\n每行填一个要订阅的点：类别、温度对号（只给内外壁温度）、显示名称、数据源、地址或 NodeId；"
+    print(f"已生成空白点表：{SHEET}\n每行填一个要订阅的点：类别、显示名称、数据源、地址或 NodeId；"
           "填法见表里的“说明”页。填好后拖到“2-生成配置”上。")
 
 

@@ -15,8 +15,8 @@ def test_research_configuration_is_replaceable_and_model_references_are_checked(
     assert len(config.ui.stations) == 8
     assert {s.kind for s in config.sources} == {"modbus", "opcua"}
     edited = config.model_dump()
-    next(d for d in edited["derived"] if d["operation"] == "thermal_stress")["model_id"] = "missing"
-    with pytest.raises(ValueError, match="thermal_stress needs"):
+    next(d for d in edited["derived"] if d["operation"] == "elastic_stress")["model_id"] = "missing"
+    with pytest.raises(ValueError, match="elastic_stress"):
         Settings.model_validate(edited)
 
 

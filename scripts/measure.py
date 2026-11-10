@@ -1,6 +1,6 @@
 """Full-scale protocol and performance measurement (方案 D46).
 
-Real Modbus and OPC UA servers (the independent research simulator: 8 bridges + 200 monitored items), the real
+Real Modbus and OPC UA servers (the independent research simulator: 8 bridges + 222 monitored items), the real
 runtime with its owner, ordered ingress, commit queue and archive router, throw-away PostgreSQL databases on the
 development clusters (created here, dropped here, nothing else is touched) and, with --browser, a real Chrome on
 page 4 that reads the whole current state once a second and draws it.  It reports what happened; it does not decide whether that is
@@ -344,10 +344,10 @@ def load_report(lab: Lab, before: dict, since: float) -> dict:
 
 
 async def initial_burst(lab: Lab) -> dict:
-    """Everything arrives at once: the first notification of 200 items, the first Modbus rounds.  Timed from the
+    """Everything arrives at once: the first notification of 222 items, the first Modbus rounds.  Timed from the
     moment the system was started, so connecting, subscribing and the opening of the archive are in it."""
     before, started = lab.before_start, lab.started
-    await lab.wait(lab.everything_valid, 60, "the 417 channels never became valid")
+    await lab.wait(lab.everything_valid, 60, "the 255 channels never became valid")
     valid_after = time.monotonic() - started
     backlog = await lab.settled()
     return {"all_417_valid_after_seconds": round(valid_after, 2), "archive_caught_up_after_seconds": None if backlog is None else round(backlog, 2), **load_report(lab, before, 0.0)}

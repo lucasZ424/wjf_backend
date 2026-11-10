@@ -95,7 +95,7 @@ def test_it_reads_at_once_then_every_five_seconds_and_only_while_it_is_in_front(
 
 
 def test_each_row_shows_its_mapping_value_quality_validity_and_its_two_times(page, fresh):
-    pid = next(p.id for p in fresh.config.points if p.source == UA and "temp_inner" in p.id)
+    pid = next(p.id for p in fresh.config.points if p.source == UA and "temp_wall" in p.id)
     stamp = 1_700_000_000.0  # as the server gave it
     gen = fresh.call(lambda: fresh.owner.sources[UA].conn_gen)
     fresh.call(lambda: fresh.owner.accept(
@@ -126,7 +126,7 @@ def test_each_row_shows_its_mapping_value_quality_validity_and_its_two_times(pag
 
 def test_the_table_is_replaced_by_each_reading_and_never_patched_by_the_live_stream(page, fresh):
     """S3: values keep changing in the live readings, yet the table holds one health reading until the next poll replaces it."""
-    pid = next(p.id for p in fresh.config.points if p.source == UA and "temp_inner" in p.id)
+    pid = next(p.id for p in fresh.config.points if p.source == UA and "temp_wall" in p.id)
     open_page(page, fresh)
     page.evaluate(
         """pid => {
@@ -157,7 +157,7 @@ def test_the_table_is_replaced_by_each_reading_and_never_patched_by_the_live_str
 def test_every_row_state_the_page_ever_shows_belongs_to_one_observation(page, fresh):
     """S3 in the browser: the value, the quality, the time it was received and the server's own timestamp of a row are
     always those of ONE observation, whatever arrives between two readings."""
-    pid = next(p.id for p in fresh.config.points if p.source == UA and "temp_inner" in p.id)
+    pid = next(p.id for p in fresh.config.points if p.source == UA and "temp_wall" in p.id)
     base, received = 1_700_000_000.0, {}
     gen = fresh.call(lambda: fresh.owner.sources[UA].conn_gen)
     open_page(page, fresh)
@@ -220,7 +220,7 @@ def test_the_two_counters_are_shown_apart_on_the_communication_page_and_on_the_s
         resync, failures = heads.index("重新同步次数"), heads.index("连续建连失败次数")
         assert rows[UA][resync].startswith("5") and "持续失步" in rows[UA][resync] and rows[UA][failures] == "2"
         assert rows[MB][resync] == "0" and rows[MB][failures] == "0"
-        assert "含义不同" in page.locator("main").inner_text(), "the counters are not the counts in the log"
+        # 用户 11-10：页面只留操作用语（11-01），说明文字不再上页面，这里不再要求它
         keep(page, "comm-counters" if place == "#comm-sources" else "selfcheck-counters")
     page.get_by_role("button", name="通信与日志").click()
     page.locator("#comm-inputs tbody tr").first.wait_for()
@@ -254,7 +254,8 @@ def test_the_log_says_which_run_what_was_trimmed_and_what_was_lost_and_never_gra
     open_page(page, fresh)
     meta = page.locator("#comm-log-meta").inner_text()
     assert "500 / 500" in meta and "已淘汰" in meta and "现存最早记录" in meta, meta
-    assert "诊断丢失 3 次" in meta and "不是数据丢失" in meta and page.locator("#comm-log-meta .badge", has_text="日志不完整").count() == 1
+    # 用户 11-10：页面只留操作用语（11-01），说明文字不再上页面，这里不再要求它
+    assert "诊断丢失 3 次" in meta and page.locator("#comm-log-meta .badge", has_text="日志不完整").count() == 1
     rows = page.locator("#comm-log tbody tr")
     assert rows.count() == 500
     first = cells(rows.first)
@@ -298,7 +299,7 @@ def test_an_empty_log_says_so_without_claiming_that_nothing_ever_happened(page, 
     page.get_by_role("button", name="系统总览").click()
     page.get_by_role("button", name="通信与日志").click()
     page.locator("#comm-log").get_by_text("暂无记录").wait_for()
-    assert "不表示从未发生通信故障" in page.locator("#comm-log").inner_text()
+    # 用户 11-10：页面只留操作用语（11-01），说明文字不再上页面，这里不再要求它
     keep(page, "comm-log-empty")
     assert page.locator("#comm-log-meta .badge").count() == 0
     assert page.errors == []
@@ -369,7 +370,7 @@ def test_a_failed_reading_is_said_so_and_the_last_good_content_stays(page, rig):
 
 def test_the_live_pages_still_update_while_the_communication_page_exists(page, rig):
     sign_in(page, rig)
-    point = next(d.inputs[0] for d in rig.config.derived if d.operation == "difference")
+    point = "temp_wall_001"  # 修复轮18: any input; a wall feeds no derived quantity any more
     page.get_by_role("button", name="通信与日志").click()
     page.get_by_role("button", name="系统总览").click()
     try:

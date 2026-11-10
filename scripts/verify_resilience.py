@@ -7,7 +7,7 @@ crash     the backend runs as its own process on throw-away databases and is kil
           after the restart every earlier run has been closed from what is persisted.
 storage   the 95 % / 90 % thresholds are driven with INJECTED free-space readings through the live runtime (a real
           disk is never filled): which database each group lands in, hysteresis, no archive loss, history merged.
-capacity  the measured growth of the full-scale input (all 208 inputs changing every second, and nothing changing), taken
+capacity  the measured growth of the full-scale input (all 230 inputs changing every second, and nothing changing), taken
           after the first start prepared its buckets: how often the rolling deletion comes, how many days are kept after
           it - less the write-ahead log and maintenance peaks - whether that holds the floor of buckets, and how long the
           emergency database lasts above its reserve.  There is no one-year retention to pass any more.
@@ -162,7 +162,7 @@ async def crash(iterations: int, seed: int = 7) -> dict:
         final.start()
         await final.until_ready(viewer)
         await asyncio.sleep(4)
-        body = await asyncio.to_thread(fetch, f"http://127.0.0.1:{final.port}/api/replay?center={time.time() - 30}&seconds=7200&points=bridge_mvv_01,temp_inner_01", viewer, 30)
+        body = await asyncio.to_thread(fetch, f"http://127.0.0.1:{final.port}/api/replay?center={time.time() - 30}&seconds=7200&points=bridge_mvv_01,temp_wall_001", viewer, 30)
         report["history_after_crashes"] = {"channels": sorted(body["channels"]), "partial": body["partial"], "gaps": len(body["gaps"]), "rows": {k: sum(len(s["rows"]) for s in v["segments"]) for k, v in body["channels"].items()}}
         report["graceful_stop"] = await final.stop()
         report["after"] = {name: database_check(store) for name, store in (("primary", primary), ("emergency", emergency))}

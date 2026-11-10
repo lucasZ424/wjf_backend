@@ -21,8 +21,9 @@ from web_rig import UA, nominal
 OK = "document.querySelector('#connection').textContent === '实时连接'"
 CUT = "document.querySelector('#connection').textContent === '数据中断'"
 READING = "**/api/snapshot"
-PAIR = 2  # the third temperature pair
-PROXY_PER_K = 1.1475  # MPa per K: E 170 GPa x alpha 1.35e-5 1/K x restraint 0.5
+WALL_INDEX = 2  # the third wall
+WALL = "temp_wall_003"
+SPREAD = 100.0  # the load is sent this far above the wall, in the same batch: one is never shown beside the other's old value
 FORGED = 987654.321  # a load nobody sent: "987,654" on screen would mean a damaged message was applied
 NAMES = ["系统总览", "水冷壁应变场", "热应力分析", "历史查询", "系统自检", "通信与日志", "系统管理与权限"]
 
@@ -41,11 +42,6 @@ def open_page(page, rig, name, who="viewer"):
     if name != "系统总览":
         page.get_by_role("button", name=name).click()
     connected(page)
-
-
-def pair_of(rig):
-    chosen = [d for d in rig.config.derived if d.operation == "difference"][PAIR]
-    return chosen.inputs[0], chosen.inputs[1]
 
 
 def plot(page):
@@ -98,34 +94,36 @@ def connection_states(page):
 
 
 def check_trend_frames(seen):
-    """The temperature difference and the stress proxy come from the same pair in the same group, so on every
-    screen state either both are dashes or the proxy is exactly 1.1475 MPa per K of the difference."""
+    """The load and the wall are sent in one batch (修复轮18: the page no longer has a difference and a stress of one pair to hold
+    against each other), so on every screen state either both are dashes or they stand SPREAD apart - or at their nominal
+    values, before the first batch and after a restart."""
     valid = dashes = 0
+    nominal_load, nominal_wall = nominal()["load_mw"], nominal()[WALL]
     for panels in seen:
-        delta, stress = number(panels[1]), number(panels[2])
-        if delta is None or stress is None:
-            assert delta is None and stress is None, f"a result without its partner: {panels}"
+        load, wall = number(panels[0]), number(panels[1])
+        if load is None or wall is None:
+            assert load is None and wall is None, f"one value of a batch without the other: {panels}"
             dashes += 1
         else:
-            # 终版 §17.6 shows ℃ to 0.1 and MPa to 0.01; a partner from another group is a whole kelvin off, > 1 MPa
-            assert abs(stress - PROXY_PER_K * delta) <= PROXY_PER_K * 0.05 + 0.005 + 1e-9, f"a new input beside an old result: {panels}"
-            valid += 1
+            # 终版 §17.6 shows both to 0.1; a partner from another batch is a whole unit off
+            together = abs(load - wall - SPREAD) <= 0.1 + 1e-9
+            at_rest = abs(load - nominal_load) <= 0.05 + 1e-9 and abs(wall - nominal_wall) <= 0.05 + 1e-9
+            assert together or at_rest, f"a new input beside an old one: {panels}"
+            valid += together
     return valid, dashes
 
 
 def push_pair(rig, k, groups=1, heavy=False):
-    """`groups` input changes inside ONE event-loop turn, so they leave as one message.  The pair under test
-    changes by whole kelvins (the difference is never the same twice in a row); `heavy` also moves all 200
-    OPC UA channels, which makes the messages large."""
-    inner, outer = pair_of(rig)
+    """`groups` input changes inside ONE event-loop turn, so they leave as one message.  The wall and the load under
+    test change together by whole units; `heavy` also moves all 222 OPC UA channels, which makes the messages large."""
     names = nominal()
 
     def run():
         for j in range(groups):
             step = 3 * k + j
-            items = [(inner, 450.0 + step % 37), (outer, 440.0 + step % 5)]
+            items = [(WALL, 450.0 + step % 37), ("load_mw", 450.0 + SPREAD + step % 37)]
             if heavy:
-                items += [(n, v + 0.01 * (step % 5 + 1)) for n, v in names.items() if n not in (inner, outer)]
+                items += [(n, v + 0.01 * (step % 5 + 1)) for n, v in names.items() if n not in (WALL, "load_mw")]
             rig.ua(items)
 
     rig.call(run)
@@ -278,7 +276,7 @@ def test_rounds_and_a_cut_off_never_show_an_input_next_to_another_rounds_result(
 def test_a_source_that_starts_over_and_a_cut_off_never_leave_a_result_beside_the_wrong_input(page, rig, calm):
     page.add_init_script(TREND_RECORDER + CONNECTION_RECORDER)
     open_page(page, rig, "热应力分析")
-    page.locator("#pair-select").select_option(str(PAIR))
+    page.locator("#wall-select").select_option(str(WALL_INDEX))
     resume = None
     for k in range(1, 25):
         if k == 6:
@@ -294,12 +292,14 @@ def test_a_source_that_starts_over_and_a_cut_off_never_leave_a_result_beside_the
     page.wait_for_timeout(1200)
     valid, dashes = check_trend_frames(frames(page))
     assert valid >= 8 and dashes >= 2, (valid, dashes)
+    seen = frames(page)
+    assert any(number(p[0]) is None and number(p[1]) is None and number(p[2]) is not None for p in seen), (
+        "F5: while OPC UA started over, the load and the wall were dashes and the stress went on"
+    )
     panels = plot(page)["panels"]
-    assert len(panels[1]["points"]) == len(panels[2]["points"]), "the difference and the proxy are recorded together"
-    for delta, stress in zip(panels[1]["points"], panels[2]["points"], strict=True):
-        assert (delta["t"], delta["valid"]) == (stress["t"], stress["valid"]), "one reading, one instant, one validity"
-        if delta["valid"]:
-            assert abs(stress["v"] - PROXY_PER_K * delta["v"]) < 1e-6
+    assert len(panels[0]["points"]) == len(panels[1]["points"]), "the load and the wall are recorded together"
+    for load, wall in zip(panels[0]["points"], panels[1]["points"], strict=True):
+        assert (load["t"], load["valid"]) == (wall["t"], wall["valid"]), "one reading, one instant, one validity"
     assert {"数据中断", "实时连接"} <= connection_states(page)
     assert own_errors(page) == []
     keep(page, "g04-source-restart-and-cut")
@@ -329,12 +329,12 @@ def archive_settled(rig):
 
 def test_readings_that_fail_or_hang_never_hold_up_the_acquisition_or_the_archive(page, archive_rig):
     """User rule 5 (修复轮05): a display request is a request and nothing more.  For eight seconds no reading is
-    answered (each one is given up at its 5 s limit) while all 200 OPC UA channels change ten times a second: the
+    answered (each one is given up at its 5 s limit) while all 222 OPC UA channels change ten times a second: the
     owner and the archive carry on, the page says it is cut off, and the next good reading is whole."""
     rig = archive_rig
     page.add_init_script(TREND_RECORDER + CONNECTION_RECORDER)
     open_page(page, rig, "热应力分析")
-    page.locator("#pair-select").select_option(str(PAIR))
+    page.locator("#wall-select").select_option(str(WALL_INDEX))
     before = rig.call(lambda: rig.queue.stats["committed"])
     page.route(READING, lambda route: None)  # held: never answered
     try:

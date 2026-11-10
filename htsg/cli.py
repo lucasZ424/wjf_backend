@@ -61,52 +61,21 @@ def init_accounts(accounts: Path, primary_dsn: str, timing=None) -> Path | None:
     return destination
 
 
-BYTES_PER_QUANTITY_PER_DAY = 69 * 10**6  # measured at full scale, every value changing (终版 §13.4)
-
-
-def capacity(config, disk_bytes=None, stop=None) -> dict:
-    """How often the rolling deletion runs and how much is kept after it, for this configuration (终版 §13.4, §13.5).  A
-    scenario from the measured daily growth, never an acceptance: records differ in width and rate, WAL, other files and the
-    tables kept for good take room too, and deletion goes by whole buckets.  The self-check page shows the real pace."""
-    import shutil
-
-    policy = config.storage
-    stop = policy.cleanup_stop if stop is None else stop
-    disk_bytes = shutil.disk_usage(policy.primary_path).total if disk_bytes is None else disk_bytes
-    quantities = len(config.points) + len(config.derived)
-    per_day = quantities * BYTES_PER_QUANTITY_PER_DAY
-    return {
-        "archived_quantities": quantities,
-        "bytes_per_quantity_per_day": BYTES_PER_QUANTITY_PER_DAY,
-        "disk_bytes": disk_bytes,
-        "cleanup_start": policy.cleanup_start,
-        "cleanup_stop": stop,
-        "days_between_deletions": (policy.cleanup_start - stop) * disk_bytes / per_day if per_day else None,
-        "days_kept_after_deletion": stop * disk_bytes / per_day if per_day else None,
-        "note": "Scenario only: the measured daily growth times the channels; adjust the stop line by the deletion period "
-        "the self-check page measures",
-    }
-
-
 # the highest bucket number used, and the run time of the bucket in use (§13.6): the deployment's own, named here only
 NUMBER_FILE = Path(".local/bucket_number.json")
 
 
 def main(*, deployment_locked=False):
     parser = argparse.ArgumentParser(description="HTSG local monitoring backend")
-    parser.add_argument("command", choices=["run", "check", "init-accounts", "capacity"])
+    parser.add_argument("command", choices=["run", "check", "init-accounts"])
     parser.add_argument("--config", default="config/development.json")
     parser.add_argument("--database", default=".local/database.json")
     parser.add_argument("--accounts", default=".local/accounts.json")
     parser.add_argument("--port", type=int, default=8000)
-    parser.add_argument("--disk-bytes", type=int, help="capacity: the size of the normal database's disk (default: as measured)")
-    parser.add_argument("--cleanup-stop", type=float, help="capacity: the stop line to estimate for (default: the configured one)")
     args = parser.parse_args()
     config = load_settings(args.config)
     if args.command == "check":
         print(f"配置有效（{'正式' if config.mode == 'production' else '开发'}模式）：{len(config.points)} 个点；配置编号 {config.config_id}")
-    elif args.command == "capacity":
-        print(json.dumps(capacity(config, args.disk_bytes, args.cleanup_stop)))
     elif args.command == "init-accounts":
         import psycopg
 

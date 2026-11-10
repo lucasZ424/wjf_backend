@@ -1,4 +1,4 @@
-"""D29-D31: faults inside the owner - 304 channels, batch-internal versions, identity, buffering
+"""D29-D31: faults inside the owner - 230 channels, batch-internal versions, identity, buffering
 (终版 §8, §8.1, §8.2, §12).
 
 Why it matters: the fault list is the reference point of history replay.  A timer that survives a changed
@@ -9,6 +9,7 @@ make that list untrustworthy.
 from dataclasses import replace
 
 from fault_support import Accepting, at, fault_config, fault_owner, faults_of, feed, keepalive, tick
+from owner_support import poll
 
 from htsg import records as r
 from htsg.archive_router import group_bytes
@@ -29,16 +30,17 @@ def run_ticks(owner, start, stop, alive=True):
 # ------------------------------------------------------------------- D29
 
 
-def test_all_304_channels_are_covered_including_96_differences_and_8_strains():
+def test_all_230_channels_are_covered_including_215_walls_and_8_strains():
     research = load_settings("config/research-sim.json")
     owner = Owner(research, 1000.0, 100.0, run_id="x")
-    assert len(owner.rules) == 304
-    assert sum(1 for k in owner.rules if k.startswith("delta_t_")) == 96
+    assert len(owner.rules) == 230
+    assert sum(1 for k in owner.rules if k.startswith("temp_wall_")) == 215
     assert sum(1 for k in owner.rules if k.startswith("strain_") and not k.startswith("strain_change")) == 8
     assert not any(k.startswith(("bridge_", "strain_change_", "stress_", "thermal_stress")) for k in owner.rules)
 
 
 def test_a_differently_valued_second_version_in_one_batch_restarts_the_derived_timer():
+    # C8, on the small configuration the design names for it: the default point table has no OPC UA input with a result
     # spec §8.2: outer 450, inner 490 -> 530 in ONE batch; the batch-end difference is 80, but the clock
     # of the previous batch (60 > 55 since 100.0) must not carry over
     owner, sink, _ = fault_owner(fault_config(point_rules=False))
@@ -60,7 +62,7 @@ def test_a_single_version_update_keeps_the_running_clock():
     assert [f.point_id for f in faults_of(sink)] == ["dt"]
 
 
-def test_identical_repeats_and_unrelated_updates_do_not_reset_the_timer():
+def test_identical_repeats_and_unrelated_updates_do_not_reset_the_timer():  # C8
     cfg = fault_config(point_rules=False)
     payload = cfg.model_dump(mode="json")
     payload["points"].append({"id": "x", "source": "ua", "unit": "u", "node_id": "ns=2;s=x"})
@@ -80,7 +82,7 @@ def test_two_inputs_updating_once_each_is_not_a_multi_version_batch():
     assert len(faults_of(sink)) == 1
 
 
-def test_only_the_batch_end_result_decides_recovery_of_a_confirmed_fault():
+def test_only_the_batch_end_result_decides_recovery_of_a_confirmed_fault():  # C8: cancelling a clock is no recovery
     owner, sink, _ = fault_owner(fault_config(point_rules=False))
     feed(owner, 100.0, [("ti", 510.0), ("to", 450.0)])
     run_ticks(owner, 101.0, 105.0)
@@ -254,11 +256,11 @@ def test_the_recovery_unit_with_1000_faults_and_a_full_baseline_fits_the_group_b
     sink.owner = owner
     for source in ("mb_field", "ua_field"):
         owner.begin_generation(source, 1, 1000.0, 100.0)
-    items = tuple(r.Item(p.id, 480.0 + i * 0.01) for i, p in enumerate(research.points) if p.source == "ua_field")
+    items = tuple(r.Item(p.id, 480.0 + i * 0.01) for i, p in enumerate(research.points) if p.source == "ua_field")  # I4: 222 points
     owner.accept(r.InputBatch("ua_field", 1, r.KIND_UA_NOTIFY, 1001.0, 101.0, items, publish_seq=1))
     base = next(g for g in sink.groups if g.observations)
     fault = r.FaultRecord(
-        "x", "big", "ua_field", 1, 1, "temp_inner_01", "HIGH", 1.0, 1.0, "OBSERVATION", base.observations[0].id,
+        "x", "big", "ua_field", 1, 1, "temp_wall_001", "HIGH", 1.0, 1.0, "OBSERVATION", base.observations[0].id,
         1.0, 495.0, owner.config.config_id, {"low": None, "high": 490.0, "hysteresis_low": 0.0, "hysteresis_high": 3.0},
     )  # fmt: skip
     s = owner.sources["ua_field"]
@@ -268,8 +270,29 @@ def test_the_recovery_unit_with_1000_faults_and_a_full_baseline_fits_the_group_b
     owner.tick(1003.0, 103.0)
     recovery = sink.groups[-1]
     assert recovery.kind == r.GROUP_RECOVERY and len(recovery.faults) == 1000
-    assert len(recovery.observations) == 200 and len(recovery.results) >= 1
+    assert len(recovery.observations) == 222 and len(recovery.results) == 0, "nothing rests on these inputs any more (C6)"
     assert group_bytes(recovery) < owner.config.storage.batch_budget_bytes, group_bytes(recovery)
+
+
+def test_the_recovery_unit_of_the_modbus_source_restates_its_bridges_with_their_results():
+    """What the OPC UA unit above no longer shows: a recovery unit carries the state of the results as well as of the inputs, so
+    that a stress after a gap is not a value without its input (终版 §12, the case the differences used to cover)."""
+    research = load_settings("config/research-sim.json")
+    sink = Accepting()
+    owner = Owner(research, 1000.0, 100.0, commit=sink, run_id="big")
+    sink.owner = owner
+    for source in ("mb_field", "ua_field"):
+        owner.begin_generation(source, 1, 1000.0, 100.0)
+    bridges = {p.id: 0.6 for p in research.points if p.source == "mb_field"}
+    for number in (1, 2):
+        owner.accept(poll(number, bridges, source="mb_field", wall=1000.0 + number, mono=100.0 + number))
+    s = owner.sources["mb_field"]
+    s.archive, s.lost_since_wall, s.lost_reason, s.lost_from_batch_seq = "LOST", 1002.0, "QUEUE_FULL", 2
+    owner.tick(1003.0, 103.0)
+    recovery = sink.groups[-1]
+    assert recovery.kind == r.GROUP_RECOVERY and {o.point_id for o in recovery.observations} == set(bridges)
+    assert {x.point_id for x in recovery.results} >= {f"stress_{n:02d}" for n in range(1, 9)} | {"thermal_stress_peak"}
+    assert group_bytes(recovery) < owner.config.storage.batch_budget_bytes
 
 
 def test_status_exposes_incomplete_fault_archive_and_losses_for_the_current_page():

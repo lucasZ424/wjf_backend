@@ -80,12 +80,6 @@ class Station(ResearchModel):
     y: float = Field(ge=0, le=100)
     strain: str
     strain_change: str | None = None
-    # 修复轮16: no page shows a station's temperature pair, and a bridge may sit among several pairs: optional, and the
-    # point-sheet tool leaves them out
-    temperature: str | None = None
-    inner_temperature: str | None = None
-    stress: str | None = None
-    delta_temperature: str | None = None
 
 
 class UI(ResearchModel):
@@ -116,14 +110,7 @@ def validate_research(config):
     if not set(config.ui.point_labels) <= known:
         raise ValueError("UI labels reference unknown points")
     for station in config.ui.stations:
-        refs = (
-            station.strain,
-            station.strain_change,
-            station.temperature,
-            station.inner_temperature,
-            station.stress,
-            station.delta_temperature,
-        )
+        refs = (station.strain, station.strain_change)
         if not {r for r in refs if r is not None} <= known:
             raise ValueError("UI station references unknown points")
     if not set(config.ui.process_points) <= known:
@@ -144,8 +131,8 @@ def validate_research(config):
     for scenario in sim.scenarios:
         if not (set(scenario.points) | set(scenario.offsets)) <= signals:
             raise ValueError("scenario references unknown point")
-        if scenario.kind == "hotspot" and not all(re.fullmatch(r"temp_(inner|outer)_\d+", x) for x in scenario.points):
-            raise ValueError("a hotspot heats wall temperature pairs only")
+        if scenario.kind == "hotspot" and not all(re.fullmatch(r"temp_wall_\d+", x) for x in scenario.points):
+            raise ValueError("a hotspot heats wall temperatures only")
     ports = [sim.control_port]
     kinds = []
     occupied = set()

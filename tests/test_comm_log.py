@@ -389,7 +389,7 @@ def test_credentials_never_survive_the_cleaning(raw, secret):
         "ConnectionRefusedError(10061, 'No connection could be made because the target machine actively refused it')",
         "Authentication failed: BadUserAccessDenied",
         "opc.tcp://10.0.0.5:4840/ua is not reachable",
-        "monitored items refused: ['temp_inner_01', 'temp_inner_02']",
+        "monitored items refused: ['temp_wall_001', 'temp_wall_002']",
     ],
 )
 def test_ordinary_error_text_is_left_alone(plain):

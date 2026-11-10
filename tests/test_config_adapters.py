@@ -1,4 +1,6 @@
+import json
 import struct
+from pathlib import Path
 
 import pytest
 from owner_support import small_config
@@ -38,12 +40,45 @@ def test_modbus_decode_handles_explicit_word_order_and_conversion():
     assert decode_registers(list(reversed(words)), point) == (26, "GOOD")
 
 
-def test_opcua_deployment_configuration_rejects_more_than_two_hundred_channels():
+def ua_points(count):
     data = small_config().model_dump()
     data["sources"] = [{"id": "ua", "kind": "opcua", "enabled": False}]
     data["points"] = [
-        {"id": f"ua_{i:03d}", "source": "ua", "unit": "test", "node_id": f"ns=2;s=ua_{i:03d}"} for i in range(201)
+        {"id": f"ua_{i:03d}", "source": "ua", "unit": "test", "node_id": f"ns=2;s=ua_{i:03d}"} for i in range(count)
     ]
     data["derived"] = []
-    with pytest.raises(ValidationError, match="OPC UA channel capacity is 200"):
+    return data
+
+
+def test_opcua_deployment_configuration_takes_222_channels():
+    """A2, Q1: 215 walls and 7 process quantities fill the capacity exactly."""
+    assert len(Settings.model_validate(ua_points(222)).points) == 222
+
+
+def test_opcua_deployment_configuration_rejects_a_223rd_channel():
+    """A3, Q1: the limit was measured at this size; a bigger configuration does not start on the hope that it holds."""
+    with pytest.raises(ValidationError, match="OPC UA channel capacity is 222"):
+        Settings.model_validate(ua_points(223))
+
+
+def test_a_ninth_modbus_bridge_is_rejected():
+    """A4, 终版 §3.1: 8 bridges, one 16-register request a round."""
+    data = small_config().model_dump()
+    data["points"] = [
+        {"id": f"b{i}", "source": "mb", "unit": "mV/V", "address": 2 * i, "data_type": "float32"} for i in range(9)
+    ]
+    data["derived"] = []
+    with pytest.raises(ValidationError, match="Modbus Bridge channel capacity is 8"):
         Settings.model_validate(data)
+    data["points"].pop()
+    assert len(Settings.model_validate(data).points) == 8
+
+
+@pytest.mark.parametrize("config", ["config/research-sim.json", "config/production.base.json"])
+def test_no_channel_of_the_old_table_is_left_in_a_shipped_configuration(config):
+    """A6 (用户 11-05): the ids the customer's table no longer has; a leftover would be subscribed and never answered."""
+    data = json.loads(Path(config).read_text(encoding="utf-8"))
+    text = json.dumps(data, ensure_ascii=False)
+    for old in ("temp_inner", "temp_outer", "delta_t", "waterwall_flow", "main_steam_pressure", "thermal_stress\"", "restraint", "expansion_per_k"):
+        assert old not in text, old
+    assert not [d for d in data["derived"] if d["operation"] == "difference"]

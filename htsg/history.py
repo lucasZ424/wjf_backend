@@ -487,9 +487,10 @@ def channel_sources(config) -> dict[str, str]:
 def replay_template(config, channel: str) -> list[str]:
     """What a replay of a fault on `channel` shows (修复轮03): the fault, its computation chain - what it is computed from,
     what is computed from it or from the same inputs, and the other inputs of those - and the operating quantities, the
-    inputs no derived quantity uses.  Only the configuration's own relations: the site has no topology.  A quantity of more
-    than two inputs (the thermal stress peak) is not followed.  Fault first, then its own inputs as declared, then the rest of
-    the chain and the operating quantities in configuration order; at most CHANNEL_LIMIT."""
+    configured process points (修复轮18: a wall temperature feeds no derived quantity, yet it is no operating quantity).  Only
+    the configuration's own relations: the site has no topology.  A quantity of more than two inputs (the thermal stress
+    peak) is not followed.  Fault first, then its own inputs as declared, then the rest of the chain and the operating
+    quantities in configuration order; at most CHANNEL_LIMIT."""
     small = {d.id: list(d.inputs) for d in config.derived if len(d.inputs) <= 2}
     own = set(small.get(channel, []))
     chain = set(own)
@@ -497,10 +498,9 @@ def replay_template(config, channel: str) -> list[str]:
         if channel in inputs or own & set(inputs):
             chain |= {derived, *inputs}
     chain.discard(channel)
-    used = {i for d in config.derived for i in d.inputs}
     order = [p.id for p in config.points] + [d.id for d in config.derived]
-    operating = [p.id for p in config.points if p.id not in used and p.id != channel]
-    rest = [c for c in order if c in chain and c not in own]
+    operating = [p for p in config.ui.process_points if p != channel]
+    rest =[c for c in order if c in chain and c not in own]
     return ([channel] + small.get(channel, []) + rest + operating)[:CHANNEL_LIMIT]
 
 

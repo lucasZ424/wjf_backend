@@ -16,7 +16,7 @@ from uuid import uuid4
 
 import psycopg
 import uvicorn
-from live_support import BRIDGES, FULL, PROCESS, UA_NAMES
+from live_support import BRIDGES, FULL, NOMINAL
 from owner_support import FixedBucket, poll
 from psycopg import sql
 from psycopg.conninfo import make_conninfo
@@ -34,11 +34,8 @@ UA, MB = "ua_field", "mb_field"
 
 
 def nominal():
-    """Distinct, plausible values for all 200 OPC UA channels."""
-    return {
-        n: 440.0 if n.startswith("temp_outer") else 480.0 + i * 0.01 if n.startswith("temp_inner") else PROCESS[n]
-        for i, n in enumerate(UA_NAMES)
-    }
+    """Distinct, plausible values for all 222 OPC UA channels."""
+    return dict(NOMINAL)
 
 
 class Databases:
@@ -91,6 +88,7 @@ class WebRig:
         """`feed_archive=False` leaves the archive to the test (`write_groups`): the live owner does not write."""
         self.config, self.archive, self.steady = config, archive, steady
         self.run_id, self.feed_archive = run_id, feed_archive
+        self.known = {p.id for p in config.points}
         self.diagnostics = {}  # what the acquisition side would report (negotiated OPC UA parameters); set by a test
         self.acquisition = Acquisition()  # ... and its connect-failure counts, `acquisition.failures`
         self.databases, self.router, self.queue, self.seeded = None, None, None, 0
@@ -106,6 +104,7 @@ class WebRig:
         self.thread = threading.Thread(target=lambda: asyncio.run(self._main()), daemon=True)
         self.ready, self.loop, self.error = threading.Event(), None, None
         self.tick_no, self.ua_seq, self.paused = 0, 0, False
+        self.held = None  # bridge values the feeder's rounds keep sending, for a test that needs a stress to stand still
 
     # ----------------------------------------------------------------------------- the server thread
 
@@ -139,7 +138,7 @@ class WebRig:
                 self.owner.start(now, mono)
             for source in (MB, UA):
                 self.owner.begin_generation(source, 1, now, mono)
-            self.ua(list(nominal().items()))
+            self.ua([(n, v) for n, v in nominal().items() if n in self.known])  # a site's configuration may have fewer points
             self.round()
             app = create_web_app(
                 config=self.config, accounts=self.accounts, owner=self.owner,
@@ -192,7 +191,8 @@ class WebRig:
     def round(self, values=None, **kw):
         """One Modbus round; by default the 8 bridges drift slowly so every round changes something."""
         self.tick_no += 1
-        values = values or {b: 0.7 + 0.001 * k + 0.0001 * self.tick_no for k, b in enumerate(BRIDGES)}
+        values = values or self.held or {b: 0.7 + 0.001 * k + 0.0001 * self.tick_no for k, b in enumerate(BRIDGES) if b in self.known}
+        kw.setdefault("gen", self.owner.sources[MB].conn_gen)
         now, mono = time.time(), time.monotonic()
         batch = poll(self.tick_no, values, source=MB, wall=now, mono=mono, **kw)
         return self.owner.accept(batch)
@@ -221,12 +221,22 @@ class WebRig:
             f"{self.run_id}/gseed{self.seeded}", 1_000_000 + self.seeded, self.run_id, "ua_field", r.GROUP_FAULT, time.time(),
             faults=records, bucket=1,
         )  # fmt: skip
-        assert self.router.write_group(group).durable
+        for _ in range(20):  # it shares the archive with the rig's own writer: a lock wait is retried as the writer would
+            if self.router.write_group(group).durable:
+                break
+            time.sleep(0.25)
+        else:
+            raise AssertionError(f"the seeded faults could not be written: {group.group_id}")
 
     def write_groups(self, groups):
         """Put prepared commit groups into the archive (they must belong to this rig's run and configuration)."""
         for group in groups:
-            assert self.router.write_group(group).durable, group.group_id
+            for _ in range(20):
+                if self.router.write_group(group).durable:
+                    break
+                time.sleep(0.25)
+            else:
+                raise AssertionError(f"could not be written: {group.group_id}")
 
     def start(self):
         self.thread.start()

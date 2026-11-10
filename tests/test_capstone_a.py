@@ -23,8 +23,8 @@ FULL = load_settings(ROOT / "config" / "research-sim.json")
 def test_full_scale_configuration_loads_and_each_result_reference_resolves(archive_db_factory):
     store = archive_db_factory()
     store.initialize(FULL)
-    assert (len(FULL.points), len(FULL.derived)) == (208, 209)
-    assert sum(1 for x in (*FULL.points, *FULL.derived) if fault_rule(x)) == 304
+    assert (len(FULL.points), len(FULL.derived)) == (230, 25)  # A1, 终版 §3.4
+    assert sum(1 for x in (*FULL.points, *FULL.derived) if fault_rule(x)) == 230  # 终版 §8.1
     with store.session() as conn:
         stored = conn.execute("SELECT payload FROM config_version WHERE id=%s", (FULL.config_id,)).fetchone()
         rebuilt = Settings.model_validate(stored["payload"])
@@ -39,13 +39,13 @@ def test_two_values_of_one_point_at_one_instant_and_a_state_assertion_stay_disti
     store = archive_db_factory()
     store.initialize(FULL)
     base = dict(
-        run_id="run1", source_id="ua_field", conn_gen=1, seg=1, batch_seq=4, point_id="temp_inner_01",
+        run_id="run1", source_id="ua_field", conn_gen=1, seg=1, batch_seq=4, point_id="temp_wall_001",
         quality=r.GOOD, status_code=0, received_wall=1000.5, received_mono=20.0,
     )  # fmt: skip
     first = r.Observation(id=r.observation_id("run1", "ua_field", 4, 0), item_seq=0, value=480.0, **base)
     second = r.Observation(id=r.observation_id("run1", "ua_field", 4, 1), item_seq=1, value=495.0, **base)
     assertion = r.Observation(
-        id=r.assertion_id("run1", "ua_field", 2, "temp_inner_01"),
+        id=r.assertion_id("run1", "ua_field", 2, "temp_wall_001"),
         **{**base, "seg": 2, "batch_seq": 4, "conn_gen": 1},
         item_seq=-1,
         value=495.0,
@@ -58,7 +58,7 @@ def test_two_values_of_one_point_at_one_instant_and_a_state_assertion_stay_disti
     group = r.CommitGroup("run1/g1", 1, "run1", "ua_field", r.GROUP_BATCH, 1030.0, (first, second, assertion), bucket=1)
     assert store.write_group(group).status == "COMMITTED"
     with store.session() as conn:
-        rows = samples(conn, "c.point_id='temp_inner_01'")
+        rows = samples(conn, "c.point_id='temp_wall_001'")
     # three rows, told apart by time and by order in the batch: the assertion counts from its own time (修复轮14 keeps
     # no origin per row), the two values of one instant keep the order they arrived in
     assert [(x["t"], x["item"], x["value"]) for x in rows] == [(1000.5, 0, 480.0), (1000.5, 1, 495.0), (1030.0, -1, 495.0)]
@@ -74,7 +74,7 @@ def test_two_values_of_one_point_at_one_instant_and_a_state_assertion_stay_disti
 )
 def test_wrong_threshold_input_fails_validation_instead_of_loading(mutate):
     payload = FULL.model_dump(mode="json")
-    payload["points"] = [mutate(p) if p["id"] == "temp_inner_01" else p for p in payload["points"]]
+    payload["points"] = [mutate(p) if p["id"] == "temp_wall_001" else p for p in payload["points"]]
     with pytest.raises(ValidationError):
         Settings.model_validate(payload)
 

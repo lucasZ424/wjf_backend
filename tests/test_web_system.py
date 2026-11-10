@@ -42,7 +42,7 @@ def test_the_seven_pages_keep_receiving_groups_when_switched(page, archive_rig):
     sign_in(page, archive_rig)
     shown = [t.replace(" ", "").replace("\n", "") for t in page.locator("#navigation button").all_inner_texts()]
     assert shown == NAMES
-    point = next(d.inputs[0] for d in archive_rig.config.derived if d.operation == "difference")
+    point = "temp_wall_001"  # 修复轮18: any input; a wall feeds no derived quantity any more
     try:
         for index, name in enumerate(NAMES):
             page.get_by_role("button", name=name).click()
@@ -72,7 +72,7 @@ def test_the_self_check_shows_what_the_server_granted_the_coverage_limit_and_the
         assert rows["保活计数"][1:] == ["2", "3 与请求不同"], "requested 2, granted 3: both shown, the difference marked"
         assert rows["测点队列（最小值）"][1].strip() == "10" and rows["测点队列（最小值）"][2].startswith("1")
         assert "不满足约束：保活静默加余量须小于数据有效期" in negotiated.inner_text()
-        assert "发布序号连续不能证明监控项无丢值" in negotiated.inner_text()
+        # 用户 11-10：页面只留操作用语（11-01），说明文字不再上页面，这里不再要求它
         archive = page.locator("#check-archive")
         archive.get_by_text("正常库").wait_for()
         assert "写入队列" in archive.inner_text() and "已确认" in archive.inner_text()
@@ -118,7 +118,7 @@ def test_a_full_fault_buffer_is_announced_on_every_page_with_the_counts(page, ti
     faults.get_by_text("故障归档不完整").wait_for()
     assert "1/1" in faults.inner_text() and "累计拒绝 1 条" in faults.inner_text()
     assert "mb_field" in faults.locator("tbody").inner_text(), "the loss summary names the source"
-    assert "只在内存中，进程退出会丢失" in faults.inner_text() and "IN_MEMORY" not in faults.inner_text()
+    assert "IN_MEMORY" not in faults.inner_text()  # 用户 11-10：页面只留操作用语（11-01），说明文字不再上页面，这里不再要求它
     tight_rig.call(tight_rig.round)  # everything normal again: the counts are cumulative, they do not vanish with the state
     page.wait_for_timeout(1500)
     assert page.locator("#archive-banner").is_visible()
@@ -200,20 +200,22 @@ def test_removing_the_model_page_and_its_config_payload_keeps_live_thermal_resul
     assert page.locator("#navigation button").all_inner_texts() == NAMES, "the seven pages, the communication log between self-check and permissions"
     config = api(page, rig, "GET", "/api/ui-config", rig.credentials["viewer"]).json()
     assert "models" not in config, "the removed page's parameter payload is no longer exposed"
-    chosen = next(d for d in rig.config.derived if d.operation == "difference")
     page.get_by_role("button", name="热应力分析").click()
-    page.locator("#pair-select").select_option("0")
+    page.locator("#stress-select").select_option("0")
+    rig.held = {b: 0.6 for b in BRIDGES}
     try:
-        for inner, delta, stress in ((500.0, 50.0, 57.375), (430.0, -20.0, -22.95)):
-            rig.call(rig.ua, [(chosen.inputs[0], inner), (chosen.inputs[1], 450.0)])
-            page.wait_for_function("delta => document.querySelector('#trend-canvas').plot?.panels[1].points.at(-1)?.v === delta", arg=delta)
+        # B4 on the page: 0.708 mV/V is 118 με is 20.06 MPa; -0.6 mV/V is -100 με is -17 MPa at E = 170000 MPa
+        for bridge, stress in ((0.708, 20.06), (-0.6, -17.0)):
+            rig.held = rig.held | {BRIDGES[0]: bridge}
+            rig.call(rig.round)
+            page.wait_for_function("s => Math.abs(document.querySelector('#trend-canvas').plot?.panels[2].points.at(-1)?.v - s) < 1e-6", arg=stress)
             got = page.evaluate("document.querySelector('#trend-canvas').plot.panels.map(p => p.points.at(-1))")
-            assert got[1]["valid"] and got[2]["valid"], "shared thermal calculation remains valid after removing the page"
-            assert got[2]["v"] == pytest.approx(stress), "E 170 GPa x alpha 1.35e-5/K x restraint 0.5, still pushed live"
+            assert got[2]["valid"], "the calculation remains valid after removing the page"
+            assert got[2]["v"] == pytest.approx(stress), "E x the converted strain, read live"
             assert page.locator("#model-cards").count() == 0
-        assert "估算值" in page.locator("#trend-latest").inner_text()
+        assert "热应力（估算）" in page.locator("#trend-latest").inner_text()
     finally:
-        rig.call(rig.ua, [(pid, nominal()[pid]) for pid in chosen.inputs])
+        rig.held = None
     assert page.errors == []
 
 

@@ -73,7 +73,7 @@ def test_the_three_quantities_are_shown_apart_with_their_names_and_units(page, s
     first = cells(page, 0)
     assert first[1:4] == ["0.9000 mV/V", "150 με", "50 με"], "three numbers, three names, none replacing another"
     assert cells(page, 1)[1:4] == ["0.6000 mV/V", "100 με", "0 με"]  # 终版 §17.6
-    assert "GF=6" in page.locator("#workspace").inner_text() and "不是已验证的机械应变" in page.locator("#workspace").inner_text()
+    assert "GF=6" in page.locator("#workspace").inner_text()  # 用户 11-10：页面只留操作用语（11-01），说明文字不再上页面，这里不再要求它
     page.get_by_role("button", name="系统总览").click()  # the overview shows the same three, apart
     page.locator("#strain-table tbody tr").nth(0).get_by_text("150").wait_for()
     assert cells(page, 0)[1:4] == ["0.9000 mV/V", "150 με", "50 με"]
@@ -85,7 +85,7 @@ def test_there_are_eight_fixed_blocks_laid_out_by_the_configuration_and_nothing_
     page.locator(f"{MAP} .block").first.wait_for()
     assert page.locator(f"{MAP} .block").count() == 8 == len(still.config.ui.stations)
     assert page.locator("canvas").count() == 0, "no continuous field is drawn"
-    assert "测点分布示意" in page.locator("#workspace").inner_text() and "不在测点之间插值" in page.locator("#workspace").inner_text()
+    # 用户 11-10：页面只留操作用语（11-01），说明文字不再上页面，这里不再要求它
     area = page.locator(MAP).bounding_box()
     boxes = []
     for number, station in enumerate(still.config.ui.stations, start=1):
