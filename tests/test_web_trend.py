@@ -40,6 +40,12 @@ def open_trend(page, rig, wall_index=WALL_INDEX, bridge_index=BRIDGE_INDEX):
     page.locator("#trend-latest").wait_for()
 
 
+def close_look(page):
+    """修复轮19: the 5-minute window (终版 §17.3 放大查看), where a stretch of a few seconds is wide enough to look at; the
+    30-minute default spreads 1800 s over the same width."""
+    page.locator("#trend-window").select_option("300")
+
+
 def plot(page):
     return page.evaluate("() => { const p = document.querySelector('#trend-canvas').plot; return p ? JSON.parse(JSON.stringify(p)) : null; }")
 
@@ -93,7 +99,7 @@ def test_three_panels_share_one_time_axis_and_keep_their_own_units_axes_signs_an
     got = plot(page)
     assert [p["id"] for p in got["panels"]] == ["load_mw", chosen["wall"], chosen["stress"]], "F1: the load, the wall, the stress"
     assert [p["unit"] for p in got["panels"]] == ["MW", "℃", "MPa"], "one unit per panel, never mixed"
-    assert got["now"] - got["t0"] == 300, "one time axis for all three"
+    assert got["now"] - got["t0"] == 1800, "one time axis for all three, 30 minutes by default (修复轮19, 验收表 C1)"
     # Each panel's axis fits its own values (修复轮15: at least its least span, snapped to even steps); a normalised or shared
     # axis covers either too little of a panel's values or far more than them.
     for panel, least in zip(got["panels"], (50, 10, 10)):
@@ -175,6 +181,7 @@ def source_outage(page, rig, source, panels_down, panels_up, restart):
 def test_an_opcua_outage_cuts_the_load_and_the_wall_and_the_stress_goes_on(page, rig, chosen):
     """F5 (用户 11-05): the bridges are another protocol."""
     open_trend(page, rig)
+    close_look(page)
     drive(rig, chosen, 480.0)
 
     def restart(gen):
@@ -188,6 +195,7 @@ def test_an_opcua_outage_cuts_the_load_and_the_wall_and_the_stress_goes_on(page,
 def test_a_modbus_outage_cuts_the_stress_and_the_load_and_the_wall_go_on(page, rig, chosen):
     """F6 (用户 11-05): the other way round."""
     open_trend(page, rig)
+    close_look(page)
     drive(rig, chosen, 480.0)
 
     def restart(gen):
@@ -202,6 +210,7 @@ def test_when_the_page_cannot_read_every_panel_is_cut_for_that_stretch(page, rig
     """终版 §13.3: what happened while the page could not read is unknown, whichever source.  The readings fail for a while (修复轮05:
     in the browser, the backend is untouched) so that the unknown stretch is wide enough to look at."""
     open_trend(page, rig)
+    close_look(page)
     started = time.time()  # the mark stands at the last good reading before the cut-off, which drive() lets the page take
     drive(rig, chosen, 480.0)
     page.route(READING, lambda route: route.abort())
@@ -224,6 +233,7 @@ def test_when_the_page_cannot_read_every_panel_is_cut_for_that_stretch(page, rig
 
 def test_the_cursor_reads_the_value_in_effect_in_every_panel_at_one_instant(page, rig, chosen):
     open_trend(page, rig)
+    close_look(page)
     drive(rig, chosen, 470.0, pause=2.0)
     drive(rig, chosen, 460.0, pause=3.5)  # 460 has been in effect for 3.5 s: a cursor just before "now" is inside it
     got = plot(page)
@@ -234,7 +244,7 @@ def test_the_cursor_reads_the_value_in_effect_in_every_panel_at_one_instant(page
     readout.get_by_text("游标").wait_for()
     text = readout.inner_text()
     after = plot(page)
-    t = after["t0"] + (offset - after["left"]) / (after["right"] - after["left"]) * 300
+    t = after["t0"] + (offset - after["left"]) / (after["right"] - after["left"]) * (after["now"] - after["t0"])
     in_effect = [p for p in after["panels"][1]["points"] if p["t"] <= t][-1]
     assert in_effect["v"] == 460.0 and "壁温 460.0 ℃" in text, (text, in_effect)
     assert "负荷" in text and "热应力（估算）" in text and "17.00 MPa" in text
@@ -329,9 +339,11 @@ def test_custom_history_is_only_on_page_five(page, rig):
 
 
 def test_a_confirmed_fault_of_the_wall_turns_its_curve_orange_and_only_while_it_lasts(page, rig, chosen):
-    """F7, F10 (修复轮15, 用户 11-01, 11-06): orange follows the backend's confirmed fault, not the bare value: a value beyond the
-    limit is still drawn in the panel's colour until the fault is confirmed, and comes back to it on recovery."""
+    """F7, F10 (修复轮15, 用户 11-01, 11-06), 修复轮19 C11: orange follows the backend's confirmed fault, not the bare value: a value
+    beyond the limit is still drawn in the panel's colour until the fault is confirmed, and comes back to it on recovery.  Looked at
+    in the 5-minute window (修复轮19), where a stretch of a few seconds is wide enough to count."""
     open_trend(page, rig)
+    close_look(page)
     drive(rig, chosen, 480.0)
     rig.call(rig.ua, [(chosen["wall"], 495.0)])  # beyond the limit of 490; confirmed after the confirmation time
     page.wait_for_function("document.querySelector('#trend-latest').textContent.includes('越限待确认')")

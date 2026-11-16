@@ -76,7 +76,8 @@ def test_readings_keep_a_fixed_number_of_decimals_by_unit_and_no_thousands_separ
     assert "1,850" not in text
     strain = page.locator("#strain-table").inner_text()
     assert re.search(r"\b0\.7\d{3} mV/V", strain), "the bridge signal with four decimals"
-    assert re.search(r"(?<![\d.])\d+ με", strain) and not re.search(r"\d\.\d+ με", strain), "strain in whole microstrain"
+    # 修复轮19 (终版 §17.6, 验收表 B1): one decimal of microstrain
+    assert re.search(r"(?<![\d.])\d+\.\d με", strain) and not re.search(r"\d\.\d{2,} με|(?<![\d.])\d+ με", strain), "strain to 0.1 με"
     # 修复轮18: MPa left the process table with the main steam pressure; 终版 §17.6 keeps two decimals for the thermal stress estimate
     page.get_by_role("button", name="热应力分析").click()
     page.locator("#trend-latest").get_by_text("MPa").wait_for()

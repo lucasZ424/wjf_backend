@@ -223,43 +223,35 @@ def drive_strain(rig, page, events):
         page.wait_for_timeout(1050)
 
 
-def check_strain_frames(seen, change_may_wait=False):
-    """Every state that was on screen: the three quantities of a station are those of ONE round.  A change is
-    only ever the step between two consecutive rounds of one segment, so it may be missing (the first round of a
-    new segment has none, `change_may_wait`) but is never another number."""
+def check_strain_frames(seen):
+    """Every state that was on screen: the bridge signal and the converted strain of a station are those of ONE round.
+    修复轮19 (终版 §17.7, 验收表 A3): the change is the difference to 5 minutes ago in the browser, and these pages are open for
+    less than that, so it is a dash on every screen state - never the step between two rounds, never 0."""
     complete = dashes = 0
     unit = 1000 / 6  # microstrain per mV/V at GF = 6
     for rows in seen:
         for index, row in enumerate(rows):
             raw, strain, change = (number(c) for c in row[1:4])
+            assert change is None and row[3] == "—", f"a change although the page is open for less than 5 minutes: {row}"
             if raw is None:
-                assert strain is None and change is None, f"a result without its input: {row}"
+                assert strain is None, f"a result without its input: {row}"
                 dashes += index == 0
                 continue
             assert strain is not None, f"an input without its result: {row}"
             if index > 0:
-                assert (raw, strain) == (0.6, 100.0) and (change == 0.0 or change is None and change_may_wait), f"a station nobody touched changed: {row}"
+                assert (raw, strain) == (0.6, 100.0), f"a station nobody touched changed: {row}"
                 continue
             k = round((raw - 0.6) / 0.01)
             assert abs(raw - (0.6 + 0.01 * k)) < 1e-6, row
-            # 终版 §17.6 shows whole microstrain; the next round's input is 0.01 mV/V away, 1.67 με
-            assert abs(strain - raw * unit) <= 0.5 + 1e-9, f"the strain is not that of this input: {row}"
-            if k == UNANSWERED + 1:
-                assert change is None, f"a change was bridged across an unanswered round: {row}"
-            elif k == 0:
-                assert change == 0.0, row
-            elif change is None:
-                assert change_may_wait, f"the change is missing although the previous round was there: {row}"
-            else:
-                # whole microstrain on the page (终版 §17.6): one step is 1.67 με, a change across two rounds 3.33
-                assert abs(change - 0.01 * unit) <= 0.5 + 1e-9, f"the change is not that of this round: {row}"
+            # 终版 §17.6 shows 0.1 με (修复轮19); the next round's input is 0.01 mV/V away, 1.67 με
+            assert abs(strain - raw * unit) <= 0.05 + 1e-9, f"the strain is not that of this input: {row}"
             complete += 1
     return complete, dashes
 
 
 def test_rounds_and_a_cut_off_never_show_an_input_next_to_another_rounds_result(page, still):
     page.add_init_script(STRAIN_RECORDER + CONNECTION_RECORDER)
-    for _ in range(2):  # two quiet rounds: every station starts with a change of 0
+    for _ in range(2):  # two quiet rounds
         still.call(still.round, {b: 0.6 for b in BRIDGES})
     open_page(page, still, "水冷壁应变场")
     page.locator("#strain-table tbody tr").nth(0).get_by_text("100").wait_for()
@@ -380,7 +372,7 @@ def test_a_live_archive_gap_is_announced_and_the_live_pages_stay_consistent(page
         assert not any("实时值仍在更新" in t for t in said), said
         page.locator("#archive-banner").wait_for(state="hidden", timeout=30000)  # recovered: the gap is closed
         keep(page, "g07-live-archive-gap")
-        complete, _ = check_strain_frames(frames(page), change_may_wait=True)
+        complete, _ = check_strain_frames(frames(page))
         assert complete >= 8, "the live numbers kept coming, whole, while the archive was refusing"
         assert page.errors == []
     finally:

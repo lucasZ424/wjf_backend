@@ -63,7 +63,7 @@ def cells(page, row, table="#strain-table"):
 
 def test_the_three_quantities_are_shown_apart_with_their_names_and_units(page, still):
     send_round(still)
-    send_round(still, s1=0.9)  # the next planned round: bridge 0.9 -> 150 με, change 150 - 100 = 50 με
+    send_round(still, s1=0.9)  # the next planned round: bridge 0.9 -> 150 με
     open_page(page, still, "水冷壁应变场")
     head = page.locator("#strain-table thead th").all_inner_texts()
     assert any("原始信号" in h and "mV/V" in h for h in head)
@@ -71,12 +71,13 @@ def test_the_three_quantities_are_shown_apart_with_their_names_and_units(page, s
     assert any("应变变化" in h and "με" in h for h in head)
     page.locator("#strain-table tbody tr").nth(0).get_by_text("150").wait_for()
     first = cells(page, 0)
-    assert first[1:4] == ["0.9000 mV/V", "150 με", "50 με"], "three numbers, three names, none replacing another"
-    assert cells(page, 1)[1:4] == ["0.6000 mV/V", "100 με", "0 με"]  # 终版 §17.6
+    # 修复轮19 (终版 §17.6, §17.7, 验收表 A3, B1): one decimal; the change is against 5 minutes ago, a dash on a page open for less
+    assert first[1:4] == ["0.9000 mV/V", "150.0 με", "—"], "three numbers, three names, none replacing another"
+    assert cells(page, 1)[1:4] == ["0.6000 mV/V", "100.0 με", "—"]
     assert "GF=6" in page.locator("#workspace").inner_text()  # 用户 11-10：页面只留操作用语（11-01），说明文字不再上页面，这里不再要求它
     page.get_by_role("button", name="系统总览").click()  # the overview shows the same three, apart
     page.locator("#strain-table tbody tr").nth(0).get_by_text("150").wait_for()
-    assert cells(page, 0)[1:4] == ["0.9000 mV/V", "150 με", "50 με"]
+    assert cells(page, 0)[1:4] == ["0.9000 mV/V", "150.0 με", "—"]
     assert page.errors == []
 
 
