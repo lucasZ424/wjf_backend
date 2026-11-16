@@ -18,11 +18,14 @@ function fmt(value, digits = state.config?.ui?.precision ?? 2) {
 }
 // 终版 §17.6: a reading keeps the decimals of its unit, trailing zeros included and no thousands separator; a unit not in
 // the table takes ui.precision.  Display only: the API, the archive and the CSV keep the values as they are.
-const DIGITS = {"mV/V": 4, "με": 0, degC: 1, "℃": 1, MW: 1, "t/h": 0, MPa: 2, kPa: 3};
+// 修复轮19: με to one decimal; a reading that rounds to zero is a zero without a sign, never -0.0.
+const DIGITS = {"mV/V": 4, "με": 1, degC: 1, "℃": 1, MW: 1, "t/h": 0, MPa: 2, kPa: 3};
+const ZERO = /^0(\.0+)?$/;
 function reading(value, unit) {
   if (typeof value !== "number" || !Number.isFinite(value)) return "—";
   const digits = DIGITS[unit] ?? state.config?.ui?.precision ?? 2;
-  return value.toLocaleString("zh-CN", {minimumFractionDigits: digits, maximumFractionDigits: digits, useGrouping: false});
+  const text = value.toLocaleString("zh-CN", {minimumFractionDigits: digits, maximumFractionDigits: digits, useGrouping: false});
+  return text.startsWith("-") && ZERO.test(text.slice(1)) ? text.slice(1) : text;
 }
 function clock(seconds) {
   return Number.isFinite(seconds) ? new Date(seconds * 1000).toLocaleTimeString("zh-CN", {hour12: false}) : "—";
@@ -131,7 +134,7 @@ const stations = () => state.config?.ui?.stations || [];
 const bridgeOf = s => definition(s.strain).inputs?.[0];
 const SOURCE_STATES = {WAITING: "等待首次数据", VALID: "数据有效", EXPIRED: "数据已失效", RESYNC: "重新同步中"};
 const KINDS = {modbus: "Modbus", opcua: "OPC UA"};
-const STRAIN_HEAD = ["测点", "原始信号（mV/V）", "换算应变（με，GF=6，未作温度补偿）", "应变变化（με，与上一轮之差）", "状态"];
+const STRAIN_HEAD = ["测点", "原始信号（mV/V）", "换算应变（με，GF=6，未作温度补偿）", "应变变化（με，与5分钟前之差）", "状态"];
 
 // One state per station, from the owner's own validity and fault state: why a block is grey is named, never guessed.
 function stationState(s) {
@@ -148,9 +151,19 @@ function stationState(s) {
 const STATE_KIND = {normal: "ok", pending: "warn", confirmed: "bad", invalid: ""};
 const stationBadge = st => badge(st.why, STATE_KIND[st.state]);
 const quantity = id => { const view = channel(id), unit = definition(id).unit; return view && view.valid ? `${reading(view.value, unit)} ${esc(unitText(unit))}` : "—"; };
+// 修复轮19 (终版 §17.7): the change shown is the strain now less the one in effect 5 minutes before, both from the live
+// trend this page keeps (§13.3) - the two ends only - worked out on the values received and rounded only when shown.
+// Either end without a valid value is a bare dash.  The backend's `strain_change` stays in the archive, not on this page.
+const CHANGE_SECONDS = 300;
+function strainChange(s) {
+  const now = channel(s.strain), unit = definition(s.strain).unit;
+  if (!now || !now.valid || !Number.isFinite(now.value)) return "—";
+  const then = valueAt(trend.series.get(s.strain) || [], state.live.taken - CHANGE_SECONDS);
+  return then && then.valid ? `${reading(now.value - then.v, unit)} ${esc(unitText(unit))}` : "—";
+}
 
 function strainTable() {
-  return table(STRAIN_HEAD, stations().map(s => [esc(s.label || s.id), quantity(bridgeOf(s)), quantity(s.strain), quantity(s.strain_change), stationBadge(stationState(s))]));
+  return table(STRAIN_HEAD, stations().map(s => [esc(s.label || s.id), quantity(bridgeOf(s)), quantity(s.strain), strainChange(s), stationBadge(stationState(s))]));
 }
 
 function overviewHtml() {
@@ -183,7 +196,7 @@ function updateStrain() {
     return `<div class="block" data-station="${esc(s.id)}" data-state="${st.state}" style="left:${x}%;top:${y}%"><b>${esc(s.label || s.id)}</b>
       <div>换算应变 <strong>${quantity(s.strain)}</strong></div>
       <div class="minor">原始信号 ${quantity(bridgeOf(s))}</div>
-      <div class="minor">应变变化 ${quantity(s.strain_change)}</div>
+      <div class="minor">应变变化 ${strainChange(s)}</div>
       <div class="why">${esc(st.why)}</div></div>`;
   }).join(""));
   setHtml("strain-table", strainTable());
@@ -191,10 +204,18 @@ function updateStrain() {
 
 // ----------------------------------------------------------------- page 4: live three-panel trend (终版 §17.3)
 
-// Only what this page reads is plotted: the readings since it signed in.  Custom history lives on page 5.
-const TREND_SECONDS = 300, KEEP_SECONDS = 600;
-const trend = {series: new Map(), wall: 0, stress: 0, cursor: null};
-const signed = (value, unit) => typeof value === "number" && Number.isFinite(value) ? (value > 0 ? "+" : "") + reading(value, unit) : "—";
+// What this page plotted is the readings since it signed in; 修复轮19 (终版 §13.3, §17.3): in the 1-hour window the older
+// part of the three curves shown is asked of the history.  Custom history lives on page 5.
+// The windows, in seconds: 30 minutes by default, 5 minutes for a closer look, 1 hour.  The browser keeps 30 minutes of
+// every channel cached and an hour of the three shown while the hour is chosen: a fixed bound, whatever the uptime.
+const WINDOWS = [[1800, "30 分钟"], [300, "5 分钟"], [3600, "1 小时"]], HOUR = 3600, KEEP_SECONDS = 1800;
+const trend = {series: new Map(), wall: 0, stress: 0, cursor: null, window: 1800, filled: new Map(), fill: {controller: null, epoch: 0, failed: false}};
+// 修复轮19: a stress that rounds to zero has no "+" either.
+const signed = (value, unit) => {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "—";
+  const text = reading(value, unit);
+  return (value > 0 && !ZERO.test(text) ? "+" : "") + text;
+};
 const UNIT_TEXT = {degC: "℃"};
 const unitText = unit => UNIT_TEXT[unit] || unit || "";
 
@@ -202,20 +223,23 @@ const unitText = unit => UNIT_TEXT[unit] || unit || "";
 const walls = () => state.config._walls ??= state.config.points.map(p => p.id).filter(id => id.startsWith("temp_wall_"));  // the configuration does not change within a session
 const stresses = () => state.config._stresses ??= state.config.derived.filter(d => d.operation === "elastic_stress").map(d => d.id);
 const loadId = () => (state.config.ui.process_points || []).find(id => id.includes("load")) || "load_mw";
-const trendIds = () => state.config._trendIds ??= new Set([loadId(), ...walls(), ...stresses()]);
+const trendIds = () => state.config._trendIds ??= new Set([loadId(), ...walls(), ...stresses(), ...stations().map(s => s.strain)]);  // the strains for the 5-minute change
+// The channels of the three panels, as far as the configuration has them.
+const shownIds = () => [loadId(), walls()[trend.wall], stresses()[trend.stress]].filter(id => id && definitions().some(d => d.id === id));
 
 // A series is a list of {t, v, valid, alarm}: the value in effect from t on.  An invalid state or a lost connection is a
 // point with no value, and nothing is drawn through it; `alarm` is a confirmed fault of the channel (修复轮15), drawn in
 // the alarm colour from that reading on.
 function trendNote(channels, wall) {
-  const wanted = trendIds();
+  const wanted = trendIds(), long = trend.window === HOUR ? new Set(shownIds()) : null;
   for (const [id, view] of Object.entries(channels)) {
     if (!wanted.has(id)) continue;
     const list = trend.series.get(id) || [], last = list[list.length - 1], valid = view.valid && Number.isFinite(view.value);
     const alarm = view.fault === "CONFIRMED";
     if (last && last.valid === valid && last.v === (valid ? view.value : null) && last.alarm === alarm) continue;
     list.push({t: wall, v: valid ? view.value : null, valid, alarm});
-    while (list.length > 2 && list[1].t < wall - KEEP_SECONDS) list.shift();
+    const keep = long?.has(id) ? HOUR : KEEP_SECONDS;  // the point in effect at the edge stays: it is the value of then
+    while (list.length > 2 && list[1].t < wall - keep) list.shift();
     trend.series.set(id, list);
   }
 }
@@ -225,34 +249,103 @@ function trendBreak(wall) {
 // The live trend observes the current state (终版 §13.3, 修复轮05): a point is what a reading showed, at the time the
 // reading was taken.  A stretch ends where two readings are more than the notice apart or the run changed; a reading
 // time that went back starts the trend over, so the points stay in time order.
+// 修复轮19 (R6): the back-fill goes with the live trend, and the hour is asked for again.
 function trendReading(reading, before) {
-  if (before.taken !== null && reading.taken_time < before.taken) trend.series.clear();
+  const back = before.taken !== null && reading.taken_time < before.taken;
+  if (back) { trend.series.clear(); dropBackfill(); }
   else if (before.taken !== null && (reading.run_id !== before.run || reading.taken_time - before.taken > state.config.timing.ui_stall_notice)) trendBreak(before.taken);
   trendNote(reading.channels, reading.taken_time);
+  if (back) backfill(reading.taken_time);
 }
 const valueAt = (list, t) => { let found = null; for (const p of list) { if (p.t <= t) found = p; else break; } return found; };
+
+// 修复轮19 (终版 §13.3): in the hour, the part of the three curves shown that the browser has not kept is asked of the
+// history, up to each one's oldest live point - never the live part again.  One request at a time: a newer one cancels
+// the older, and an answer that still comes late is dropped.  It is not one of the readings' requests; a failure leaves
+// the older part empty, says so, and changes nothing else.
+function cancelBackfill() {
+  const fill = trend.fill;
+  fill.controller?.abort();
+  Object.assign(fill, {controller: null, epoch: fill.epoch + 1});
+}
+function dropBackfill() {
+  cancelBackfill();
+  trend.filled.clear();
+  trend.fill.failed = false;
+}
+async function backfill(now = state.serverWall) {
+  if (trend.window !== HOUR || !Number.isFinite(now)) return;
+  const shown = shownIds(), start = now - HOUR;
+  for (const id of trend.filled.keys()) if (!shown.includes(id)) trend.filled.delete(id);  // kept for the curves shown only
+  const oldest = id => trend.series.get(id)?.[0]?.t ?? now;
+  const wanted = shown.filter(id => !trend.filled.has(id) && oldest(id) > start);
+  if (!wanted.length) return;
+  const end = Math.max(...wanted.map(oldest)), fill = trend.fill;
+  cancelBackfill();
+  const controller = fill.controller = new AbortController(), epoch = fill.epoch;
+  try {
+    const query = new URLSearchParams({center: (start + end) / 2, seconds: end - start, points: wanted.join(",")});
+    const result = await api(`/api/replay?${query}`, {signal: controller.signal});
+    if (epoch !== fill.epoch) return;
+    for (const id of wanted) trend.filled.set(id, heldRows(result.channels?.[id], start));
+    fill.failed = false;
+  } catch (error) {
+    if (epoch !== fill.epoch) return;  // given up for a newer one, another window or a sign-out
+    fill.failed = true;  // said under the chart (R3)
+  } finally {
+    if (epoch === fill.epoch) fill.controller = null;
+  }
+  invalidate();
+}
+// The history's records as the page draws them (终版 §14): each value held from its time to where it was valid until;
+// `to` is the next value where one change followed straight on, so the step is drawn and a gap is not.
+function heldRows(channel, start) {
+  const rows = channel ? channelRows(channel) : [];
+  return rows.map((r, i) => {
+    const valid = r.valid && Number.isFinite(r.value), next = rows[i + 1];
+    const to = valid && r.ended_by === "NEXT_CHANGE" && next && next.valid && Number.isFinite(next.value) ? next.value : null;
+    return {t: r.time, v: valid ? r.value : null, valid, until: r.until ?? r.time, to};
+  }).filter(r => r.valid && r.until > start);
+}
+// The back-filled part of a panel, before its oldest live point: what the curve shows, for the cursor.
+const filledAt = (rows, t) => rows.find(r => r.t <= t && t < r.until) || null;
+function setWindow(seconds) {
+  trend.window = seconds;
+  if (seconds === HOUR) backfill();
+  else dropBackfill();  // nothing is asked outside the hour, and what was filled is not kept for it
+  updateTrend();
+}
 
 function trendHtml() {
   const options = (ids, name) => ids.map((id, i) => `<option value="${i}">${esc(name(id))}</option>`).join("");
   return `<div class="controls"><label>壁温<select id="wall-select">${options(walls(), label)}</select></label>
-      <label>电桥<select id="stress-select">${options(stresses(), id => label(id).replace(/\s*热应力估算$/, ""))}</select></label></div>
-    <div class="card"><h3>负荷、壁温与热应力（同一时间轴，最近 ${TREND_SECONDS / 60} 分钟）</h3>
+      <label>电桥<select id="stress-select">${options(stresses(), id => label(id).replace(/\s*热应力估算$/, ""))}</select></label>
+      <label>窗口<select id="trend-window">${WINDOWS.map(([seconds, name]) => `<option value="${seconds}">${name}</option>`).join("")}</select></label></div>
+    <div class="card"><h3>负荷、壁温与热应力（同一时间轴）</h3>
       <div id="trend-latest" class="controls"></div>
       <canvas id="trend-canvas" class="chart" style="height:560px" aria-label="三分栏实时趋势"></canvas>
       <div id="trend-readout" class="chart-caption">把鼠标移到图上查看同一时刻各栏的值。</div>
-      <p class="chart-caption">曲线变为橙色表示该量“故障已确认”；数据无效或中断处曲线断开。过去的数据请到“历史查询”页查看。</p></div>`;
+      <p id="trend-caption" class="chart-caption"></p></div>`;
+}
+// 修复轮19 (P3, R3): the hour says its back-filled part shows no fault, and a back-fill that failed says so; nothing else.
+function trendCaption() {
+  const hour = trend.window === HOUR;
+  return `曲线变为橙色表示该量“故障已确认”${hour ? "（较早补取的部分不标故障，请到历史查询页查看）" : ""}；数据无效或中断处曲线断开。过去的数据请到“历史查询”页查看。${hour && trend.fill.failed ? "更早的数据读取失败。" : ""}`;
 }
 function mountTrend() {
+  $("trend-window").value = String(trend.window);
+  $("trend-window").onchange = event => setWindow(Number(event.target.value));
+  // another wall or bridge keeps the window; in the hour only the one chosen is asked for (§17.3)
   $("wall-select").value = String(trend.wall);
-  $("wall-select").onchange = event => { trend.wall = Number(event.target.value); updateTrend(); };
+  $("wall-select").onchange = event => { trend.wall = Number(event.target.value); backfill(); updateTrend(); };
   $("stress-select").value = String(trend.stress);
-  $("stress-select").onchange = event => { trend.stress = Number(event.target.value); updateTrend(); };
+  $("stress-select").onchange = event => { trend.stress = Number(event.target.value); backfill(); updateTrend(); };
   const canvas = $("trend-canvas");
   canvas.onmousemove = event => {
     const plot = canvas.plot;
     if (!plot) return;
     const x = event.clientX - canvas.getBoundingClientRect().left;
-    trend.cursor = x >= plot.left && x <= plot.right ? plot.t0 + (x - plot.left) / (plot.right - plot.left) * TREND_SECONDS : null;
+    trend.cursor = x >= plot.left && x <= plot.right ? plot.t0 + (x - plot.left) / (plot.right - plot.left) * (plot.now - plot.t0) : null;
     invalidate();  // 修复轮13: drawn once a frame, however many moves came in it
   };
   canvas.onmouseleave = () => { trend.cursor = null; invalidate(); };
@@ -291,7 +384,10 @@ function trendPanels() {
   const known = new Set(definitions().map(d => d.id));
   return [[loadId(), "负荷", reading, LINE.plain], [walls()[trend.wall], "壁温", reading, LINE.wall], [stresses()[trend.stress], "热应力（估算）", signed, LINE.stress]].filter(([id]) => known.has(id)).map(([id, name, shown, color]) => {
     const raw = definition(id).unit;
-    return {id, name, unit: unitText(raw), color, points: trend.series.get(id) || [], show: v => shown(v, raw)};
+    const points = trend.series.get(id) || [], first = points.length ? points[0].t : Infinity;
+    // the back-filled part ends where the live part begins: nothing is drawn twice (修复轮19)
+    const filled = trend.window === HOUR ? (trend.filled.get(id) || []).filter(r => r.t < first).map(r => ({...r, until: Math.min(r.until, first)})) : [];
+    return {id, name, unit: unitText(raw), color, points, filled, show: v => shown(v, raw)};
   });
 }
 function updateTrend() {
@@ -301,23 +397,25 @@ function updateTrend() {
   const now = state.serverWall || Date.now() / 1000;
   setHtml("trend-latest", panels.map(x => { const view = channel(x.id); return `<span data-panel="${esc(x.id)}"><span style="color:${x.color}">${esc(x.name)}</span>：<b>${view && view.valid ? `${x.show(view.value)} ${esc(x.unit)}` : "—"}</b></span> ${stateBadges(x.id)}`; }).join(" "));
   $("trend-readout").textContent = trend.cursor === null ? "把鼠标移到图上查看同一时刻各栏的值。"
-    : `游标 ${clock(trend.cursor)}：` + panels.map(x => { const v = valueAt(x.points, trend.cursor); return `${x.name} ${v && v.valid ? `${x.show(v.v)} ${x.unit}` : "—（无数据或无效）"}`; }).join(" ｜ ");
+    : `游标 ${clock(trend.cursor)}：` + panels.map(x => { const v = valueAt(x.points, trend.cursor) || filledAt(x.filled, trend.cursor); return `${x.name} ${v && v.valid ? `${x.show(v.v)} ${x.unit}` : "—（无数据或无效）"}`; }).join(" ｜ ");
+  setHtml("trend-caption", esc(trendCaption()));
   plotTrend(canvas, panels, now);
 }
 function plotTrend(canvas, panels, now) {
-  const ratio = window.devicePixelRatio || 1, w = canvas.clientWidth, h = 560, left = 70, right = w - 16, gap = 22, top0 = 10, height = (h - 34 - top0 - gap * (panels.length - 1)) / panels.length, t0 = now - TREND_SECONDS;
+  const ratio = window.devicePixelRatio || 1, w = canvas.clientWidth, h = 560, left = 70, right = w - 16, gap = 22, top0 = 10, height = (h - 34 - top0 - gap * (panels.length - 1)) / panels.length;
+  const span = trend.window, t0 = now - span;
   canvas.width = w * ratio;
   canvas.height = h * ratio;
   const c = canvas.getContext("2d");
   c.scale(ratio, ratio);
   c.font = '11px "Segoe UI",sans-serif';
-  const x = t => left + (Math.min(Math.max(t, t0), now) - t0) / TREND_SECONDS * (right - left);
+  const x = t => left + (Math.min(Math.max(t, t0), now) - t0) / span * (right - left);
   canvas.plot = {left, right, t0, now, panels: []};
   panels.forEach((panel, i) => {
     const top = top0 + i * (height + gap), bottom = top + height;
     const inside = panel.points.filter(q => q.t <= now), seen = inside.filter(q => q.valid && q.t >= t0);
-    const held = valueAt(inside, t0);
-    const values = [...seen.map(q => q.v), ...(held && held.valid ? [held.v] : [])];
+    const held = valueAt(inside, t0), filled = panel.filled.filter(r => r.until > t0 && r.t < now);
+    const values = [...seen.map(q => q.v), ...(held && held.valid ? [held.v] : []), ...filled.map(r => r.v)];
     const {lo, hi, ticks} = valueAxis(values, minSpan(panel.id), 4);
     const y = v => bottom - (v - lo) / (hi - lo) * height;
     canvas.plot.panels.push({id: panel.id, unit: panel.unit, color: panel.color, lo, hi, top, bottom, points: inside.filter(q => q.t >= t0 || q === held).map(q => ({...q}))});
@@ -328,6 +426,13 @@ function plotTrend(canvas, panels, now) {
     }
     c.fillStyle = panel.color;  // the panel's name in its line's colour, after the grid so no tick label covers it
     c.fillText(`${panel.name}（${panel.unit}）`, left + 4, top + 11);
+    // 修复轮19 (R4): the back-filled part in the channel's own colour - the archive does not say where a fault was confirmed
+    c.strokeStyle = panel.color; c.lineWidth = 1.8;
+    for (const r of filled) {
+      const a = x(r.t), b = x(r.until);
+      c.beginPath(); c.moveTo(a, y(r.v)); c.lineTo(Math.max(b, a + 1), y(r.v)); c.stroke();
+      if (r.to !== null && r.until < (inside[0]?.t ?? Infinity)) { c.beginPath(); c.moveTo(b, y(r.v)); c.lineTo(b, y(r.to)); c.stroke(); }
+    }
     inside.forEach((q, j) => {
       const next = inside[j + 1], a = x(q.t), b = next ? x(next.t) : x(now);
       if (b < left || x(q.t) > right) return;
@@ -1176,6 +1281,8 @@ function logout(message = "") {
   sessionStorage.removeItem(PAGE_KEY);
   state.credential = "";
   trend.series.clear();
+  dropBackfill();
+  trend.window = 1800;  // a new sign-in starts on the default window, with nothing back-filled
   state.live = newLive();
   sessionStorage.removeItem("htsg.credential");
   clearReplay();
